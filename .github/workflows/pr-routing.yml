@@ -1,0 +1,106 @@
+name: EduFlow pull request routing
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-routing-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  route:
+    name: Check destination and assign reviewer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate the branch path and request review
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            const configFile = await github.rest.repos.getContent({
+              owner,
+              repo,
+              path: ".github/eduflow-team.json",
+              ref: pr.base.sha,
+            });
+
+            if (Array.isArray(configFile.data) || configFile.data.type !== "file") {
+              core.setFailed("팀 설정 파일을 읽지 못했습니다.");
+              return;
+            }
+
+            const config = JSON.parse(
+              Buffer.from(configFile.data.content, "base64").toString("utf8"),
+            );
+            const leader = config.leader.github;
+            const base = pr.base.ref;
+            const head = pr.head.ref;
+            const author = pr.user.login;
+            const teamKeys = ["a", "b", "c"];
+            let reviewers = [];
+            let route = "";
+
+            if (base === "main") {
+              if (!teamKeys.map((key) => `team-${key}`).includes(head)) {
+                core.setFailed(
+                  `main에는 team-a, team-b, team-c 브랜치만 요청할 수 있습니다. 현재 출발 브랜치: ${head}`,
+                );
+                return;
+              }
+              reviewers = [leader];
+              route = `${head} → main (팀장 최종 검토)`;
+            } else if (/^team-[abc]$/.test(base)) {
+              const teamKey = base.at(-1);
+              const allowedPrefixes = [
+                `feature/${teamKey}-`,
+                `fix/${teamKey}-`,
+                `docs/${teamKey}-`,
+              ];
+              if (!allowedPrefixes.some((prefix) => head.startsWith(prefix))) {
+                core.setFailed(
+                  `${base}에는 ${allowedPrefixes.join(", ")} 형식의 개인 브랜치만 요청할 수 있습니다. 현재 출발 브랜치: ${head}`,
+                );
+                return;
+              }
+              reviewers = config.teams[teamKey] ?? [];
+              route = `${head} → ${base} (같은 팀 검토)`;
+            } else {
+              core.setFailed(`지원하지 않는 도착 브랜치입니다: ${base}`);
+              return;
+            }
+
+            reviewers = [...new Set(reviewers)].filter(
+              (reviewer) => reviewer.toLowerCase() !== author.toLowerCase(),
+            );
+
+            if (!pr.draft && reviewers.length > 0) {
+              await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number: pr.number,
+                reviewers,
+              });
+            }
+
+            await core.summary
+              .addHeading("EduFlow 검토 경로")
+              .addRaw(`${route}\n`)
+              .addRaw(
+                reviewers.length > 0
+                  ? `검토자: ${reviewers.map((name) => `@${name}`).join(", ")}\n`
+                  : "등록된 검토자가 없어 자동 지정은 생략했습니다.\n",
+              )
+              .write();

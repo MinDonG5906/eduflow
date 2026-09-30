@@ -12,6 +12,13 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 The user should not need to know Git commands. Translate ordinary Korean requests into the safe workflow below and report outcomes in plain Korean. Show raw Git commands only when the user asks for them.
 
+### Team authority
+
+- The EduFlow team leader and final `main` approver is GitHub user `MinDonG5906`.
+- Treat `.github/eduflow-team.json` as the authoritative team roster. Team invitations will be added later; do not invent members or send invitations unless the team leader explicitly asks.
+- Personal work is reviewed inside its team. A `team-a`, `team-b`, or `team-c` pull request targeting `main` requires the team leader's explicit approval before merge.
+- The private repository is currently owned by a personal GitHub account, so paid-plan branch protection may not be enforceable. Follow these rules even when GitHub does not technically block an unsafe merge.
+
 ### Repository structure
 
 - `main`: final version controlled by the team leader.
@@ -41,13 +48,15 @@ When a user says `작업 마무리해서 팀 검토 요청 준비해줘`:
 5. Prepare a pull request whose base is the user's team branch, never `main`.
 6. Summarize changes and checks in plain Korean. Get any required confirmation immediately before creating the pull request.
 
+The repository workflow validates the pull request route and assigns reviewers from `.github/eduflow-team.json`. Never work around a failed route check by changing the target to `main`.
+
 Never merge a personal task branch directly into `main`.
 
 ### Team integration and main
 
 - A personal branch may target only its matching `team-a`, `team-b`, or `team-c` branch.
 - A team branch may target `main` only after the team says its combined work is ready.
-- Before any `main` merge, inspect changes, run checks, explain risks, and wait for the team leader's explicit approval.
+- Before any `main` merge, inspect changes, run checks, explain risks, and wait for `MinDonG5906`'s explicit approval.
 - After `main` changes, help each team update its team branch from the new `main` before starting further work.
 
 ### Failure and conflict handling
