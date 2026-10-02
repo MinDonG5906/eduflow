@@ -37,16 +37,27 @@ When a user says something like `A팀 작업 시작: AI 연결`:
 
 If the user's team is unknown, ask only which of A, B, or C they belong to. Do not teach Git before starting.
 
-### Saving and requesting team review
+### Natural-language save shortcuts
 
-When a user says `작업 마무리해서 팀 검토 요청 준비해줘`:
+Treat the exact shortcuts below as explicit workflow commands in Codex, Claude Code, and Antigravity. Do not require the user to know or repeat Git terminology.
 
-1. Review the diff and exclude unrelated files.
-2. Check that secrets, API keys, and `.env` files are not included.
-3. Run `npm run typecheck`, `npm test`, and `npm run build`.
-4. Commit the task with a clear Korean message and push the current task branch.
-5. Prepare a pull request whose base is the user's team branch, never `main`.
-6. Summarize changes and checks in plain Korean. Get any required confirmation immediately before creating the pull request.
+When the user says `@개인저장`:
+
+1. Inspect the current branch and working tree. Preserve and exclude unrelated user changes.
+2. Confirm the current branch is an individual task branch matching `feature/[abc]-*`, `fix/[abc]-*`, or `docs/[abc]-*`. If it is `main`, a team branch, or its team cannot be determined safely, stop and ask only for the user's team and task.
+3. Check that secrets, API keys, credentials, personal information, and `.env` files are not included.
+4. Review the task diff, perform a lightweight sanity check appropriate to the changed files, and commit only the task-related changes with a clear message. If there are no new changes, keep the existing commit unchanged.
+5. Push the current individual branch to GitHub. Do not create a pull request and do not change a team branch or `main`.
+6. Report in plain Korean that the personal GitHub backup is complete and team review has not been requested.
+
+When the user says `@팀저장` or `작업 마무리해서 팀 검토 요청 준비해줘`:
+
+1. Perform every safety and personal-save step above.
+2. Run `npm run typecheck`, `npm test`, and `npm run build`.
+3. If a check fails, keep the work safely pushed on the individual branch but do not create a pull request. Explain the failure.
+4. If all checks pass, create or update one pull request whose base is the matching team branch, never `main`.
+5. The exact `@팀저장` command is explicit authorization to create or update that team-review pull request; do not ask for a second confirmation. It is not authorization to merge it.
+6. Let the repository automation request review from the other registered team member, and report who was requested. If no teammate is registered, explain that the work is saved but automatic reviewer assignment is waiting for the roster.
 
 The repository workflow validates the pull request route and assigns reviewers from `.github/eduflow-team.json`. Never work around a failed route check by changing the target to `main`.
 
