@@ -37,6 +37,19 @@ When a user says something like `A팀 작업 시작: AI 연결`:
 
 If the user's team is unknown, ask only which of A, B, or C they belong to. Do not teach Git before starting.
 
+### Natural-language latest-work shortcut
+
+When the user says `@최신`:
+
+1. Inspect the current branch and working tree before fetching or merging anything. Never discard, stash, reset, or overwrite user changes automatically.
+2. If tracked or untracked work is not safely recorded, stop without updating and ask the user to run `@개인저장` first.
+3. Determine the update source from the current branch: `feature/a-*`, `fix/a-*`, or `docs/a-*` uses `team-a`, and likewise for B and C. A current team branch uses its matching remote branch; `main` uses `origin/main`. If the team cannot be determined safely, ask only which team the user belongs to.
+4. Fetch the remote and verify that the matching remote team branch exists. For team work, also check whether the latest `origin/main` is already contained in that remote team branch. If it is not, do not silently mix `main` into a member branch; report that the team baseline needs the leader's synchronization first.
+5. If the current branch is `main` or a team branch, update it only with a fast-forward operation. If a non-fast-forward update would be required, stop and explain.
+6. If the current branch is an individual task branch, merge the latest matching `origin/team-*` into that individual branch without rewriting history. If a conflict occurs, abort the merge so the user's branch returns to its previous state, list the conflicting files, and ask for direction.
+7. Do not push, open a pull request, approve, or merge a GitHub pull request as part of `@최신`. It updates only the user's local computer. The user can run `@개인저장` afterward to back up the updated individual branch to GitHub.
+8. Report in plain Korean whether the local work is current, what was updated, and whether team-leader synchronization is still required.
+
 ### Natural-language save shortcuts
 
 Treat the exact shortcuts below as explicit workflow commands in Codex, Claude Code, and Antigravity. Do not require the user to know or repeat Git terminology.
