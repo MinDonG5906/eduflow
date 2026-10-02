@@ -55,13 +55,30 @@ When the user says `@팀저장` or `작업 마무리해서 팀 검토 요청 준
 1. Perform every safety and personal-save step above.
 2. Run `npm run typecheck`, `npm test`, and `npm run build`.
 3. If a check fails, keep the work safely pushed on the individual branch but do not create a pull request. Explain the failure.
-4. If all checks pass, create or update one pull request whose base is the matching team branch, never `main`.
+4. If all checks pass, create or update one pull request whose base is the matching team branch, never `main`. Its description must include a change summary, completed checks, exact review steps, expected behavior, known risks, and sanitized screen evidence for user-interface changes when capture is available. Never attach real user content, credentials, or personal information.
 5. The exact `@팀저장` command is explicit authorization to create or update that team-review pull request; do not ask for a second confirmation. It is not authorization to merge it.
 6. Let the repository automation request review from the other registered team member, and report who was requested. If no teammate is registered, explain that the work is saved but automatic reviewer assignment is waiting for the roster.
 
 The repository workflow validates the pull request route and assigns reviewers from `.github/eduflow-team.json`. Never work around a failed route check by changing the target to `main`.
 
 Never merge a personal task branch directly into `main`.
+
+### Natural-language review shortcut
+
+When the user says `@검토`:
+
+1. Treat the command as read-only review authorization. Do not approve, comment on, close, or merge a pull request, and do not modify its branch.
+2. Identify the pull request from a number or team/task named by the user. If none is named, find open EduFlow pull requests requesting review from the authenticated GitHub user. If exactly one is relevant, use it; if several are relevant, show short choices and ask which one. If none exists, report that there is no review request.
+3. Preserve the user's current files and branch. Fetch the proposed change and inspect it in a clean isolated worktree or equivalent temporary workspace. Never switch or overwrite a dirty active workspace merely to review another person's branch.
+4. Verify that the source and destination branches follow the EduFlow route, inspect the full diff, and check for unrelated files, secrets, credentials, `.env` files, personal information, destructive changes, and missing documentation.
+5. Run `npm run typecheck`, `npm test`, and `npm run build` in the isolated review workspace. A failure must be reported and may not be presented as a pass.
+6. Verify the changed behavior rather than relying only on code:
+   - For user-interface work, run the proposed version, exercise the affected flow with sample data, and show the relevant screen or before/after evidence.
+   - For API or AI work, show representative sanitized input/output, failure handling, and relevant test evidence.
+   - For documents or configuration, show the meaningful before/after diff and explain its operational effect.
+7. Compare the observed result with the pull request's expected behavior and review steps. Note anything that could not be reproduced.
+8. Return a concise Korean review report with: `변경 내용`, `실행 확인`, `자동 검사`, `위험·미확인`, and one conclusion: `승인 가능`, `수정 후 재검토`, or `검토 불가`.
+9. Even when the conclusion is `승인 가능`, wait for a separate explicit instruction such as `승인하고 팀 브랜치에 합쳐줘` before taking any approval or merge action.
 
 ### Team integration and main
 
