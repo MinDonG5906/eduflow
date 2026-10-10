@@ -41,6 +41,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { PdfPagePicker } from "@/components/pdf-page-picker";
+import { PdfPreview } from "@/components/pdf-preview";
 import {
   Dialog,
   DialogContent,
@@ -51,16 +53,30 @@ import {
 import {
   boardSchema,
   defaults,
+  audienceOptions,
   sample,
   newScene,
   markdown,
   csv,
   fieldLabels,
-  settingsSchema,
+  requestSchema,
   type Board,
   type Scene,
   type Settings,
 } from "@/lib/storyboard";
+import {
+  captureGeneration,
+  normalizeDuration,
+  readDraft,
+  retryConflict,
+  serializeDraft,
+  type GenerationJob,
+} from "@/lib/studio-state";
+
+import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResponse } from "@/lib/generation-contract";
+import { documentSchema, findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
+import { deletePdf, loadPdf, savePdf } from "@/lib/pdf-storage";
+import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 
 // Keep the original key so existing Frame drafts open in EduFlow without migration.
 const STORAGE = "frame-studio-v1";
@@ -130,14 +146,23 @@ function ScenePreview({ scene, index }: { scene: Scene; index: number }) {
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
+  const [sourceDocument, setSourceDocument] = useState<SourceDocument | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [originalPdf, setOriginalPdf] = useState<File | null>(null);
+  const [selectedPdf, setSelectedPdf] = useState<Blob | null>(null);
+  const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
+  const [pdfPickerVersion, setPdfPickerVersion] = useState(0);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [board, setBoard] = useState<Board | null>(null);
   const [view, setView] = useState<"input" | "board">("input");
   const [active, setActive] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
+  const [generator, setGenerator] = useState<{ mode: "demo" | "ai"; available: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [ready, setReady] = useState(false);
+  const [storageBlocked, setStorageBlocked] = useState(false);
+  const [failedRequest, setFailedRequest] = useState<GenerationJob | null>(null);
   const [saved, setSaved] = useState("브라우저에 자동 저장");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -150,49 +175,93 @@ export default function Studio() {
   const uploadRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const importRequestRef = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
-  const retryRef = useRef(false);
-  const valid = manuscript.replace(/\s/g, "").length >= 100 && manuscript.length <= 20000;
+  const importInFlight = useRef(false);
+  const protectedDraftRef = useRef<string | null>(null);
+  const originalPdfRef = useRef<File | null>(null);
+  const savedPdfIdRef = useRef<string | undefined>(undefined);
+  const isPdf = Boolean(sourceDocument && (sourceDocument.kind === "pdf" || /\.pdf$/i.test(sourceDocument.name)));
+  const pdfReady = isPdf && Boolean(selectedPdf) && Boolean(sourceDocument?.selectedPages?.length) && !pdfPickerOpen;
+  const valid = manuscript.length <= 20000 && (isPdf ? pdfReady : manuscript.replace(/\s/g, "").length >= 100);
   const scene = board?.scenes[active];
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
-  const canGenerate = valid && ready && !busy && !keyword.trim();
+  const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
+  const canGenerate = generator?.available && (!isPdf || generator.mode === "ai") && valid && ready && !busy && !importing && !documentPending && !keyword.trim() && !storageBlocked;
   const notify = (text: string) => setNotice(text);
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/generate", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        const status = await response.json();
+        if (!["ai", "demo"].includes(status.mode) || typeof status.available !== "boolean") throw new Error();
+        setGenerator({ mode: status.mode, available: status.available });
+      }).catch(() => { if (!controller.signal.aborted) setError("생성 연결 상태를 확인하지 못했습니다. 화면을 새로고침해 주세요."); });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    let stored: string | null = null;
     try {
-      const stored = localStorage.getItem(STORAGE);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const s = settingsSchema.safeParse(parsed.settings);
-        const b = parsed.board ? boardSchema.safeParse(parsed.board) : null;
-        if (typeof parsed.manuscript !== "string" || !s.success || (b && !b.success))
-          throw new Error();
+      stored = localStorage.getItem(STORAGE);
+      if (stored !== null) {
+        const parsed = readDraft(stored);
         setManuscript(parsed.manuscript);
-        setSettings(s.data);
-        if (b?.success) {
-          setBoard(b.data);
+        setSettings(parsed.settings);
+        setSourceDocument(parsed.document ?? null);
+        savedPdfIdRef.current = parsed.document?.fileId;
+        if (parsed.board) {
+          setBoard(parsed.board);
           setView("board");
         }
         setSaved("이전 작업을 복구했어요");
       }
     } catch {
+      protectedDraftRef.current = stored;
+      setStorageBlocked(true);
+      setSaved("기존 저장 데이터 보호 중");
       setError(
-        "저장된 작업을 복구하지 못했습니다. 새로 입력하거나 기존 내보내기 파일을 확인해 주세요.",
+        "저장된 작업을 복구하지 못해 자동 저장을 중지했습니다. 저장 원본을 내려받은 뒤 새 스토리보드로 시작해 주세요.",
       );
     }
     setReady(true);
   }, []);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || storageBlocked) return;
+    let content: string;
     try {
-      localStorage.setItem(STORAGE, JSON.stringify({ manuscript, settings, board }));
+      content = serializeDraft({ manuscript, settings, board, ...(sourceDocument ? { document: sourceDocument } : {}) });
+    } catch {
+      setSaved("자동 저장 보류");
+      setFailedRequest(null);
+      setError("입력값을 저장할 수 없습니다. 장면 시간과 생성 조건을 확인해 주세요. 기존 저장 내용은 유지됩니다.");
+      return;
+    }
+    try {
+      localStorage.setItem(STORAGE, content);
+      const previousPdfId = savedPdfIdRef.current;
+      savedPdfIdRef.current = sourceDocument?.fileId;
+      if (previousPdfId && previousPdfId !== sourceDocument?.fileId) void deletePdf(previousPdfId).catch(() => {});
       setSaved("모든 변경사항 저장됨");
     } catch {
       setSaved("자동 저장 실패");
+      setFailedRequest(null);
       setError("브라우저 저장 공간이 부족하거나 저장이 차단되어 있습니다. 결과를 내보내 주세요.");
     }
-  }, [manuscript, settings, board, ready]);
+  }, [manuscript, settings, board, sourceDocument, ready, storageBlocked]);
+  useEffect(() => {
+    const id = sourceDocument?.fileId;
+    if (!id) return;
+    let cancelled = false;
+    loadPdf(id).then((file) => {
+      if (cancelled) return;
+      setSelectedPdf(file ?? null);
+      if (!file) setError("저장된 PDF를 찾지 못했습니다. 원본 PDF를 다시 불러와 페이지를 선택해 주세요.");
+    }).catch(() => { if (!cancelled) setError("저장된 PDF를 열지 못했습니다. PDF를 다시 불러와 주세요."); });
+    return () => { cancelled = true; };
+  }, [sourceDocument?.fileId]);
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(""), 4000);
@@ -203,7 +272,10 @@ export default function Studio() {
     const t = setInterval(() => setProgress((p) => Math.min(p + 9, 90)), 180);
     return () => clearInterval(t);
   }, [busy]);
-  useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => () => {
+    requestRef.current?.abort();
+    importRequestRef.current?.abort();
+  }, []);
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [view]);
@@ -260,30 +332,82 @@ export default function Studio() {
     );
   }
   function loadSample() {
+    setSourceDocument(null);
+    clearPdf();
     setManuscript(sample);
     notify("탄소중립 교육 원고를 불러왔어요. 자유롭게 수정해 보세요.");
   }
   async function importFile(file?: File) {
-    if (!file) return;
+    if (!file || importInFlight.current || busy || storageBlocked) return;
+    importInFlight.current = true;
+    const controller = new AbortController();
+    importRequestRef.current = controller;
+    setImporting(true);
+    setError("");
     try {
-      if (!file.name.toLowerCase().endsWith(".txt"))
-        throw new Error("TXT 파일만 불러올 수 있습니다.");
-      if (file.size > 100000)
-        throw new Error("파일이 너무 큽니다. 20,000자 이하의 원고를 선택해 주세요.");
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
-      if (text.includes("\0")) throw new Error("텍스트 파일을 확인해 주세요.");
-      setManuscript(text);
-      notify(`${file.name}을 불러왔어요.`);
+      if (!/\.(txt|pdf|docx)$/i.test(file.name))
+        throw new Error("PDF, Word(.docx), TXT 파일을 지원합니다. HWP·DOC는 PDF 또는 DOCX로 저장해 주세요.");
+      const response = await fetch("/api/documents", {
+        method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Document-Name": encodeURIComponent(file.name) },
+        body: file, signal: controller.signal,
+      });
+      const raw = await response.json();
+      if (!response.ok) throw new Error(typeof raw.error === "string" ? raw.error : "문서를 읽지 못했습니다.");
+      const document = documentSchema.parse(raw);
+      controller.signal.throwIfAborted();
+      clearPdf();
+      if (document.kind === "pdf") {
+        setPdfPickerVersion((version) => version + 1);
+        setOriginalPdf(file); originalPdfRef.current = file; setPdfPickerOpen(true);
+      }
+      setSourceDocument({ ...document, appliedQuery: "" });
+      setManuscript(document.kind !== "pdf" && document.text.length <= MAX_MANUSCRIPT_CHARS ? document.text : "");
+      setFailedRequest(null);
+      notify(document.kind === "pdf" ? "PDF를 열었어요. AI에 보낼 페이지를 먼저 선택해 주세요." : document.text.length <= MAX_MANUSCRIPT_CHARS ? `${file.name}의 내용을 불러왔어요. 원하는 부분만 찾아서 제작할 수도 있어요.` : `${file.name}을 읽었어요. 제작할 부분을 입력해 원고로 가져와 주세요.`);
     } catch (e) {
-      setError(
-        e instanceof TypeError
-          ? "파일 인코딩을 읽을 수 없습니다. UTF-8 TXT 파일로 저장해 주세요."
-          : e instanceof Error
-            ? e.message
-            : "파일을 읽을 수 없습니다.",
-      );
+      setFailedRequest(null);
+      if (controller.signal.aborted) notify("문서 불러오기를 취소했어요. 기존 원고를 유지합니다.");
+      else setError(e instanceof Error ? e.message : "파일을 읽을 수 없습니다.");
+    } finally {
+      importRequestRef.current = null;
+      importInFlight.current = false;
+      setImporting(false);
+      if (uploadRef.current) uploadRef.current.value = "";
     }
-    if (uploadRef.current) uploadRef.current.value = "";
+  }
+  function clearPdf() {
+    setOriginalPdf(null); originalPdfRef.current = null;
+    setSelectedPdf(null); setPdfPickerOpen(false);
+  }
+  async function applyPdfPages(blob: Blob, pages: number[]) {
+    const original = originalPdf;
+    if (!original || originalPdfRef.current !== original) return;
+    const id = crypto.randomUUID();
+    let storedId: string | undefined;
+    try { await savePdf(id, blob); storedId = id; }
+    catch { setError("PDF는 현재 화면에서 사용할 수 있지만 브라우저에 저장하지 못했습니다. 새로고침하면 다시 첨부해 주세요."); }
+    if (originalPdfRef.current !== original) { if (storedId) void deletePdf(storedId).catch(() => {}); return; }
+    setSelectedPdf(blob);
+    setSourceDocument((document) => document ? { ...document, selectedPages: pages, fileId: storedId } : document);
+    setPdfPickerOpen(false); setFailedRequest(null);
+    notify(`원본 ${pages.join(", ")}페이지를 선택했어요. 제작 요청과 설정을 확인한 뒤 생성해 주세요.`);
+  }
+  function findDocumentPart() {
+    if (!sourceDocument) return;
+    try {
+      const result = findDocumentExcerpt(sourceDocument, sourceDocument.query);
+      setManuscript(result.excerpt);
+      setSourceDocument({ ...sourceDocument, appliedQuery: sourceDocument.query.trim() });
+      setError("");
+      setFailedRequest(null);
+      notify(`“${result.topic}” 관련 ${result.matches}곳을 원고로 가져왔어요. 내용을 확인한 뒤 생성해 주세요.`);
+    } catch (e) { setError(e instanceof Error ? e.message : "요청한 부분을 찾지 못했습니다."); }
+  }
+  function useWholeDocument() {
+    if (!sourceDocument || sourceDocument.text.length > MAX_MANUSCRIPT_CHARS) return;
+    setManuscript(sourceDocument.text);
+    setSourceDocument({ ...sourceDocument, query: "", appliedQuery: "" });
+    setError("");
   }
   function addKeyword() {
     const k = keyword.trim();
@@ -299,48 +423,51 @@ export default function Studio() {
     if (!settings.keywords.includes(k)) setting("keywords", [...settings.keywords, k]);
     setKeyword("");
   }
-  async function generate(regenerate = false) {
-    if (!valid || inFlight.current) return;
+  async function generate(regenerate = false, retry?: GenerationJob) {
+    if (inFlight.current || importInFlight.current || storageBlocked || !generator?.available) return;
+    if (!retry && (!valid || documentPending || (isPdf && generator.mode !== "ai") || (regenerate && !scene))) return;
+    const job = retry ?? captureGeneration({
+      manuscript,
+      settings,
+      ...(isPdf && sourceDocument ? { pdfSource: { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, sourceRequest: sourceDocument.query.trim() } : sourceDocument?.appliedQuery ? { sourceRequest: sourceDocument.appliedQuery } : {}),
+      ...(regenerate ? { scene, direction } : {}),
+    }, board, isPdf ? selectedPdf ?? undefined : undefined);
+    setFailedRequest(null);
+    const conflict = retry ? retryConflict(job, board) : null;
+    if (conflict || !requestSchema.safeParse(job.input).success) {
+      setError(conflict || "원고와 생성 조건을 확인해 주세요.");
+      return;
+    }
     inFlight.current = true;
-    retryRef.current = regenerate;
     setError("");
     setBusy(true);
     setProgress(12);
     setModal(null);
     const controller = new AbortController();
     requestRef.current = controller;
-    const timeout = setTimeout(() => controller.abort("timeout"), 20000);
-    const sceneId = regenerate ? scene?.id : undefined;
+    const timeout = setTimeout(() => controller.abort("timeout"), CLIENT_TIMEOUT_MS);
+    const sceneId = job.input.scene?.id;
     try {
-      let result: Board | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const response = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            manuscript,
-            settings,
-            ...(regenerate ? { scene, direction } : {}),
-          }),
-          signal: controller.signal,
-        });
-        if (!response.ok)
-          throw new Error(
-            response.status === 400
-              ? "원고와 생성 조건을 확인해 주세요."
-              : "생성 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-          );
-        const parsed = boardSchema.safeParse(await response.json());
-        if (parsed.success) {
-          result = parsed.data;
-          break;
-        }
+      let body: string | FormData = JSON.stringify(job.input);
+      if (job.input.pdfSource) {
+        if (!job.pdf) throw new GenerationError("PDF_NOT_ATTACHED");
+        const form = new FormData(); form.set("input", JSON.stringify(job.input));
+        form.set("pdf", job.pdf, "selected-pages.pdf"); body = form;
       }
-      if (!result)
-        throw new Error(
-          "초안의 형식이 올바르지 않습니다. 기존 작업은 유지됩니다. 다시 시도해 주세요.",
-        );
-      if (regenerate) {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        ...(typeof body === "string" ? { headers: { "Content-Type": "application/json" } } : {}),
+        body,
+        signal: controller.signal,
+      });
+      const raw = await response.json();
+      if (!response.ok) {
+        const failure = apiErrorSchema.safeParse(raw);
+        throw new GenerationError(failure.success ? failure.data.code : "INTERNAL_ERROR",
+          failure.success ? failure.data.inputUsage : undefined);
+      }
+      const result = parseGenerationResponse(raw, job.input);
+      if (job.input.scene) {
         const replacement = result.scenes[0];
         setBoard((b) =>
           b
@@ -350,7 +477,9 @@ export default function Studio() {
               }
             : b,
         );
-        notify("선택한 장면의 초안을 새로 구성했어요.");
+        const targetIndex = board?.scenes.findIndex((s) => s.id === sceneId);
+        if (targetIndex !== undefined && targetIndex >= 0) setActive(targetIndex);
+        notify("요청한 장면의 초안을 새로 구성했어요.");
       } else {
         setBoard(result);
         setActive(0);
@@ -364,7 +493,8 @@ export default function Studio() {
     } catch (e) {
       if (controller.signal.aborted && controller.signal.reason !== "timeout")
         notify("생성을 취소했어요. 기존 작업은 유지됩니다.");
-      else
+      else {
+        if (!(e instanceof GenerationError) || e.retryable) setFailedRequest(job);
         setError(
           controller.signal.aborted
             ? "요청 시간이 초과되었습니다. 다시 시도해 주세요."
@@ -374,6 +504,7 @@ export default function Studio() {
                 ? e.message
                 : "생성에 실패했습니다. 다시 시도해 주세요.",
         );
+      }
     } finally {
       clearTimeout(timeout);
       inFlight.current = false;
@@ -410,6 +541,8 @@ export default function Studio() {
   function reset() {
     requestRef.current?.abort();
     setManuscript("");
+    setSourceDocument(null);
+    clearPdf();
     setSettings(defaults);
     setBoard(null);
     setView("input");
@@ -418,7 +551,25 @@ export default function Studio() {
     setError("");
     setKeyword("");
     setDirection("");
+    setFailedRequest(null);
+    protectedDraftRef.current = null;
+    setStorageBlocked(false);
     notify("새 작업을 시작합니다.");
+  }
+  function downloadProtectedDraft() {
+    const raw = protectedDraftRef.current;
+    if (raw === null) return;
+    try {
+      const url = URL.createObjectURL(new Blob([raw], { type: "application/json;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "eduflow-saved-draft.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify("기존 저장 원본을 내보냈어요.");
+    } catch {
+      setError("저장 원본을 내려받지 못했습니다. 기존 저장 데이터는 계속 보호됩니다. 브라우저 다운로드 권한을 확인해 주세요.");
+    }
   }
   async function exportBoard(format: "md" | "csv" | "copy") {
     if (!board) return;
@@ -440,7 +591,11 @@ export default function Studio() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
     } catch {
-      setError("내보내기에 실패했습니다. 브라우저의 다운로드 또는 클립보드 권한을 확인해 주세요.");
+      setModal(null);
+      setFailedRequest(null);
+      setError(format === "copy"
+        ? "복사할 수 없습니다. 브라우저의 클립보드 권한을 확인하거나 Markdown 파일로 내려받아 주세요."
+        : "내보내기에 실패했습니다. 브라우저의 다운로드 권한을 확인해 주세요.");
     }
   }
 
@@ -463,7 +618,7 @@ export default function Studio() {
           variant="outline"
           className="new-work"
           onClick={() => setModal("new")}
-          disabled={busy}
+          disabled={busy || importing}
         >
           <Plus size={17} /> 새 스토리보드
         </Button>
@@ -540,7 +695,7 @@ export default function Studio() {
             </span>
             <span className="demo-badge">
               <span />
-              데모 모드
+              {generator?.mode === "ai" ? (generator.available ? "OpenAI 연결" : "OpenAI 키 설정 필요") : generator ? "데모 모드" : "연결 확인 중"}
             </span>
           </div>
         </header>
@@ -574,18 +729,23 @@ export default function Studio() {
               <span>3</span> 내보내기
             </button>
           </nav>
-          {error && (
+          {(error || storageBlocked) && (
             <div className="error-banner" role="alert">
               <AlertCircle size={18} />
-              <span>{error}</span>
-              {valid && (
-                <Button variant="ghost" onClick={() => generate(retryRef.current)} disabled={busy}>
+              <span>{error || "기존 저장 데이터를 보호하기 위해 자동 저장이 중지되어 있습니다."}</span>
+              {storageBlocked && protectedDraftRef.current !== null && (
+                <Button variant="ghost" onClick={downloadProtectedDraft}>
+                  저장 원본 다운로드
+                </Button>
+              )}
+              {failedRequest && !storageBlocked && (
+                <Button variant="ghost" onClick={() => generate(false, failedRequest)} disabled={busy}>
                   다시 시도
                 </Button>
               )}
-              <button aria-label="오류 닫기" onClick={() => setError("")}>
+              {!storageBlocked && <button aria-label="오류 닫기" onClick={() => { setError(""); setFailedRequest(null); }}>
                 <X size={16} />
-              </button>
+              </button>}
             </div>
           )}
           {view === "input" ? (
@@ -610,7 +770,7 @@ export default function Studio() {
                       variant="ghost"
                       className="sample-button"
                       onClick={loadSample}
-                      disabled={busy}
+                      disabled={busy || importing || storageBlocked}
                     >
                       <BookOpen size={15} /> 샘플 원고 사용
                     </Button>
@@ -619,41 +779,85 @@ export default function Studio() {
                     <span>
                       <PencilLine size={14} /> 직접 입력
                     </span>
-                    <button onClick={() => uploadRef.current?.click()} disabled={busy}>
-                      <Upload size={14} /> TXT 파일 불러오기
+                    <button onClick={() => uploadRef.current?.click()} disabled={busy || importing || storageBlocked}>
+                      <Upload size={14} /> {importing ? "문서 읽는 중…" : "파일 불러오기"}
                     </button>
+                    {importing && <button onClick={() => importRequestRef.current?.abort()}>불러오기 취소</button>}
                     <input
                       ref={uploadRef}
                       type="file"
-                      accept=".txt,text/plain"
+                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       className="sr-only"
-                      aria-label="TXT 원고 불러오기"
+                      aria-label="PDF, Word, TXT 원고 불러오기"
+                      disabled={busy || importing || storageBlocked}
                       onChange={(e) => importFile(e.target.files?.[0])}
                     />
                   </div>
+                  <p className="file-formats" role="status">PDF · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 큰 문서는 읽는 데 시간이 걸릴 수 있습니다."}</p>
+                  {sourceDocument && (
+                    <div className="document-source">
+                      <div className="document-source-heading">
+                        <FileText size={16} />
+                        <div><strong>{sourceDocument.name}</strong><small>{isPdf ? `원본 PDF · ${sourceDocument.pages}페이지 · 표·그림 포함` : `${sourceDocument.text.length.toLocaleString()}자 읽음`}</small></div>
+                        <button className="icon-button" aria-label="첨부 문서 해제" disabled={busy || importing} onClick={() => { setSourceDocument(null); clearPdf(); }}><X size={15} /></button>
+                      </div>
+                      {isPdf ? <>
+                        {pdfPickerOpen && originalPdf && sourceDocument.pages ?
+                          <PdfPagePicker key={pdfPickerVersion} file={originalPdf} total={sourceDocument.pages} initialPages={sourceDocument.selectedPages ?? []}
+                            onSelect={applyPdfPages} onCancel={() => setPdfPickerOpen(false)} /> :
+                          <div className="pdf-selection-summary">
+                            <strong>{sourceDocument.selectedPages?.length ? `원본 ${sourceDocument.selectedPages.join(", ")}페이지 선택됨` : "먼저 AI에 보낼 PDF 페이지를 선택해 주세요."}</strong>
+                            <Button variant="outline" disabled={busy || importing} onClick={() => originalPdf ? setPdfPickerOpen(true) : uploadRef.current?.click()}>{originalPdf ? "페이지 선택" : "원본 PDF 다시 불러오기"}</Button>
+                            {!originalPdf && <small>선택한 PDF는 브라우저에서 복구됩니다. 페이지를 변경하려면 원본 PDF를 다시 불러와 주세요.</small>}
+                          </div>}
+                        {!pdfPickerOpen && selectedPdf && <><PdfPreview file={selectedPdf} page={1} label={`선택 PDF 첫 페이지 · 원본 ${sourceDocument.selectedPages?.[0]}페이지`} /><p className="pdf-preview-caption">선택본 첫 페이지 미리보기 · 원본 {sourceDocument.selectedPages?.[0]}페이지</p></>}
+                        <label className="form-field" htmlFor="document-request">
+                          <span>선택한 페이지로 어떤 교육을 만들까요? <small>선택</small></span>
+                          <Textarea id="document-request" value={sourceDocument.query} maxLength={500} disabled={busy || importing}
+                            onChange={(e) => setSourceDocument({ ...sourceDocument, query: e.target.value })}
+                            placeholder="예: 산업안전수칙을 중심으로, 표와 그림의 의미를 풀어서 설명해 주세요."
+                            aria-describedby="document-request-hint" />
+                        </label>
+                        <p id="document-request-hint">{generator?.mode === "demo" ? "표·그림을 읽는 PDF 생성에는 실제 AI 연결이 필요합니다. 무료 데모에서는 생성하지 않습니다." : "AI가 선택한 PDF의 글자·표·그림·배치를 읽고 판단합니다. 오른쪽 교육대상·난이도·길이 설정을 함께 적용합니다."}</p>
+                      </> : <>
+                      <label className="form-field" htmlFor="document-request">
+                        <span>문서에서 어떤 부분을 제작할까요?</span>
+                        <Textarea id="document-request" value={sourceDocument.query} maxLength={500} disabled={busy || importing}
+                          onChange={(e) => setSourceDocument({ ...sourceDocument, query: e.target.value })}
+                          placeholder="예: 올려둔 PDF 파일에서 산업안전수칙 부분을 제작하고 싶어"
+                          aria-describedby="document-request-hint" />
+                      </label>
+                      <div className="document-source-actions">
+                        <Button variant="outline" disabled={busy || importing || !sourceDocument.query.trim()} onClick={findDocumentPart}>요청한 부분 찾기 <ArrowDown size={14} /></Button>
+                        {sourceDocument.text.length <= MAX_MANUSCRIPT_CHARS && <button disabled={busy || importing} onClick={useWholeDocument}>문서 전체 사용</button>}
+                      </div>
+                      <p id="document-request-hint">{documentPending ? "요청을 변경했습니다. ‘요청한 부분 찾기’로 원고에 반영해 주세요." : sourceDocument.appliedQuery ? "찾은 내용이 아래 원고에 반영되었습니다. 확인·수정한 뒤 생성해 주세요." : sourceDocument.text.length > MAX_MANUSCRIPT_CHARS ? "긴 문서입니다. 제목이나 핵심 단어로 제작 범위를 좁혀 주세요." : "문서 전체를 사용하거나, 제목·핵심 단어로 필요한 부분을 찾을 수 있습니다."}</p>
+                      </>}
+                    </div>
+                  )}
                   <div
                     className="manuscript-editor"
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      if (!busy) importFile(e.dataTransfer.files[0]);
+                      if (!busy && !importing) importFile(e.dataTransfer.files[0]);
                     }}
                   >
                     <label className="sr-only" htmlFor="manuscript">
-                      교육 원고
+                      {isPdf ? "PDF에 덧붙일 설명 (선택)" : "교육 원고"}
                     </label>
                     <textarea
                       id="manuscript"
                       aria-describedby="manuscript-hint"
-                      aria-invalid={Boolean(manuscript) && !valid}
+                      aria-invalid={Boolean(manuscript) && (manuscript.length > 20000 || (!isPdf && !valid))}
                       value={manuscript}
                       onChange={(e) => setManuscript(e.target.value)}
-                      disabled={busy}
+                      disabled={busy || importing || storageBlocked}
                       placeholder={
-                        "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
+                        isPdf ? "PDF에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 PDF 페이지를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다." : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
                       }
                     />
-                    {!manuscript && (
+                    {!manuscript && !isPdf && (
                       <div className="editor-empty">
                         <div className="empty-illustration">
                           <div />
@@ -663,7 +867,7 @@ export default function Studio() {
                           </span>
                         </div>
                         <p>아이디어가 장면이 되는 곳</p>
-                        <small>원고를 작성하거나 TXT 파일을 여기에 놓아 주세요.</small>
+                        <small>원고를 작성하거나 PDF·Word·TXT 파일을 여기에 놓아 주세요.</small>
                       </div>
                     )}
                   </div>
@@ -671,9 +875,10 @@ export default function Studio() {
                     <span id="manuscript-hint" className={manuscript.length > 20000 ? "invalid" : ""}>
                       {manuscript.length > 20000
                         ? `${(manuscript.length - 20000).toLocaleString()}자 초과`
+                        : isPdf ? "PDF에 덧붙일 설명 · 선택 입력"
                         : manuscript && !valid
                           ? "공백 제외 100자 이상 입력해 주세요"
-                          : "공백 제외 최소 100자 · TXT 지원"}
+                          : "공백 제외 최소 100자 · PDF·Word·TXT 지원"}
                     </span>
                     <span>
                       <strong>{manuscript.length.toLocaleString()}</strong> / 20,000자
@@ -716,13 +921,7 @@ export default function Studio() {
                     <SelectField
                       label="누구를 위한 교육인가요?"
                       value={settings.audience}
-                      options={[
-                        "초등 저학년",
-                        "초등 고학년",
-                        "중고등학생",
-                        "대학생/일반인",
-                        "실무자/전문가",
-                      ]}
+                      options={[...audienceOptions]}
                       onChange={(v) => setting("audience", v as Settings["audience"])}
                     />
                     <div className="form-field">
@@ -837,7 +1036,7 @@ export default function Studio() {
                         placeholder="예: 실천 방법을 중심으로 구성해 주세요."
                       />
                       <small>
-                        {settings.instructions.length} / 500자 · 데모에서는 제작 메모로 반영
+                        {settings.instructions.length} / 500자 · {generator?.mode === "ai" ? "AI 생성에 반영" : "데모에서는 제작 메모로 반영"}
                       </small>
                     </details>
                   </fieldset>
@@ -862,15 +1061,15 @@ export default function Studio() {
                   disabled={!canGenerate}
                   onClick={() => generate()}
                 >
-                  <Sparkles size={17} /> 스토리보드 생성 <ArrowRight size={17} />
+                  <Sparkles size={17} /> {isPdf ? "선택한 PDF로 생성" : "스토리보드 생성"} <ArrowRight size={17} />
                 </Button>
               </div>
               <div className="bottom-note">
                 <ShieldCheck size={13} />
-                <span>작업은 이 브라우저에 자동 저장됩니다.</span>
+                <span>{storageBlocked ? "기존 저장 원본을 보호하는 동안 자동 저장이 중지됩니다." : "작업은 이 브라우저에 자동 저장됩니다."}</span>
                 <span className="note-dot">·</span>
                 <span>
-                  데모 모드에서는 원문 발췌 기반 초안을 생성하며, 외부 AI로 전송하지 않습니다.
+                  {generator?.mode === "ai" ? isPdf ? "생성 시 선택한 PDF 페이지·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택된 PDF는 이 브라우저에 저장됩니다." : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
                 </span>
               </div>
             </>
@@ -926,6 +1125,9 @@ export default function Studio() {
                       콘텐츠 개요 <ChevronDown size={16} className={overview ? "rotate" : ""} />
                     </button>
                   </div>
+                  {board.generation?.warnings.filter((warning) => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map((warning) => (
+                    <p key={warning} className="term-correction-notice" role="status">{warning}</p>
+                  ))}
                   {overview && (
                     <div className="overview-edit">
                       <label>
@@ -948,6 +1150,7 @@ export default function Studio() {
                         />
                       </label>
                       <div className="settings-summary">
+                        {board.pdfSource && <p>원본 PDF: {board.pdfSource.name} · {board.pdfSource.pages.join(", ")}페이지</p>}
                         {board.settings.difficulty} · 목표 {board.settings.minutes}분 ·{" "}
                         {board.settings.tone} · {board.settings.language}
                         {board.settings.keywords.length > 0 &&
@@ -1095,11 +1298,12 @@ export default function Studio() {
                               type="number"
                               min={1}
                               max={600}
+                              step={1}
                               value={scene.duration}
                               onChange={(e) =>
                                 updateScene(
                                   "duration",
-                                  Math.min(600, Math.max(1, Number(e.target.value) || 1)),
+                                  normalizeDuration(e.target.value),
                                 )
                               }
                             />
@@ -1132,6 +1336,7 @@ export default function Studio() {
                                   <span className="source-tag">{scene.sourceId}</span>
                                 )}
                               </label>
+                              {key === "evidence" && scene.pdfSource && <small>원본 PDF: {scene.pdfSource.name}</small>}
                               <Textarea
                                 id={`field-${key}`}
                                 value={scene[key]}
@@ -1144,7 +1349,7 @@ export default function Studio() {
                       <div className="scene-editor-footer">
                         <Button
                           variant="outline"
-                          disabled={!valid || busy}
+                          disabled={!canGenerate}
                           onClick={() => {
                             setDirection("");
                             setModal("regenerate");
@@ -1164,7 +1369,7 @@ export default function Studio() {
                   )}
                 </div>
                 <div className="bottom-note">
-                  <Sparkles size={13} /> 데모 초안입니다. 원문의 의미와 교육 대상에 맞는 표현인지
+                  <Sparkles size={13} /> {scene?.generation?.mode === "ai" || (!scene?.generation && board?.mode === "ai") ? "AI" : "데모"} 초안입니다. 원문의 의미와 교육 대상에 맞는 표현인지
                   확인한 후 사용해 주세요.
                 </div>
               </>
@@ -1198,20 +1403,20 @@ export default function Studio() {
               입력한 원고에서 핵심 내용을 나누고 초안을 구성합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="progress-track">
+          <div className={`progress-track ${generator?.mode === "ai" ? "ai-pending" : ""}`}>
             <div style={{ width: `${progress}%` }} />
           </div>
           <div className="progress-label">
             <span>
-              {progress < 35
+              {generator?.mode === "ai" ? "AI 응답을 기다린 뒤 필수 항목과 원문 근거를 확인합니다" : progress < 35
                 ? "원고의 흐름을 살펴보고 있어요"
                 : progress < 70
                   ? "장면별 내용을 구성하고 있어요"
                   : "원문 근거와 필수 항목을 확인하고 있어요"}
             </span>
-            <span>{progress}%</span>
+            <span>{generator?.mode === "ai" ? "생성 대기 중" : `${progress}%`}</span>
           </div>
-          <p>원문 발췌 데모 · 외부 AI 전송 없음</p>
+          <p>{generator?.mode === "ai" ? "OpenAI로 생성 중 · 최대 90초 · 취소해도 이미 시작한 호출에는 비용이 발생할 수 있습니다" : "원문 발췌 데모 · 외부 AI 전송 없음"}</p>
           <Button variant="ghost" onClick={() => requestRef.current?.abort()}>
             생성 취소
           </Button>
@@ -1322,13 +1527,13 @@ export default function Studio() {
                   onChange={(e) => setDirection(e.target.value)}
                   placeholder="예: 핵심 개념을 더 크게 강조해 주세요."
                 />
-                <small>{direction.length} / 300자 · 데모에서는 제작 메모로 반영됩니다.</small>
+                <small>{direction.length} / 300자 · {generator?.mode === "ai" ? "AI 재생성에 반영됩니다." : "데모에서는 제작 메모로 반영됩니다."}</small>
               </label>
               <div className="modal-actions">
                 <Button variant="outline" onClick={() => setModal(null)}>
                   취소
                 </Button>
-                <Button onClick={() => generate(true)}>
+                <Button disabled={!canGenerate} onClick={() => generate(true)}>
                   <Sparkles size={15} /> 교체하고 재생성
                 </Button>
               </div>
@@ -1350,8 +1555,7 @@ export default function Studio() {
                 <li>
                   <strong>원고를 준비하세요</strong>
                   <p>
-                    100자 이상의 원고를 붙여 넣거나 TXT 파일을 불러오세요. 샘플 원고로 바로 체험할
-                    수도 있어요.
+                    PDF를 불러오면 AI에 보낼 페이지를 먼저 선택합니다. 표·그림이 포함된 선택 페이지로 생성하며, 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
                   </p>
                 </li>
                 <li>
@@ -1373,9 +1577,9 @@ export default function Studio() {
               <div className="help-demo">
                 <Sparkles size={16} />
                 <p>
-                  현재는 <strong>원문 발췌 데모</strong>입니다. 실제 AI 생성·번역은 연결되어 있지
-                  않으며, 추가 지시는 제작 메모로 반영됩니다. 원고는 로컬 서버에서 처리하고 현재
-                  브라우저에 저장합니다.
+                  {generator?.mode === "ai"
+                    ? "OpenAI로 초안을 생성합니다. 원고·설정·선택 장면·추가 지시가 OpenAI에 전송되며, 생성 결과는 현재 브라우저에 저장합니다. AI 결과는 원문과 대조한 뒤 사용해 주세요."
+                    : "원문 발췌 데모입니다. 추가 지시는 제작 메모로 반영됩니다. 원고는 로컬 서버에서 처리하고 현재 브라우저에 저장합니다."}
                 </p>
               </div>
             </div>

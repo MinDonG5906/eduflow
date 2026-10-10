@@ -1,7 +1,17 @@
 import { z } from "zod";
+import { pdfSourceSchema } from "./pdf-source";
 
+export const audienceOptions = [
+  "산업현장 근무자",
+  "현장 방문자 · 일반인",
+  "현장 방문자 · 기업 관계자",
+  "현장 방문자 · 외부 하청업체",
+  "외국인 근로자",
+] as const;
+const legacyAudiences = ["초등 저학년", "초등 고학년", "중고등학생", "대학생/일반인", "실무자/전문가"] as const;
 export const settingsSchema = z.object({
-  audience: z.enum(["초등 저학년", "초등 고학년", "중고등학생", "대학생/일반인", "실무자/전문가"]),
+  // Historical boards retain their original audience; the UI uses audienceOptions.
+  audience: z.enum([...audienceOptions, ...legacyAudiences]),
   difficulty: z.enum(["쉬움", "보통", "심화"]),
   minutes: z.number().int().min(1).max(10),
   count: z.union([z.literal("auto"), z.number().int().min(3).max(20)]),
@@ -12,7 +22,7 @@ export const settingsSchema = z.object({
 });
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
-  audience: "대학생/일반인",
+  audience: "산업현장 근무자",
   difficulty: "보통",
   minutes: 3,
   count: "auto",
@@ -21,6 +31,14 @@ export const defaults: Settings = {
   language: "한국어",
   instructions: "",
 };
+export const generationRecordSchema = z.object({
+  contractVersion: z.literal("eduflow-generation-v1"),
+  model: z.string().min(1).max(100),
+  promptVersion: z.string().min(1).max(100),
+  createdAt: z.string().datetime(),
+  attempts: z.number().int().min(1).max(2),
+  mode: z.enum(["demo", "ai"]),
+});
 export const sceneSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -35,26 +53,33 @@ export const sceneSchema = z.object({
   review: z.boolean(),
   reviewReason: z.string(),
   edited: z.array(z.string()),
+  generation: generationRecordSchema.optional(),
+  pdfSource: pdfSourceSchema.optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
+export const generationMetaSchema = generationRecordSchema.extend({
+  repairedScenes: z.array(z.number().int().min(1).max(20)).max(20),
+  warnings: z.array(z.string().max(300)).max(30),
+});
 export const boardSchema = z.object({
   title: z.string(),
   summary: z.string(),
   objectives: z.array(z.string()).min(1).max(5),
   scenes: z.array(sceneSchema).min(1).max(30),
   settings: settingsSchema,
-  mode: z.literal("demo"),
+  mode: z.enum(["demo", "ai"]),
+  generation: generationMetaSchema.optional(),
+  pdfSource: pdfSourceSchema.optional(),
 });
 export type Board = z.infer<typeof boardSchema>;
 export const requestSchema = z.object({
-  manuscript: z
-    .string()
-    .max(20000)
-    .refine((v) => v.replace(/\s/g, "").length >= 100),
+  manuscript: z.string().max(20000),
+  pdfSource: pdfSourceSchema.optional(),
   settings: settingsSchema,
+  sourceRequest: z.string().trim().max(500).optional(),
   scene: sceneSchema.optional(),
   direction: z.string().max(300).optional(),
-});
+}).refine((input) => Boolean(input.pdfSource) || input.manuscript.replace(/\s/g, "").length >= 100, { path: ["manuscript"] });
 
 export const sample = `일상에서 시작하는 탄소중립
 
@@ -88,6 +113,21 @@ export function newScene(): Scene {
   };
 }
 
+export function manuscriptSource(manuscript: string) {
+  const lines = manuscript.trim().split(/\n+/).map((s) => s.trim()).filter((s) => s && !/^\[PDF \d+페이지\]$/.test(s));
+  if (!lines.length) return { title: "문서 원고", sentences: [] as string[] };
+  // Section search adds a title before the excerpt; keep a repeated source heading out of narration.
+  if (lines[1] === lines[0]) lines.splice(1, 1);
+  const title = lines[0].length < 70 ? lines[0] : lines[0].slice(0, 40);
+  const body = lines.length > 1 && lines[0].length < 70 ? lines.slice(1).join("\n\n") : manuscript.trim();
+  const sentences = body.match(/[^.!?。！？\n]+[.!?。！？]?/g)?.map((s) => s.trim()).filter(Boolean) || [body];
+  return { title, sentences };
+}
+
+export function targetSceneCount(settings: Settings) {
+  return settings.count === "auto" ? Math.max(3, Math.min(12, settings.minutes * 2)) : settings.count;
+}
+
 // Deliberately extractive: this prototype never invents claims or simulates a live model.
 export function generateDemo(
   manuscript: string,
@@ -95,20 +135,8 @@ export function generateDemo(
   current?: Scene,
   direction = "",
 ): Board {
-  const lines = manuscript
-    .trim()
-    .split(/\n+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const title = lines[0].length < 70 ? lines[0] : lines[0].slice(0, 40);
-  const body =
-    lines.length > 1 && lines[0].length < 70 ? lines.slice(1).join("\n\n") : manuscript.trim();
-  const sentences = body
-    .match(/[^.!?。！？\n]+[.!?。！？]?/g)
-    ?.map((s) => s.trim())
-    .filter(Boolean) || [body];
-  const count =
-    settings.count === "auto" ? Math.max(3, Math.min(12, settings.minutes * 2)) : settings.count;
+  const { title, sentences } = manuscriptSource(manuscript);
+  const count = targetSceneCount(settings);
   const english = settings.language === "영어";
   const scenes = Array.from({ length: current ? 1 : count }, (_, i): Scene => {
     const start = Math.floor((i * sentences.length) / count);
@@ -116,7 +144,7 @@ export function generateDemo(
     const evidence =
       current?.evidence || sentences.slice(start, end).join(" ") || sentences[sentences.length - 1];
     const snippet = evidence.split(/[.!?。！？]/)[0].slice(0, 50);
-    const simple = settings.difficulty === "쉬움" || settings.audience.startsWith("초등");
+    const simple = settings.difficulty === "쉬움";
     const prefix = english
       ? "Let’s explore the source passage."
       : settings.tone === "친근한 설명"
@@ -195,8 +223,12 @@ export const fieldLabels: Record<string, string> = {
   edited: "수정한 필드",
 };
 export function markdown(board: Board) {
-  return (
-    `# ${board.title}\n\n> 원문 발췌 기반 데모 · 제작 전 검토 필요\n\n## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
+  const generation = board.generation;
+  const modes = new Set(board.scenes.map((scene) => scene.generation?.mode ?? board.mode));
+  const label = modes.size > 1 ? "AI·데모 장면 포함" : modes.has("ai") ? "AI 생성 초안" : "원문 발췌 기반 데모";
+  const pdfNote = board.pdfSource ? `원본 PDF: ${board.pdfSource.name}\n선택 페이지: ${board.pdfSource.pages.join(", ")}\n\n` : "";
+  return pdfNote + (
+    `# ${board.title}\n\n> ${label} · 제작 전 검토 필요\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
       board.settings,
     )
       .map(
@@ -207,7 +239,7 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.pdfSource ? `원본 PDF: ${s.pdfSource.name}\n선택 페이지: ${s.pdfSource.pages.join(", ")}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>
@@ -232,8 +264,11 @@ export function csv(board: Board) {
     "전체 예상 시간(초)",
     "생성 조건",
     "생성 방식",
+    "생성 기록",
     "장면 번호",
+    "장면 생성 기록",
     ...Object.values(fieldLabels),
+    "원본 PDF", "선택 페이지",
   ];
   return (
     "\uFEFF" +
@@ -245,9 +280,12 @@ export function csv(board: Board) {
         board.objectives,
         board.scenes.reduce((n, s) => n + s.duration, 0),
         JSON.stringify(board.settings),
-        "원문 발췌 데모",
+        (s.generation?.mode ?? board.mode) === "demo" ? "원문 발췌 데모" : "AI 생성 초안",
+        board.generation ? JSON.stringify(board.generation) : "",
         i + 1,
+        s.generation ? JSON.stringify(s.generation) : "",
         ...keys.map((k) => (k === "review" ? (s.review ? "검토 필요" : "검토 완료") : s[k])),
+        s.pdfSource?.name ?? "", s.pdfSource?.pages ?? [],
       ]),
     ]
       .map((row) => row.map(cell).join(","))
