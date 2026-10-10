@@ -137,6 +137,29 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .manuscript-tabs > span,.manuscript-tabs button { display: flex; align-items: center; gap: 7px; border: 0; padding: 0 2px; background: none; font-size: 12px; }
 .manuscript-tabs > span { border-bottom: 2px solid var(--ink); font-weight: 500; }
 .manuscript-tabs button { color: var(--body); }
+.file-formats { padding: 10px 24px; color: var(--body); font-size: 11px; }
+.document-source { margin: 0 24px 16px; padding: 16px; background: var(--canvas-soft); border: 1px solid var(--hairline); border-radius: 8px; }
+.document-source-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; min-width: 0; }
+.document-source-heading > div { flex: 1; min-width: 0; }
+.document-source-heading strong { display: block; overflow-wrap: anywhere; font-size: 12px; }
+.document-source-heading small,.document-source > p { display: block; font-size: 11px; color: var(--body); }
+.document-source .form-field { gap: 8px; }
+.pdf-page-picker { padding-block: 12px; }
+.pdf-page-picker h3 { font-size: 14px; margin-bottom: 8px; }
+.pdf-page-picker > p,.pdf-page-picker > small,.pdf-selection-summary > small { display: block; font-size: 12px; color: var(--body); line-height: 1.7; margin-bottom: 12px; }
+.pdf-page-picker > small { margin-top: 6px; }
+.pdf-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; max-height: 180px; overflow-y: auto; padding: 4px; margin-block: 12px; }
+.pdf-page-grid button { height: 36px; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--canvas); font-size: 12px; }
+.pdf-page-grid button[aria-pressed="true"] { background: var(--ink); color: var(--canvas); border-color: var(--ink); }
+.pdf-page-grid button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.pdf-preview { width: 100%; min-height: 120px; max-height: 420px; overflow: auto; border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--surface); margin-block: 8px 12px; }
+.pdf-preview img { display: block; width: 100%; height: auto; }
+.pdf-preview > p { padding: 20px; font-size: 12px; }
+.pdf-selection-summary { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.pdf-selection-summary strong { font-size: 13px; }
+.pdf-selection-summary > small { flex-basis: 100%; margin-bottom: 0; }
+.document-source-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.document-source-actions > button:not([data-slot]) { border: 0; background: none; font-size: 11px; color: var(--body); text-decoration: underline; text-underline-offset: 3px; }
 .manuscript-editor { position: relative; flex: 1; min-height: 330px; display: flex; }
 .manuscript-editor textarea { display: block; width: 100%; min-height: 330px; padding: 24px; border: 0; border-radius: 0; font-size: 14px; line-height: 1.95; background: transparent; field-sizing: fixed; resize: none; }
 .manuscript-editor textarea:focus-visible { outline-offset: -2px; }
@@ -209,6 +232,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .overview-edit textarea { margin-top: 8px; min-height: 100px; }
 .overview-edit small { font-size: 10px; color: var(--body); }
 .settings-summary { grid-column: 1/-1; color: var(--body); font-size: 11px; }
+.term-correction-notice { margin-top: 16px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface); color: var(--body); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .board-layout { display: grid; grid-template-columns: 226px minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 28px; }
 .scene-list { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; padding: 2px; }
 .scene-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 16px; }
@@ -274,7 +298,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .duration-warning { display: flex; align-items: center; gap: 8px; background: var(--warning-bg); color: var(--warning); border-radius: 8px; padding: 12px 16px; font-size: 12px; margin-top: 16px; }
 .error-banner { display: flex; align-items: center; gap: 10px; background: var(--error-bg); color: var(--error); border: 1px solid var(--error-border); border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; font-size: 12px; }
 .error-banner > span { flex: 1; }
-.error-banner > button:last-child { display: grid; place-items: center; width: 32px; height: 32px; background: none; border: 0; }
+.error-banner > button[aria-label="오류 닫기"] { display: grid; place-items: center; width: 32px; height: 32px; background: none; border: 0; }
 .toast-message { position: fixed; bottom: 24px; left: calc(50% + 112px); transform: translateX(-50%); max-width: calc(100vw - 48px); z-index: 80; display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--canvas); border: 1px solid var(--hairline-strong); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 10%); font-size: 12px; animation: toast-in .2s ease-out; }
 .toast-message > svg { color: var(--success); }
 .toast-message > button { width: 28px; height: 28px; display: grid; place-items: center; border: 0; background: none; }
@@ -459,3 +483,8 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   html { scroll-behavior: auto; }
   *,*::before,*::after { animation: none !important; transition: none !important; }
 }
+
+/* Waiting indicator: provider progress cannot be measured as a percentage. */
+.progress-track.ai-pending > div { width: 35% !important; animation: ai-wait 1.5s ease-in-out infinite alternate; }
+@keyframes ai-wait { from { transform: translateX(0); } to { transform: translateX(180%); } }
+@media (prefers-reduced-motion: reduce) { .progress-track.ai-pending > div { animation: none; } }
