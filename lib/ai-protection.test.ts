@@ -66,6 +66,51 @@ test("paid calls are disabled by default and incomplete/unsafe configuration fai
   for (const amount of ["-1", "NaN", "Infinity", "1e2", "0.0000001"]) assert.throws(() => usdMicros(amount));
 });
 
+test("shared daily and monthly caps apply without personal budget settings and cannot be raised by them", () => {
+  const defaults = config({ EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined });
+  assert.equal(defaults.dayBudget, 1_000_000);
+  assert.equal(defaults.monthBudget, 5_000_000);
+  const raised = config({ EDUFLOW_AI_DAY_BUDGET_USD: "100", EDUFLOW_AI_MONTH_BUDGET_USD: "200" });
+  assert.equal(raised.dayBudget, defaults.dayBudget);
+  assert.equal(raised.monthBudget, defaults.monthBudget);
+  const lower = config({ EDUFLOW_AI_DAY_BUDGET_USD: "0.5", EDUFLOW_AI_MONTH_BUDGET_USD: "2" });
+  assert.equal(lower.dayBudget, 500_000);
+  assert.equal(lower.monthBudget, 2_000_000);
+  assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "2" }), coded("AI_NOT_CONFIGURED"));
+});
+
+test("separate member PCs each receive the shared budget and preserve their own usage", (t) => {
+  const firstDirectory = temporary(t), secondDirectory = temporary(t);
+  const policy = config({
+    EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined,
+    EDUFLOW_AI_REQUEST_BUDGET_USD: "1", EDUFLOW_AI_MAX_INPUT_TOKENS: "100000",
+    EDUFLOW_AI_MAX_OUTPUT_TOKENS: "100000", EDUFLOW_AI_REQUESTS_PER_HOUR: "100",
+  });
+  const now = Date.parse("2026-10-11T10:00:00Z");
+  const useDay = (budget: LocalAIBudget, timestamp: number) => {
+    const id = budget.reserve(policy, timestamp);
+    budget.startAttempt(id); budget.settleAttempt(id);
+    budget.startAttempt(id); budget.settleAttempt(id); budget.finish(id);
+  };
+  const first = new LocalAIBudget(firstDirectory);
+  useDay(first, now);
+  assert.throws(() => first.reserve(policy, now + 1000), coded("BUDGET_EXCEEDED"));
+  first.close();
+  const second = new LocalAIBudget(secondDirectory);
+  try { useDay(second, now); }
+  finally { second.close(); }
+  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 600_000);
+  assert.equal(inspect(secondDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 600_000);
+  const reopened = new LocalAIBudget(firstDirectory);
+  try {
+    assert.throws(() => reopened.reserve(policy, now + 1000), coded("BUDGET_EXCEEDED"));
+    // Daily turnover grants a new daily allowance, while the month remains capped.
+    for (let day = 1; day < 8; day++) useDay(reopened, now + day * 86400000);
+    assert.throws(() => reopened.reserve(policy, now + 8 * 86400000), coded("BUDGET_EXCEEDED"));
+  } finally { reopened.close(); }
+  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "month:2026-10")?.amount, 4_800_000);
+});
+
 test("paid prototype admits only matching loopback browser origins", () => {
   assert.doesNotThrow(() => assertLocalAIRequest(localRequest()));
   assert.doesNotThrow(() => assertLocalAIRequest(localRequest("http://localhost:3000", "http://localhost:3000/api/generate")));
