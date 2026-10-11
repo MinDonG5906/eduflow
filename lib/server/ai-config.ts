@@ -2,6 +2,12 @@ import "server-only";
 import { z } from "zod";
 import { GenerationError } from "../generation-contract";
 
+// Shared by every local checkout. Lower personal limits remain valid.
+export const TEAM_AI_BUDGET_LIMITS = Object.freeze({
+  dayUSD: "1.00",
+  monthUSD: "5.00",
+});
+
 // All amounts are integer millionths of a US dollar; never use floating-point money.
 export function usdMicros(value: string): number {
   if (!/^\d{1,5}(\.\d{1,6})?$/.test(value)) throw new GenerationError("AI_NOT_CONFIGURED");
@@ -41,15 +47,22 @@ export function readAIConfig(env: Record<string, string | undefined> = process.e
     inputRate: env.EDUFLOW_AI_INPUT_USD_PER_MILLION,
     outputRate: env.EDUFLOW_AI_OUTPUT_USD_PER_MILLION,
     requestBudget: env.EDUFLOW_AI_REQUEST_BUDGET_USD,
-    dayBudget: env.EDUFLOW_AI_DAY_BUDGET_USD,
-    monthBudget: env.EDUFLOW_AI_MONTH_BUDGET_USD,
+    dayBudget: env.EDUFLOW_AI_DAY_BUDGET_USD ?? TEAM_AI_BUDGET_LIMITS.dayUSD,
+    monthBudget: env.EDUFLOW_AI_MONTH_BUDGET_USD ?? TEAM_AI_BUDGET_LIMITS.monthUSD,
     maxInputTokens: env.EDUFLOW_AI_MAX_INPUT_TOKENS,
     maxOutputTokens: env.EDUFLOW_AI_MAX_OUTPUT_TOKENS,
     requestsPerHour: env.EDUFLOW_AI_REQUESTS_PER_HOUR,
     maxConcurrent: env.EDUFLOW_AI_MAX_CONCURRENT,
   });
   if (!parsed.success) throw new GenerationError("AI_NOT_CONFIGURED");
-  const config = parsed.data;
+  const personal = parsed.data;
+  if (personal.dayBudget > personal.monthBudget || personal.requestBudget > personal.dayBudget)
+    throw new GenerationError("AI_NOT_CONFIGURED");
+  const config = {
+    ...personal,
+    dayBudget: Math.min(personal.dayBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.dayUSD)),
+    monthBudget: Math.min(personal.monthBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.monthUSD)),
+  };
   const numerator = BigInt(config.maxInputTokens) * BigInt(config.inputRate) +
     BigInt(config.maxOutputTokens) * BigInt(config.outputRate);
   const attemptCost = Number((numerator + BigInt(999999)) / BigInt(1000000));
