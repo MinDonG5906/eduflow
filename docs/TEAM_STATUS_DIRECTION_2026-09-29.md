@@ -181,5 +181,4 @@ EduFlow를 범용 영상 생성 도구로 넓히기보다 다음 문제에 집�
 - 제품·기술 개요: `../README.md`
 - 디자인 원칙: `EDUFLOW_DESIGN.md`
 - 복구 및 검증 기록: `RESTORATION_2026-09-29.md`
-- 이전 구현 인수인계: `GPT_HANDOFF_2026-09-21.md`
 
