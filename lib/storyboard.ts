@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pdfSourceSchema } from "./pdf-source";
+import { pdfSourceSchema, sourceNote } from "./pdf-source";
 
 export const audienceOptions = [
   "산업현장 근무자",
@@ -226,7 +226,7 @@ export function markdown(board: Board) {
   const generation = board.generation;
   const modes = new Set(board.scenes.map((scene) => scene.generation?.mode ?? board.mode));
   const label = modes.size > 1 ? "AI·데모 장면 포함" : modes.has("ai") ? "AI 생성 초안" : "원문 발췌 기반 데모";
-  const pdfNote = board.pdfSource ? `원본 PDF: ${board.pdfSource.name}\n선택 페이지: ${board.pdfSource.pages.join(", ")}\n\n` : "";
+  const pdfNote = board.pdfSource ? sourceNote(board.pdfSource) : "";
   return pdfNote + (
     `# ${board.title}\n\n> ${label} · 제작 전 검토 필요\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
       board.settings,
@@ -239,7 +239,7 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.pdfSource ? `원본 PDF: ${s.pdfSource.name}\n선택 페이지: ${s.pdfSource.pages.join(", ")}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>
@@ -268,7 +268,7 @@ export function csv(board: Board) {
     "장면 번호",
     "장면 생성 기록",
     ...Object.values(fieldLabels),
-    "원본 PDF", "선택 페이지",
+    "원본 문서", "선택 페이지·슬라이드",
   ];
   return (
     "\uFEFF" +

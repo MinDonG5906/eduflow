@@ -67,19 +67,22 @@ import {
 import {
   captureGeneration,
   normalizeDuration,
-  readDraft,
+  DRAFT_STORAGE_KEY,
+  restoreBrowserDraft,
   retryConflict,
   serializeDraft,
   type GenerationJob,
 } from "@/lib/studio-state";
 
 import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResponse } from "@/lib/generation-contract";
-import { documentSchema, findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
+import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, loadPdf, savePdf } from "@/lib/pdf-storage";
+import { readDocumentUpload } from "@/lib/document-upload";
+import { formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 
 // Keep the original key so existing Frame drafts open in EduFlow without migration.
-const STORAGE = "frame-studio-v1";
+const STORAGE = DRAFT_STORAGE_KEY;
 type Modal = "new" | "export" | "help" | "regenerate" | "delete" | null;
 const textFields = [
   "purpose",
@@ -182,6 +185,8 @@ export default function Studio() {
   const originalPdfRef = useRef<File | null>(null);
   const savedPdfIdRef = useRef<string | undefined>(undefined);
   const isPdf = Boolean(sourceDocument && (sourceDocument.kind === "pdf" || /\.pdf$/i.test(sourceDocument.name)));
+  const documentUnit = sourceUnit(sourceDocument?.name ?? "");
+  const documentFormat = sourceFormat(sourceDocument?.name ?? "");
   const pdfReady = isPdf && Boolean(selectedPdf) && Boolean(sourceDocument?.selectedPages?.length) && !pdfPickerOpen;
   const valid = manuscript.length <= 20000 && (isPdf ? pdfReady : manuscript.replace(/\s/g, "").length >= 100);
   const scene = board?.scenes[active];
@@ -206,16 +211,16 @@ export default function Studio() {
     let stored: string | null = null;
     try {
       stored = localStorage.getItem(STORAGE);
-      if (stored !== null) {
-        const parsed = readDraft(stored);
+      const { draft: parsed, removedExample } = restoreBrowserDraft(stored, localStorage);
+      if (parsed) {
         setManuscript(parsed.manuscript);
         setSettings(parsed.settings);
         setSourceDocument(parsed.document ?? null);
         savedPdfIdRef.current = parsed.document?.fileId;
-        if (parsed.board) {
-          setBoard(parsed.board);
-          setView("board");
-        }
+        setBoard(parsed.board);
+        setView(parsed.board ? "board" : "input");
+        if (removedExample)
+          setNotice("이전 훈민정음 예제 결과를 정리했어요. 현재 원고·첨부 자료·설정은 유지됩니다.");
         setSaved("이전 작업을 복구했어요");
       }
     } catch {
@@ -258,8 +263,8 @@ export default function Studio() {
     loadPdf(id).then((file) => {
       if (cancelled) return;
       setSelectedPdf(file ?? null);
-      if (!file) setError("저장된 PDF를 찾지 못했습니다. 원본 PDF를 다시 불러와 페이지를 선택해 주세요.");
-    }).catch(() => { if (!cancelled) setError("저장된 PDF를 열지 못했습니다. PDF를 다시 불러와 주세요."); });
+      if (!file) setError("저장된 선택 자료를 찾지 못했습니다. 원본 파일을 다시 불러와 선택해 주세요.");
+    }).catch(() => { if (!cancelled) setError("저장된 선택 자료를 열지 못했습니다. 원본 파일을 다시 불러와 주세요."); });
     return () => { cancelled = true; };
   }, [sourceDocument?.fileId]);
   useEffect(() => {
@@ -345,25 +350,23 @@ export default function Studio() {
     setImporting(true);
     setError("");
     try {
-      if (!/\.(txt|pdf|docx)$/i.test(file.name))
-        throw new Error("PDF, Word(.docx), TXT 파일을 지원합니다. HWP·DOC는 PDF 또는 DOCX로 저장해 주세요.");
+      if (!/\.(txt|pdf|pptx?|hwpx?|docx)$/i.test(file.name))
+        throw new Error("PDF, PPT/PPTX, HWP/HWPX, Word(.docx), TXT 파일을 지원합니다. 구형 DOC는 PDF 또는 DOCX로 저장해 주세요.");
       const response = await fetch("/api/documents", {
         method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Document-Name": encodeURIComponent(file.name) },
         body: file, signal: controller.signal,
       });
-      const raw = await response.json();
-      if (!response.ok) throw new Error(typeof raw.error === "string" ? raw.error : "문서를 읽지 못했습니다.");
-      const document = documentSchema.parse(raw);
+      const { document, pdf } = await readDocumentUpload(response, file);
       controller.signal.throwIfAborted();
       clearPdf();
       if (document.kind === "pdf") {
         setPdfPickerVersion((version) => version + 1);
-        setOriginalPdf(file); originalPdfRef.current = file; setPdfPickerOpen(true);
+        setOriginalPdf(pdf!); originalPdfRef.current = pdf!; setPdfPickerOpen(true);
       }
       setSourceDocument({ ...document, appliedQuery: "" });
       setManuscript(document.kind !== "pdf" && document.text.length <= MAX_MANUSCRIPT_CHARS ? document.text : "");
       setFailedRequest(null);
-      notify(document.kind === "pdf" ? "PDF를 열었어요. AI에 보낼 페이지를 먼저 선택해 주세요." : document.text.length <= MAX_MANUSCRIPT_CHARS ? `${file.name}의 내용을 불러왔어요. 원하는 부분만 찾아서 제작할 수도 있어요.` : `${file.name}을 읽었어요. 제작할 부분을 입력해 원고로 가져와 주세요.`);
+      notify(document.kind === "pdf" ? `${sourceFormat(file.name)}를 열었어요. AI에 보낼 ${sourceUnit(file.name)}를 먼저 선택해 주세요.` : document.text.length <= MAX_MANUSCRIPT_CHARS ? `${file.name}의 내용을 불러왔어요. 원하는 부분만 찾아서 제작할 수도 있어요.` : `${file.name}을 읽었어요. 제작할 부분을 입력해 원고로 가져와 주세요.`);
     } catch (e) {
       setFailedRequest(null);
       if (controller.signal.aborted) notify("문서 불러오기를 취소했어요. 기존 원고를 유지합니다.");
@@ -385,12 +388,12 @@ export default function Studio() {
     const id = crypto.randomUUID();
     let storedId: string | undefined;
     try { await savePdf(id, blob); storedId = id; }
-    catch { setError("PDF는 현재 화면에서 사용할 수 있지만 브라우저에 저장하지 못했습니다. 새로고침하면 다시 첨부해 주세요."); }
+    catch { setError("선택 자료는 현재 화면에서 사용할 수 있지만 브라우저에 저장하지 못했습니다. 새로고침하면 다시 첨부해 주세요."); }
     if (originalPdfRef.current !== original) { if (storedId) void deletePdf(storedId).catch(() => {}); return; }
     setSelectedPdf(blob);
     setSourceDocument((document) => document ? { ...document, selectedPages: pages, fileId: storedId } : document);
     setPdfPickerOpen(false); setFailedRequest(null);
-    notify(`원본 ${pages.join(", ")}페이지를 선택했어요. 제작 요청과 설정을 확인한 뒤 생성해 주세요.`);
+    notify(`${pages.length}${documentUnit}를 선택했어요. 제작 요청과 설정을 확인한 뒤 생성해 주세요.`);
   }
   function findDocumentPart() {
     if (!sourceDocument) return;
@@ -786,39 +789,39 @@ export default function Studio() {
                     <input
                       ref={uploadRef}
                       type="file"
-                      accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".txt,.pdf,.ppt,.pptx,.hwp,.hwpx,.docx,application/x-hwp,application/haansofthwp,application/hwp+zip,text/plain,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       className="sr-only"
-                      aria-label="PDF, Word, TXT 원고 불러오기"
+                      aria-label="PDF, PPT, 한글, Word, TXT 원고 불러오기"
                       disabled={busy || importing || storageBlocked}
                       onChange={(e) => importFile(e.target.files?.[0])}
                     />
                   </div>
-                  <p className="file-formats" role="status">PDF · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 큰 문서는 읽는 데 시간이 걸릴 수 있습니다."}</p>
+                  <p className="file-formats" role="status">PDF · PPT/PPTX · HWP/HWPX · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 문서 변환과 큰 문서 읽기는 시간이 걸릴 수 있습니다."}</p>
                   {sourceDocument && (
                     <div className="document-source">
                       <div className="document-source-heading">
                         <FileText size={16} />
-                        <div><strong>{sourceDocument.name}</strong><small>{isPdf ? `원본 PDF · ${sourceDocument.pages}페이지 · 표·그림 포함` : `${sourceDocument.text.length.toLocaleString()}자 읽음`}</small></div>
+                        <div><strong>{sourceDocument.name}</strong><small>{isPdf ? `원본 ${documentFormat} · ${sourceDocument.pages}${documentUnit} · 표·그림 포함` : `${sourceDocument.text.length.toLocaleString()}자 읽음`}</small></div>
                         <button className="icon-button" aria-label="첨부 문서 해제" disabled={busy || importing} onClick={() => { setSourceDocument(null); clearPdf(); }}><X size={15} /></button>
                       </div>
                       {isPdf ? <>
                         {pdfPickerOpen && originalPdf && sourceDocument.pages ?
-                          <PdfPagePicker key={pdfPickerVersion} file={originalPdf} total={sourceDocument.pages} initialPages={sourceDocument.selectedPages ?? []}
+                          <PdfPagePicker key={pdfPickerVersion} file={originalPdf} total={sourceDocument.pages} initialPages={sourceDocument.selectedPages ?? []} format={documentFormat}
                             onSelect={applyPdfPages} onCancel={() => setPdfPickerOpen(false)} /> :
                           <div className="pdf-selection-summary">
-                            <strong>{sourceDocument.selectedPages?.length ? `원본 ${sourceDocument.selectedPages.join(", ")}페이지 선택됨` : "먼저 AI에 보낼 PDF 페이지를 선택해 주세요."}</strong>
-                            <Button variant="outline" disabled={busy || importing} onClick={() => originalPdf ? setPdfPickerOpen(true) : uploadRef.current?.click()}>{originalPdf ? "페이지 선택" : "원본 PDF 다시 불러오기"}</Button>
-                            {!originalPdf && <small>선택한 PDF는 브라우저에서 복구됩니다. 페이지를 변경하려면 원본 PDF를 다시 불러와 주세요.</small>}
+                            <strong>{sourceDocument.selectedPages?.length ? sourceDocument.selectedPages.length === sourceDocument.pages ? `전체 ${sourceDocument.pages}${documentUnit} 선택됨` : `원본 ${formatPdfPages(sourceDocument.selectedPages)}${documentUnit} 선택됨` : `먼저 AI에 보낼 ${documentFormat} ${documentUnit}를 선택해 주세요.`}</strong>
+                            <Button variant="outline" disabled={busy || importing} onClick={() => originalPdf ? setPdfPickerOpen(true) : uploadRef.current?.click()}>{originalPdf ? `${documentUnit} 선택` : `원본 ${documentFormat} 다시 불러오기`}</Button>
+                            {!originalPdf && <small>선택본은 브라우저에서 복구됩니다. {documentUnit}를 변경하려면 원본 {documentFormat}를 다시 불러와 주세요.</small>}
                           </div>}
-                        {!pdfPickerOpen && selectedPdf && <><PdfPreview file={selectedPdf} page={1} label={`선택 PDF 첫 페이지 · 원본 ${sourceDocument.selectedPages?.[0]}페이지`} /><p className="pdf-preview-caption">선택본 첫 페이지 미리보기 · 원본 {sourceDocument.selectedPages?.[0]}페이지</p></>}
+                        {!pdfPickerOpen && selectedPdf && <PdfPreview file={selectedPdf} total={sourceDocument.selectedPages?.length ?? 0} originalPages={sourceDocument.selectedPages} format={documentFormat} />}
                         <label className="form-field" htmlFor="document-request">
-                          <span>선택한 페이지로 어떤 교육을 만들까요? <small>선택</small></span>
+                          <span>선택한 {documentUnit}로 어떤 교육을 만들까요? <small>선택</small></span>
                           <Textarea id="document-request" value={sourceDocument.query} maxLength={500} disabled={busy || importing}
                             onChange={(e) => setSourceDocument({ ...sourceDocument, query: e.target.value })}
                             placeholder="예: 산업안전수칙을 중심으로, 표와 그림의 의미를 풀어서 설명해 주세요."
                             aria-describedby="document-request-hint" />
                         </label>
-                        <p id="document-request-hint">{generator?.mode === "demo" ? "표·그림을 읽는 PDF 생성에는 실제 AI 연결이 필요합니다. 무료 데모에서는 생성하지 않습니다." : "AI가 선택한 PDF의 글자·표·그림·배치를 읽고 판단합니다. 오른쪽 교육대상·난이도·길이 설정을 함께 적용합니다."}</p>
+                        <p id="document-request-hint">{generator?.mode === "demo" ? "표·그림을 읽는 생성에는 실제 AI 연결이 필요합니다. 무료 데모에서는 생성하지 않습니다." : `AI가 선택한 ${documentUnit}의 글자·표·그림·배치를 읽고 판단합니다. 오른쪽 교육대상·난이도·길이 설정을 함께 적용합니다.`}</p>
                       </> : <>
                       <label className="form-field" htmlFor="document-request">
                         <span>문서에서 어떤 부분을 제작할까요?</span>
@@ -844,7 +847,7 @@ export default function Studio() {
                     }}
                   >
                     <label className="sr-only" htmlFor="manuscript">
-                      {isPdf ? "PDF에 덧붙일 설명 (선택)" : "교육 원고"}
+                      {isPdf ? `${documentFormat}에 덧붙일 설명 (선택)` : "교육 원고"}
                     </label>
                     <textarea
                       id="manuscript"
@@ -854,7 +857,7 @@ export default function Studio() {
                       onChange={(e) => setManuscript(e.target.value)}
                       disabled={busy || importing || storageBlocked}
                       placeholder={
-                        isPdf ? "PDF에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 PDF 페이지를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다." : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
+                        isPdf ? `${documentFormat}에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 ${documentUnit}를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다.` : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
                       }
                     />
                     {!manuscript && !isPdf && (
@@ -867,7 +870,7 @@ export default function Studio() {
                           </span>
                         </div>
                         <p>아이디어가 장면이 되는 곳</p>
-                        <small>원고를 작성하거나 PDF·Word·TXT 파일을 여기에 놓아 주세요.</small>
+                        <small>원고를 작성하거나 PDF·PPT·한글·Word·TXT 파일을 여기에 놓아 주세요.</small>
                       </div>
                     )}
                   </div>
@@ -875,10 +878,10 @@ export default function Studio() {
                     <span id="manuscript-hint" className={manuscript.length > 20000 ? "invalid" : ""}>
                       {manuscript.length > 20000
                         ? `${(manuscript.length - 20000).toLocaleString()}자 초과`
-                        : isPdf ? "PDF에 덧붙일 설명 · 선택 입력"
+                        : isPdf ? `${documentFormat}에 덧붙일 설명 · 선택 입력`
                         : manuscript && !valid
                           ? "공백 제외 100자 이상 입력해 주세요"
-                          : "공백 제외 최소 100자 · PDF·Word·TXT 지원"}
+                          : "공백 제외 최소 100자 · PDF·PPT·한글·Word·TXT 지원"}
                     </span>
                     <span>
                       <strong>{manuscript.length.toLocaleString()}</strong> / 20,000자
@@ -1061,7 +1064,7 @@ export default function Studio() {
                   disabled={!canGenerate}
                   onClick={() => generate()}
                 >
-                  <Sparkles size={17} /> {isPdf ? "선택한 PDF로 생성" : "스토리보드 생성"} <ArrowRight size={17} />
+                  <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
                 </Button>
               </div>
               <div className="bottom-note">
@@ -1069,7 +1072,7 @@ export default function Studio() {
                 <span>{storageBlocked ? "기존 저장 원본을 보호하는 동안 자동 저장이 중지됩니다." : "작업은 이 브라우저에 자동 저장됩니다."}</span>
                 <span className="note-dot">·</span>
                 <span>
-                  {generator?.mode === "ai" ? isPdf ? "생성 시 선택한 PDF 페이지·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택된 PDF는 이 브라우저에 저장됩니다." : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
+                  {generator?.mode === "ai" ? isPdf ? `생성 시 선택한 ${documentUnit}만 담은 PDF·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택본은 이 브라우저에 저장됩니다.` : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF·PPT·한글의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
                 </span>
               </div>
             </>
@@ -1150,7 +1153,7 @@ export default function Studio() {
                         />
                       </label>
                       <div className="settings-summary">
-                        {board.pdfSource && <p>원본 PDF: {board.pdfSource.name} · {board.pdfSource.pages.join(", ")}페이지</p>}
+                        {board.pdfSource && <p>원본 {sourceFormat(board.pdfSource.name)}: {board.pdfSource.name} · {formatPdfPages(board.pdfSource.pages)}{sourceUnit(board.pdfSource.name)}</p>}
                         {board.settings.difficulty} · 목표 {board.settings.minutes}분 ·{" "}
                         {board.settings.tone} · {board.settings.language}
                         {board.settings.keywords.length > 0 &&
@@ -1336,7 +1339,7 @@ export default function Studio() {
                                   <span className="source-tag">{scene.sourceId}</span>
                                 )}
                               </label>
-                              {key === "evidence" && scene.pdfSource && <small>원본 PDF: {scene.pdfSource.name}</small>}
+                              {key === "evidence" && scene.pdfSource && <small>원본 {sourceFormat(scene.pdfSource.name)}: {scene.pdfSource.name}</small>}
                               <Textarea
                                 id={`field-${key}`}
                                 value={scene[key]}
@@ -1555,7 +1558,7 @@ export default function Studio() {
                 <li>
                   <strong>원고를 준비하세요</strong>
                   <p>
-                    PDF를 불러오면 AI에 보낼 페이지를 먼저 선택합니다. 표·그림이 포함된 선택 페이지로 생성하며, 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
+                    PDF·PPT·HWP/HWPX를 불러오면 AI에 보낼 페이지·슬라이드를 먼저 선택합니다. PPT와 한글 파일은 이 PC에서 PDF로 변환하며, 미리보기에서 글꼴·배치를 확인해 주세요. 선택한 부분의 표·그림으로 생성하며 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
                   </p>
                 </li>
                 <li>
