@@ -10,6 +10,39 @@ const draftSchema = z.object({
 });
 export type Draft = z.infer<typeof draftSchema>;
 
+export const DRAFT_STORAGE_KEY = "frame-studio-v1";
+export const RETIRED_EXAMPLE_BACKUP_KEY = "eduflow-retired-hunmin-backup-v1";
+const RETIRED_EXAMPLE_CLEANUP_KEY = "eduflow-retired-hunmin-cleanup-v1";
+const retiredSceneTitles = [
+  "한자의 장벽", "말하고 싶어도 쓰기 어려운 현실", "세종의 문제의식", "새 문자 창제의 시작",
+  "완성과 반포", "소리의 원리를 담은 문자", "하늘·땅·사람의 모음", "조합과 확장성",
+  "백성의 기록 수단이 되다", "지식의 확산", "새 문자에서 공공 자산으로", "오늘의 한글과 기록유산",
+];
+
+function isRetiredExample(board: Board | null) {
+  return board?.title.trim() === "훈민정음, 백성을 위한 새로운 문자" &&
+    board.scenes.length === retiredSceneTitles.length &&
+    board.scenes.every((scene, i) => scene.title.trim() === retiredSceneTitles[i]);
+}
+
+// Retire the old example once; preserve the user's current input and a recoverable copy.
+export function restoreBrowserDraft(raw: string | null, storage: Pick<Storage, "getItem" | "setItem">) {
+  const draft = raw === null ? null : readDraft(raw);
+  if (storage.getItem(RETIRED_EXAMPLE_CLEANUP_KEY) === "done")
+    return { draft, removedExample: false };
+  const removedExample = Boolean(draft && isRetiredExample(draft.board));
+  if (draft && removedExample) {
+    // If backup or replacement fails, the caller keeps automatic saving blocked.
+    if (storage.getItem(RETIRED_EXAMPLE_BACKUP_KEY) === null)
+      storage.setItem(RETIRED_EXAMPLE_BACKUP_KEY, raw!);
+    draft.board = null;
+    storage.setItem(DRAFT_STORAGE_KEY, serializeDraft(draft));
+  }
+  // The cleaned draft is already durable. A marker failure must not discard a valid input.
+  try { storage.setItem(RETIRED_EXAMPLE_CLEANUP_KEY, "done"); } catch { /* Retry the marker on a later opening. */ }
+  return { draft, removedExample };
+}
+
 export function readDraft(raw: string): Draft {
   const draft = draftSchema.parse(JSON.parse(raw));
   const legacy = draft.settings.audience;

@@ -1,7 +1,66 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaults, generateDemo, sample } from "./storyboard";
-import { captureGeneration, normalizeDuration, readDraft, retryConflict, serializeDraft } from "./studio-state";
+import { captureGeneration, normalizeDuration, readDraft, retryConflict, serializeDraft,
+  DRAFT_STORAGE_KEY, RETIRED_EXAMPLE_BACKUP_KEY, restoreBrowserDraft } from "./studio-state";
+
+function oldExampleDraft() {
+  const board = generateDemo(sample, { ...defaults, count: 12 });
+  board.title = "훈민정음, 백성을 위한 새로운 문자";
+  const titles = ["한자의 장벽", "말하고 싶어도 쓰기 어려운 현실", "세종의 문제의식", "새 문자 창제의 시작",
+    "완성과 반포", "소리의 원리를 담은 문자", "하늘·땅·사람의 모음", "조합과 확장성",
+    "백성의 기록 수단이 되다", "지식의 확산", "새 문자에서 공공 자산으로", "오늘의 한글과 기록유산"];
+  board.scenes.forEach((scene, i) => { scene.title = titles[i]; });
+  return { manuscript: "현재 작성 중인 산업안전 원고", settings: defaults, board,
+    document: { name: "현재-안전교육.pdf", kind: "pdf" as const, text: "", query: "제조업 사고 예방 교육", pages: 154, selectedPages: [2, 3], fileId: crypto.randomUUID() } };
+}
+function draftStorage(raw: string) {
+  const values = new Map([[DRAFT_STORAGE_KEY, raw]]);
+  return { values, getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); } };
+}
+
+test("retired example result is backed up and removed while current PDF, request, manuscript and settings survive reopening", () => {
+  const draft = oldExampleDraft(), original = serializeDraft(draft), storage = draftStorage(original);
+  const result = restoreBrowserDraft(original, storage);
+  assert.equal(result.removedExample, true);
+  assert.deepEqual(result.draft, { ...draft, board: null });
+  assert.equal(storage.getItem(RETIRED_EXAMPLE_BACKUP_KEY), original);
+  const saved = storage.getItem(DRAFT_STORAGE_KEY)!;
+  assert.equal(readDraft(saved).board, null);
+  assert.deepEqual(restoreBrowserDraft(saved, storage), { draft: result.draft, removedExample: false });
+  // Completing the one-time cleanup never deletes a newly created board, even on the same subject.
+  storage.setItem(DRAFT_STORAGE_KEY, original);
+  assert.deepEqual(restoreBrowserDraft(original, storage), { draft, removedExample: false });
+  assert.equal(storage.getItem(RETIRED_EXAMPLE_BACKUP_KEY), original);
+});
+
+test("normal, newly created and partially matching boards are preserved by legacy cleanup", () => {
+  const drafts = [
+    { manuscript: sample, settings: defaults, board: generateDemo(sample, defaults) },
+    oldExampleDraft(),
+  ];
+  drafts[1].board.scenes[0].title = "사용자가 새로 작성한 훈민정음 교육";
+  for (const draft of drafts) {
+    const raw = serializeDraft(draft), storage = draftStorage(raw);
+    assert.deepEqual(restoreBrowserDraft(raw, storage), { draft, removedExample: false });
+    assert.equal(storage.getItem(DRAFT_STORAGE_KEY), raw);
+    assert.equal(storage.getItem(RETIRED_EXAMPLE_BACKUP_KEY), null);
+  }
+});
+
+test("legacy cleanup cannot erase saved work if backup or replacement storage fails", () => {
+  const raw = serializeDraft(oldExampleDraft());
+  for (const failedKey of [RETIRED_EXAMPLE_BACKUP_KEY, DRAFT_STORAGE_KEY]) {
+    const storage = draftStorage(raw), write = storage.setItem;
+    storage.setItem = (key, value) => { if (key === failedKey) throw new Error("storage quota"); write(key, value); };
+    assert.throws(() => restoreBrowserDraft(raw, storage), /storage quota/);
+    assert.equal(storage.getItem(DRAFT_STORAGE_KEY), raw);
+  }
+  const storage = draftStorage("broken saved data");
+  assert.throws(() => restoreBrowserDraft("broken saved data", storage));
+  assert.equal(storage.values.size, 1);
+});
 
 test("fractional scene duration becomes an integer and survives a saved-draft round trip", () => {
   const board = generateDemo(sample, defaults);

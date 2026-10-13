@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument, degrees, rgb, StandardFonts } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
-import { parsePdfPages, selectPdfPages, MAX_AI_PDF_BYTES } from "./pdf-source";
+import { formatPdfPages, parsePdfPages, selectPdfPages, MAX_AI_PDF_BYTES } from "./pdf-source";
 import { documentSchema } from "./documents";
 import { defaults, sample, generateDemo, requestSchema, markdown, csv } from "./storyboard";
 import { captureGeneration, readDraft, serializeDraft } from "./studio-state";
@@ -51,6 +51,12 @@ const coded = (code: string) => (e: unknown) => e instanceof GenerationError && 
 test("page ranges normalize duplicate selections and reject invalid or out-of-range pages", () => {
   assert.deepEqual(parsePdfPages("3-5, 2, 4, 8", 8), [2, 3, 4, 5, 8]);
   assert.deepEqual(parsePdfPages("", 8), []);
+  assert.equal(formatPdfPages([1, 3, 5, 6, 7]), "1, 3, 5-7");
+  const fullSelection = Array.from({ length: 200 }, (_, i) => i + 1);
+  assert.equal(formatPdfPages(fullSelection), "1-200");
+  for (const pages of [[], [2], [1, 2, 4, 6, 7, 8], fullSelection]) {
+    assert.deepEqual(parsePdfPages(formatPdfPages(pages), 200), pages);
+  }
   for (const range of ["0", "9", "5-3", "1,", "abc", "1-1000000"]) assert.throws(() => parsePdfPages(range, 8));
   assert.equal(requestSchema.safeParse(input).success, true);
   assert.equal(requestSchema.safeParse({ ...input, pdfSource: undefined }).success, false);
