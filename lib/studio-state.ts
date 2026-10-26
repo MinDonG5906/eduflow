@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { boardSchema, referenceInputSchema, requestSchema, settingsSchema, type Board } from "./storyboard";
+import { boardSchema, requestSchema, settingsSchema, type Board } from "./storyboard";
 import { documentSchema } from "./documents";
 
 const draftSchema = z.object({
@@ -7,8 +7,6 @@ const draftSchema = z.object({
   settings: settingsSchema,
   board: boardSchema.nullish().transform((board) => board ?? null),
   document: documentSchema.optional(),
-  referenceSources: z.array(referenceInputSchema).max(3).optional(),
-  referenceDraft: z.object({ title: z.string().max(120), url: z.string().max(500), text: z.string().max(5000) }).optional(),
 });
 export type Draft = z.infer<typeof draftSchema>;
 
@@ -51,6 +49,15 @@ export function readDraft(raw: string): Draft {
   if (["초등 저학년", "초등 고학년", "중고등학생", "대학생/일반인"].includes(legacy))
     draft.settings.audience = "현장 방문자 · 일반인";
   else if (legacy === "실무자/전문가") draft.settings.audience = "산업현장 근무자";
+  // Remove the retired hard-coded note citations without discarding the storyboard text.
+  for (const scene of draft.board?.scenes ?? []) {
+    const retained = scene.references?.filter((reference) => reference.id.startsWith("knowledge:"));
+    if (scene.references?.length && retained?.length !== scene.references.length) {
+      scene.references = retained;
+      scene.review = true;
+      scene.reviewReason = `${scene.reviewReason} 이전 임시 보강 자료 출처가 제거되었습니다. 해당 설명의 근거를 다시 확인해 주세요.`.trim();
+    }
+  }
   return draft;
 }
 

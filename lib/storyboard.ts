@@ -40,19 +40,16 @@ export const generationRecordSchema = z.object({
   mode: z.enum(["demo", "ai"]),
 });
 export const scenePhaseSchema = z.enum(["intro", "body", "outro"]);
-export const referenceInputSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-  url: z.url().max(500).refine((url) => /^https?:\/\//i.test(url)).optional(),
-  text: z.string().trim().min(20).max(5000),
-});
-export type ReferenceInput = z.infer<typeof referenceInputSchema>;
 export const sceneReferenceSchema = z.object({
   id: z.string().max(100),
   title: z.string().max(160),
   url: z.string().max(500),
   excerpt: z.string().max(1500),
   published: z.string().max(100),
-  origin: z.enum(["official", "user"]),
+  origin: z.enum(["official", "internal", "user"]),
+  documentId: z.string().uuid().optional(),
+  revision: z.string().max(100).optional(),
+  page: z.number().int().positive().optional(),
 });
 export const sceneSchema = z.object({
   id: z.string(),
@@ -97,7 +94,6 @@ export const requestSchema = z.object({
   scene: sceneSchema.optional(),
   direction: z.string().max(300).optional(),
   sceneSourceScope: z.enum(["citation", "selection"]).optional(),
-  referenceSources: z.array(referenceInputSchema).max(3).optional(),
 }).refine((input) => Boolean(input.pdfSource) || input.manuscript.replace(/\s/g, "").length >= 100, { path: ["manuscript"] });
 
 export const sample = `일상에서 시작하는 탄소중립

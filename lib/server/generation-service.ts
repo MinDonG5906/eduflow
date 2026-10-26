@@ -8,6 +8,7 @@ import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection 
 import type { PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
+import type { RetrievedReference } from "../knowledge";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -133,7 +134,7 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
 export async function runGeneration(
   input: GenerationInput,
   adapter: GenerationAdapter,
-  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[] } = {},
 ): Promise<Board> {
   const controller = new AbortController();
   const cancel = () => controller.abort(new GenerationError("CANCELLED"));
@@ -144,7 +145,7 @@ export async function runGeneration(
     controller.signal.throwIfAborted();
     if (Boolean(input.pdfSource) !== Boolean(options.pdf)) throw new GenerationError("PDF_NOT_ATTACHED");
     if (input.pdfSource && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
-    const task = generationTask(input);
+    const task = generationTask(input, options.references ?? []);
     const expected = task.requestedSceneCount;
     const accepted = new Map<number, GeneratedScene>();
     let header: Header | null = null;

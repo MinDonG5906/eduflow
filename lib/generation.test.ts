@@ -205,6 +205,18 @@ test("HTTP failure contract distinguishes timeout, cancellation, limits and prov
   assert.equal((await invalid.json()).retryable, true);
 });
 
+test("real knowledge-backed generation stops before paid admission when no related passage exists", async () => {
+  let calls = 0;
+  const ai = { ...adapter(async () => { calls++; return output(); }), mode: "ai" as const };
+  const post = createGenerateHandler(ai, { knowledge: () => [] });
+  const response = await post(new Request("http://localhost/api/generate", { method: "POST",
+    headers: { "Content-Type": "application/json", Host: "localhost", Origin: "http://localhost" },
+    body: JSON.stringify(input) }));
+  assert.equal(response.status, 422);
+  assert.equal((await response.json()).code, "KNOWLEDGE_NO_MATCH");
+  assert.equal(calls, 0);
+});
+
 test("input-limit responses preserve measured token counts through client validation and distinguish PDF image size", async () => {
   const usage = { inputTokens: 82345, maxInputTokens: 64000 };
   const post = createGenerateHandler(adapter(async () => { throw new GenerationError("TOKEN_LIMIT_EXCEEDED", usage); }));
