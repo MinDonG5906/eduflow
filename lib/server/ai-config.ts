@@ -26,7 +26,7 @@ const schema = z.object({
   requestBudget: positiveMoney,
   dayBudget: positiveMoney,
   monthBudget: positiveMoney,
-  maxInputTokens: integer("16000", 100000),
+  maxInputTokens: integer("16000", 110000),
   maxOutputTokens: integer("8000", 100000),
   requestsPerHour: integer("5", 100),
   maxConcurrent: integer("1", 4),

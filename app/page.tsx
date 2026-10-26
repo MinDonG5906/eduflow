@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PdfPagePicker } from "@/components/pdf-page-picker";
 import { PdfPreview } from "@/components/pdf-preview";
+import { EvidenceSource } from "@/components/evidence-source";
 import {
   Dialog,
   DialogContent,
@@ -78,7 +79,7 @@ import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResp
 import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, loadPdf, savePdf } from "@/lib/pdf-storage";
 import { readDocumentUpload } from "@/lib/document-upload";
-import { formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
+import { citedPdfPage, formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 
 // Keep the original key so existing Frame drafts open in EduFlow without migration.
@@ -171,6 +172,7 @@ export default function Studio() {
   const [error, setError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [direction, setDirection] = useState("");
+  const [sceneSourceScope, setSceneSourceScope] = useState<"citation" | "selection">("citation");
   const [filename, setFilename] = useState("나의 스토리보드");
   const [overview, setOverview] = useState(false);
   const [reviewOnly, setReviewOnly] = useState(false);
@@ -190,6 +192,7 @@ export default function Studio() {
   const pdfReady = isPdf && Boolean(selectedPdf) && Boolean(sourceDocument?.selectedPages?.length) && !pdfPickerOpen;
   const valid = manuscript.length <= 20000 && (isPdf ? pdfReady : manuscript.replace(/\s/g, "").length >= 100);
   const scene = board?.scenes[active];
+  const citedPage = isPdf && sourceDocument ? citedPdfPage({ name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, scene) : null;
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
@@ -433,7 +436,7 @@ export default function Studio() {
       manuscript,
       settings,
       ...(isPdf && sourceDocument ? { pdfSource: { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, sourceRequest: sourceDocument.query.trim() } : sourceDocument?.appliedQuery ? { sourceRequest: sourceDocument.appliedQuery } : {}),
-      ...(regenerate ? { scene, direction } : {}),
+      ...(regenerate ? { scene, direction, sceneSourceScope: citedPage === null ? "selection" as const : sceneSourceScope } : {}),
     }, board, isPdf ? selectedPdf ?? undefined : undefined);
     setFailedRequest(null);
     const conflict = retry ? retryConflict(job, board) : null;
@@ -1072,7 +1075,7 @@ export default function Studio() {
                 <span>{storageBlocked ? "기존 저장 원본을 보호하는 동안 자동 저장이 중지됩니다." : "작업은 이 브라우저에 자동 저장됩니다."}</span>
                 <span className="note-dot">·</span>
                 <span>
-                  {generator?.mode === "ai" ? isPdf ? `생성 시 선택한 ${documentUnit}만 담은 PDF·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택본은 이 브라우저에 저장됩니다.` : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF·PPT·한글의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
+                  {generator?.mode === "ai" ? isPdf ? `생성 시 선택한 ${documentUnit}의 텍스트·표·그림과 추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택본은 이 브라우저에 저장됩니다.` : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF·PPT·한글의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
                 </span>
               </div>
             </>
@@ -1335,11 +1338,9 @@ export default function Studio() {
                                 )}{" "}
                                 {fieldLabels[key]}
                                 {scene.edited.includes(key) && <small>수정됨</small>}
-                                {key === "evidence" && (
-                                  <span className="source-tag">{scene.sourceId}</span>
-                                )}
                               </label>
-                              {key === "evidence" && scene.pdfSource && <small>원본 {sourceFormat(scene.pdfSource.name)}: {scene.pdfSource.name}</small>}
+                              {key === "evidence" && <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={selectedPdf}
+                                source={isPdf && sourceDocument ? { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] } : undefined} />}
                               <Textarea
                                 id={`field-${key}`}
                                 value={scene[key]}
@@ -1355,6 +1356,7 @@ export default function Studio() {
                           disabled={!canGenerate}
                           onClick={() => {
                             setDirection("");
+                            setSceneSourceScope("citation");
                             setModal("regenerate");
                           }}
                         >
@@ -1522,6 +1524,20 @@ export default function Studio() {
           )}
           {modal === "regenerate" && (
             <>
+              {isPdf && (
+                <label className="form-field">
+                  다시 참고할 자료
+                  <div className="select-wrap">
+                    <select value={citedPage === null ? "selection" : sceneSourceScope}
+                      onChange={(e) => setSceneSourceScope(e.target.value as "citation" | "selection")}>
+                      {citedPage !== null && <option value="citation">기존 출처 {citedPage}{documentUnit}만</option>}
+                      <option value="selection">선택 자료 전체</option>
+                    </select>
+                    <ChevronDown size={15} />
+                  </div>
+                  <small>{citedPage === null ? "현재 선택 자료에서 기존 출처를 확인할 수 없어 전체를 참고합니다." : "다른 페이지의 내용으로 바꾸려면 ‘선택 자료 전체’를 선택하세요."}</small>
+                </label>
+              )}
               <label className="form-field">
                 어떻게 바꿀까요?{" "}
                 <Textarea

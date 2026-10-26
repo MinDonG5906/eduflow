@@ -79,6 +79,7 @@ export const requestSchema = z.object({
   sourceRequest: z.string().trim().max(500).optional(),
   scene: sceneSchema.optional(),
   direction: z.string().max(300).optional(),
+  sceneSourceScope: z.enum(["citation", "selection"]).optional(),
 }).refine((input) => Boolean(input.pdfSource) || input.manuscript.replace(/\s/g, "").length >= 100, { path: ["manuscript"] });
 
 export const sample = `일상에서 시작하는 탄소중립
