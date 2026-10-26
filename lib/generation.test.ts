@@ -94,6 +94,49 @@ test("unknown, empty and mismatched citations remain reviewable and get explicit
   assert.ok(board.scenes.slice(0, 3).every((scene) => scene.review && scene.reviewReason.includes("원문")));
 });
 
+test("AI evidence drops inline locators only after preserving a verifiable original quote", async () => {
+  const model = { ...adapter(async () => {
+    const candidate = output();
+    candidate.scenes[0].evidence += ` [${candidate.scenes[0].sourceId}]`;
+    return candidate;
+  }), mode: "ai" as const };
+  const board = await runGeneration(input, model);
+  assert.equal(board.scenes[0].evidence, output().scenes[0].evidence);
+  assert.equal(board.generation?.warnings.length, 0);
+});
+
+test("AI can resolve a missing locator only for an exact contiguous manuscript quote", async () => {
+  const sentences = output().scenes;
+  const model = { ...adapter(async () => {
+    const candidate = output();
+    candidate.scenes[0].sourceId = "";
+    candidate.scenes[0].evidence = `${sentences[0].evidence} / ${sentences[1].evidence}`;
+    candidate.scenes[1].sourceId = "";
+    candidate.scenes[1].evidence = "원문에 없는 내용";
+    return candidate;
+  }), mode: "ai" as const };
+  const board = await runGeneration(input, model);
+  assert.equal(board.scenes[0].sourceId, `sentence:1-${sentences[1].sourceId.split("-")[1]}`);
+  assert.equal(board.scenes[0].evidence, `${sentences[0].evidence} ${sentences[1].evidence}`);
+  assert.equal(board.scenes[1].sourceId, "");
+  assert.ok(board.generation?.warnings.some((warning) => warning.startsWith("2번 장면")));
+});
+
+test("AI repairs a scene with stray Devanagari in Korean production copy", async () => {
+  let calls = 0;
+  const model = { ...adapter(async (_, context) => {
+    const candidate = output();
+    calls++;
+    if (calls === 1) candidate.scenes[1].visual = "순서를 क्रम대로 보여줍니다.";
+    else assert.ok(context.repair?.issues.some((issue) => issue.reason === "unexpected_script_in_korean_output"));
+    return candidate;
+  }), mode: "ai" as const };
+  const board = await runGeneration(input, model);
+  assert.equal(calls, 2);
+  assert.deepEqual(board.generation?.repairedScenes, [2]);
+  assert.ok(!board.scenes[1].visual.includes("क्रम"));
+});
+
 test("server deadline settles an uncooperative provider and signals cancellation without another call", async () => {
   let providerSignal: AbortSignal | undefined;
   let calls = 0;

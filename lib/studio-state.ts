@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { boardSchema, requestSchema, settingsSchema, type Board } from "./storyboard";
+import { boardSchema, referenceInputSchema, requestSchema, settingsSchema, type Board } from "./storyboard";
 import { documentSchema } from "./documents";
 
 const draftSchema = z.object({
@@ -7,6 +7,8 @@ const draftSchema = z.object({
   settings: settingsSchema,
   board: boardSchema.nullish().transform((board) => board ?? null),
   document: documentSchema.optional(),
+  referenceSources: z.array(referenceInputSchema).max(3).optional(),
+  referenceDraft: z.object({ title: z.string().max(120), url: z.string().max(500), text: z.string().max(5000) }).optional(),
 });
 export type Draft = z.infer<typeof draftSchema>;
 

@@ -233,6 +233,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .additional[open] summary > svg { transform: rotate(45deg); }
 .additional textarea { font-size: 12px; }
 .additional small { display: block; font-size: 10px; color: var(--body); margin-top: 8px; }
+.reference-input { grid-column: 1/-1; }
+.reference-input > p { color: var(--body); font-size: 11px; line-height: 1.6; margin-bottom: 12px; }
+.reference-fields { display: grid; gap: 8px; }
+.reference-fields button { justify-self: start; }
+.reference-added { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 9px 10px; margin-bottom: 8px; border: 1px solid var(--hairline); border-radius: 8px; }
+.reference-added strong { font-size: 11px; }
+.reference-added span { grid-column: 1; color: var(--body); font-size: 10px; line-height: 1.5; }
+.reference-added button { grid-column: 2; grid-row: 1/3; align-self: center; padding: 4px; }
 .generation-bar { position: sticky; bottom: 16px; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; padding: 20px 24px; border: 1px solid var(--hairline-strong); border-radius: 12px; background: var(--canvas); box-shadow: var(--shadow); }
 .generation-bar > div { display: flex; align-items: center; gap: 14px; }
 .round-spark { display: grid; place-items: center; height: 40px; width: 40px; border-radius: 8px; background: var(--surface); }
@@ -277,6 +285,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .mini-landscape { display: none; }
 .scene-item-body { min-width: 0; }
 .scene-item-body > strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.scene-phase { display: inline-block; color: var(--link); font-size: 10px; font-style: normal; margin-top: 3px; }
 .scene-item-body > span { display: flex; align-items: center; gap: 4px; color: var(--body); font-size: 9px; margin-top: 7px; }
 .review-dot,.done-dot { width: 4px; height: 4px; border-radius: 50%; margin-left: 4px; background: var(--warning); }
 .done-dot { background: var(--success); }
@@ -288,6 +297,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .scene-editor-head,.scene-editor-head > div,.scene-tools { display: flex; align-items: center; gap: 10px; }
 .scene-editor-head { justify-content: space-between; margin-bottom: 16px; }
 .scene-number { font: 10px var(--font-code); letter-spacing: .5px; }
+.scene-phase-tag { border: 1px solid var(--hairline); border-radius: 999px; padding: 4px 8px; color: var(--link); font-size: 10px; }
 .status-tag,.edited-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 4px; font-size: 10px; background: var(--warning-bg); color: var(--warning); }
 .status-tag.done { background: var(--success-bg); color: var(--success); }
 .edited-tag { background: var(--surface); color: var(--body); }
@@ -312,6 +322,15 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .duration-input { display: flex; align-items: center; gap: 8px; color: var(--body); font-size: 12px; }
 .duration-input input { width: 76px; min-height: 34px; height: 34px; font-size: 12px; }
 .scene-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 20px; border-top: 1px solid var(--hairline); padding-top: 24px; }
+.scene-references { border-top: 1px solid var(--hairline); padding-top: 20px; margin-top: 22px; }
+.scene-references h3 { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
+.scene-references > p { color: var(--body); font-size: 11px; margin: 7px 0 12px; }
+.scene-reference { padding: 12px; border: 1px solid var(--hairline); border-radius: 9px; margin-top: 8px; }
+.scene-reference strong, .scene-reference small { display: block; }
+.scene-reference strong { font-size: 12px; }
+.scene-reference a { color: var(--link); text-decoration: underline; }
+.scene-reference small { margin-top: 3px; color: var(--body); font-size: 10px; }
+.scene-reference p { margin-top: 8px; line-height: 1.65; font-size: 11px; }
 .scene-field { min-width: 0; }
 .scene-field label { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 9px; font-size: 12px; font-weight: 500; }
 .scene-field label > svg { color: var(--body); }

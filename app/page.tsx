@@ -60,10 +60,12 @@ import {
   markdown,
   csv,
   fieldLabels,
+  referenceInputSchema,
   requestSchema,
   type Board,
   type Scene,
   type Settings,
+  type ReferenceInput,
 } from "@/lib/storyboard";
 import {
   captureGeneration,
@@ -94,6 +96,7 @@ const textFields = [
   "evidence",
   "reviewReason",
 ] as const;
+const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
 function SelectField({
   label,
   value,
@@ -157,6 +160,8 @@ export default function Studio() {
   const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
   const [pdfPickerVersion, setPdfPickerVersion] = useState(0);
   const [settings, setSettings] = useState<Settings>(defaults);
+  const [referenceSources, setReferenceSources] = useState<ReferenceInput[]>([]);
+  const [referenceDraft, setReferenceDraft] = useState({ title: "", url: "", text: "" });
   const [board, setBoard] = useState<Board | null>(null);
   const [view, setView] = useState<"input" | "board">("input");
   const [active, setActive] = useState(0);
@@ -218,6 +223,8 @@ export default function Studio() {
       if (parsed) {
         setManuscript(parsed.manuscript);
         setSettings(parsed.settings);
+        setReferenceSources(parsed.referenceSources ?? []);
+        setReferenceDraft(parsed.referenceDraft ?? { title: "", url: "", text: "" });
         setSourceDocument(parsed.document ?? null);
         savedPdfIdRef.current = parsed.document?.fileId;
         setBoard(parsed.board);
@@ -240,7 +247,9 @@ export default function Studio() {
     if (!ready || storageBlocked) return;
     let content: string;
     try {
-      content = serializeDraft({ manuscript, settings, board, ...(sourceDocument ? { document: sourceDocument } : {}) });
+      content = serializeDraft({ manuscript, settings, board, ...(sourceDocument ? { document: sourceDocument } : {}),
+        ...(referenceSources.length ? { referenceSources } : {}),
+        ...(referenceDraft.title || referenceDraft.url || referenceDraft.text ? { referenceDraft } : {}) });
     } catch {
       setSaved("자동 저장 보류");
       setFailedRequest(null);
@@ -258,7 +267,7 @@ export default function Studio() {
       setFailedRequest(null);
       setError("브라우저 저장 공간이 부족하거나 저장이 차단되어 있습니다. 결과를 내보내 주세요.");
     }
-  }, [manuscript, settings, board, sourceDocument, ready, storageBlocked]);
+  }, [manuscript, settings, board, sourceDocument, referenceSources, referenceDraft, ready, storageBlocked]);
   useEffect(() => {
     const id = sourceDocument?.fileId;
     if (!id) return;
@@ -429,12 +438,25 @@ export default function Studio() {
     if (!settings.keywords.includes(k)) setting("keywords", [...settings.keywords, k]);
     setKeyword("");
   }
+  function addReference() {
+    if (referenceSources.length >= 3) return notify("보강 자료는 최대 3개까지 추가할 수 있어요.");
+    const candidate = referenceInputSchema.safeParse({
+      title: referenceDraft.title.trim(),
+      ...(referenceDraft.url.trim() ? { url: referenceDraft.url.trim() } : {}),
+      text: referenceDraft.text.trim(),
+    });
+    if (!candidate.success) return notify("자료 이름과 20자 이상의 내용, 올바른 출처 주소를 확인해 주세요.");
+    setReferenceSources((sources) => [...sources, candidate.data]);
+    setReferenceDraft({ title: "", url: "", text: "" });
+    notify("보강 자료를 추가했어요. 생성할 때 관련 구절을 검색합니다.");
+  }
   async function generate(regenerate = false, retry?: GenerationJob) {
     if (inFlight.current || importInFlight.current || storageBlocked || !generator?.available) return;
     if (!retry && (!valid || documentPending || (isPdf && generator.mode !== "ai") || (regenerate && !scene))) return;
     const job = retry ?? captureGeneration({
       manuscript,
       settings,
+      ...(referenceSources.length ? { referenceSources } : {}),
       ...(isPdf && sourceDocument ? { pdfSource: { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, sourceRequest: sourceDocument.query.trim() } : sourceDocument?.appliedQuery ? { sourceRequest: sourceDocument.appliedQuery } : {}),
       ...(regenerate ? { scene, direction, sceneSourceScope: citedPage === null ? "selection" as const : sceneSourceScope } : {}),
     }, board, isPdf ? selectedPdf ?? undefined : undefined);
@@ -550,6 +572,8 @@ export default function Studio() {
     setSourceDocument(null);
     clearPdf();
     setSettings(defaults);
+    setReferenceSources([]);
+    setReferenceDraft({ title: "", url: "", text: "" });
     setBoard(null);
     setView("input");
     setActive(0);
@@ -1021,6 +1045,29 @@ export default function Studio() {
                       )}
                     </div>
                     <div className="settings-divider" />
+                    <details className="additional reference-input">
+                      <summary><BookOpen size={14} /> 보강 자료 <span>선택 · AI 모드</span></summary>
+                      <p>AI 모드에서는 고소·화기·밀폐공간 주제의 저장된 공식 자료에서 관련 내용을 찾습니다. 다른 분야이거나 내부 기준이 있으면 근거 텍스트를 추가하세요. 데모 모드에서는 보강 자료를 사용하지 않습니다.</p>
+                      {referenceSources.map((source, index) => (
+                        <div className="reference-added" key={`${source.title}-${index}`}>
+                          <strong>{source.title}</strong>
+                          <span>{source.text.slice(0, 110)}{source.text.length > 110 ? "…" : ""}</span>
+                          <button type="button" onClick={() => setReferenceSources((sources) => sources.filter((_, i) => i !== index))}
+                            aria-label={`${source.title} 보강 자료 삭제`}><Trash2 size={14} /></button>
+                        </div>
+                      ))}
+                      {referenceSources.length < 3 && <div className="reference-fields">
+                        <Input aria-label="보강 자료 이름" placeholder="자료 이름" maxLength={120} value={referenceDraft.title}
+                          onChange={(event) => setReferenceDraft((draft) => ({ ...draft, title: event.target.value }))} />
+                        <Input aria-label="보강 자료 출처 주소" placeholder="출처 주소 (선택)" maxLength={500} value={referenceDraft.url}
+                          onChange={(event) => setReferenceDraft((draft) => ({ ...draft, url: event.target.value }))} />
+                        <Textarea aria-label="보강 자료 내용" placeholder="원문을 뒷받침할 근거 내용을 붙여 넣으세요."
+                          maxLength={5000} rows={4} value={referenceDraft.text}
+                          onChange={(event) => setReferenceDraft((draft) => ({ ...draft, text: event.target.value }))} />
+                        <Button type="button" variant="outline" onClick={addReference}><Plus size={14} /> 자료 추가</Button>
+                      </div>}
+                    </details>
+                    <div className="settings-divider" />
                     <SelectField
                       label="출력 언어"
                       value={settings.language}
@@ -1208,6 +1255,7 @@ export default function Studio() {
                             </div>
                             <div className="scene-item-body">
                               <strong>{s.title || "제목 없는 장면"}</strong>
+                              {s.phase && <em className="scene-phase">{phaseLabels[s.phase]}</em>}
                               <span>
                                 <Clock3 size={11} />
                                 {s.duration}초{" "}
@@ -1242,6 +1290,7 @@ export default function Studio() {
                           <span className="scene-number">
                             SCENE {String(active + 1).padStart(2, "0")}
                           </span>
+                          {scene.phase && <span className="scene-phase-tag">{phaseLabels[scene.phase]}</span>}
                           <span className={`status-tag ${scene.review ? "" : "done"}`}>
                             {scene.review ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}{" "}
                             {scene.review ? "검토 필요" : "검토 완료"}
@@ -1350,6 +1399,15 @@ export default function Studio() {
                             </div>
                           ))}
                       </div>
+                      {Boolean(scene.references?.length) && <div className="scene-references">
+                        <h3><BookOpen size={15} /> 보강 자료 근거</h3>
+                        <p>나레이션·자막에 활용한 외부 자료입니다. 원문 근거와 구분해 검토해 주세요.</p>
+                        {scene.references!.map((reference) => <div className="scene-reference" key={reference.id}>
+                          <strong>{reference.url ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a> : reference.title}</strong>
+                          <small>{reference.origin === "official" ? "공식 자료" : "사용자 제공 자료"} · {reference.published}</small>
+                          <p>{reference.excerpt}</p>
+                        </div>)}
+                      </div>}
                       <div className="scene-editor-footer">
                         <Button
                           variant="outline"
