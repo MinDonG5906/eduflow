@@ -78,7 +78,7 @@ export async function convertHangul(name: string, data: Buffer, signal: AbortSig
     await writeFile(input, data, { mode: 0o600 });
     const font = process.env.EDUFLOW_HWP_FALLBACK_FONT?.trim() || (process.platform === "darwin" ? "AppleGothic" : process.platform === "win32" ? "Malgun Gothic" : "Noto Sans CJK KR");
     // Embed the local font subset so Korean text survives the PDF preview.
-    // The existing AI path renders these same visible pages, not extracted text.
+    // The AI path analyzes these same visible pages and retains visual fallbacks.
     const run = options.run ?? ((bin, args, abort) => runDocumentConversion(bin, args, abort, 120_000, "한글 문서"));
     await run(binary, ["export-pdf", input, "-o", output, "--font-path", join(directory, "user", "fonts"), "--fallback-serif", font, "--fallback-sans", font], signal);
     signal.throwIfAborted();

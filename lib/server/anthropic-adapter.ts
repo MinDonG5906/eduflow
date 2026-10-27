@@ -4,9 +4,8 @@ import { GenerationError, SERVER_TIMEOUT_MS } from "../generation-contract";
 import type { AIConfig } from "./ai-config";
 import { CLAUDE_MODELS } from "./connection-store";
 import type { GenerationAdapter, GenerationContext } from "./generation-service";
-import type { PdfAttachment } from "./pdf-input";
-import { preparePdfInput } from "./prepare-pdf";
-import { claudeJsonSchema, providerTask } from "./provider-prompt";
+import type { PdfContent } from "./pdf-content";
+import { claudeContent, claudeJsonSchema, createDocumentPreparer, providerTask } from "./provider-prompt";
 
 export function assertAnthropicConfig(config: AIConfig) {
   // Only pinned, priced models can run under the dollar budget.
@@ -17,20 +16,12 @@ export function assertAnthropicConfig(config: AIConfig) {
     throw new GenerationError("AI_NOT_CONFIGURED");
 }
 
-function request(config: AIConfig, context: GenerationContext) {
-  const { instructions, responseSchema, taskText } = providerTask(context);
-  const content: Anthropic.ContentBlockParam[] = [
-    ...(context.pdf ? [{
-      type: "document" as const,
-      source: { type: "base64" as const, media_type: "application/pdf" as const, data: Buffer.from(context.pdf.data).toString("base64") },
-      title: context.pdf.filename,
-    }] : []),
-    { type: "text" as const, text: taskText },
-  ];
+function request(config: AIConfig, context: GenerationContext, document?: PdfContent) {
+  const { instructions, responseSchema, taskText } = providerTask(context, document);
   return {
     model: config.model,
     system: instructions,
-    messages: [{ role: "user" as const, content }],
+    messages: [{ role: "user" as const, content: claudeContent(taskText, document) }],
     output_config: { effort: "medium" as const, format: { type: "json_schema" as const, schema: claudeJsonSchema(responseSchema) } },
   };
 }
@@ -56,17 +47,10 @@ export function createAnthropicAdapter(config: AIConfig, options: { fetch?: type
     maxRetries: 0, timeout: SERVER_TIMEOUT_MS, logLevel: "off",
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-  const preparedPdfs = new WeakMap<PdfAttachment, Promise<PdfAttachment>>();
+  const prepareDocument = createDocumentPreparer();
   async function completeRequest(context: GenerationContext) {
-    if (!context.pdf) return request(config, context);
-    let prepared = preparedPdfs.get(context.pdf);
-    if (!prepared) {
-      prepared = preparePdfInput(context.pdf, context.signal);
-      preparedPdfs.set(context.pdf, prepared);
-    }
-    const pdf = await prepared;
-    context.signal.throwIfAborted();
-    return request(config, { ...context, pdf });
+    const prepared = await prepareDocument(context);
+    return request(config, prepared.context, prepared.document);
   }
   return {
     mode: "ai", model: config.model, promptVersion: "eduflow-claude-v1-selected-pdf",

@@ -35,7 +35,7 @@ import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResp
 import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, savePdf } from "@/lib/pdf-storage";
 import { readDocumentUpload } from "@/lib/document-upload";
-import { sourceFormat, sourceUnit } from "@/lib/pdf-source";
+import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
@@ -51,6 +51,7 @@ export default function Studio() {
   const [error, setError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [direction, setDirection] = useState("");
+  const [sceneSourceScope, setSceneSourceScope] = useState<"citation" | "selection">("citation");
   const [filename, setFilename] = useState("나의 스토리보드");
   const [reviewOnly, setReviewOnly] = useState(false);
   const [sidebar, setSidebar] = useState(false);
@@ -92,6 +93,7 @@ export default function Studio() {
   const pdfReady = isPdf && Boolean(pdf.selected) && Boolean(sourceDocument?.selectedPages?.length) && !pdf.pickerOpen;
   const valid = manuscript.length <= 20000 && (isPdf ? pdfReady : manuscript.replace(/\s/g, "").length >= 100);
   const scene = board?.scenes[active];
+  const citedPage = isPdf && sourceDocument ? citedPdfPage({ name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, scene) : null;
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
@@ -185,7 +187,7 @@ export default function Studio() {
       manuscript,
       settings,
       ...(isPdf && sourceDocument ? { pdfSource: { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, sourceRequest: sourceDocument.query.trim() } : sourceDocument?.appliedQuery ? { sourceRequest: sourceDocument.appliedQuery } : {}),
-      ...(regenerate ? { scene, direction } : {}),
+      ...(regenerate ? { scene, direction, sceneSourceScope: citedPage === null ? "selection" as const : sceneSourceScope } : {}),
     }, board, isPdf ? pdf.selected ?? undefined : undefined);
     setFailedRequest(null);
     const conflict = retry ? retryConflict(job, board) : null;
@@ -460,11 +462,15 @@ export default function Studio() {
                       scene={scene}
                       index={active}
                       sceneCount={board.scenes.length}
+                      manuscript={manuscript}
+                      sourceFile={pdf.selected}
+                      source={isPdf && sourceDocument ? { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] } : undefined}
                       onChange={updateScene}
                       onMove={moveActiveScene}
                       onDelete={() => setModal("delete")}
                       onRegenerate={() => {
                         setDirection("");
+                        setSceneSourceScope("citation");
                         setModal("regenerate");
                       }}
                       canRegenerate={canGenerate}
@@ -501,6 +507,11 @@ export default function Studio() {
         onExport={exportBoard}
         direction={direction}
         onDirectionChange={setDirection}
+        isPdf={isPdf}
+        citedPage={citedPage}
+        documentUnit={documentUnit}
+        sceneSourceScope={sceneSourceScope}
+        onSceneSourceScopeChange={setSceneSourceScope}
         onRegenerate={() => generate(true)}
         onReset={reset}
         onRemoveScene={removeActiveScene}

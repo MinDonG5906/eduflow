@@ -79,6 +79,43 @@ test("shared daily and monthly caps apply without personal budget settings and c
   assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "2" }), coded("AI_NOT_CONFIGURED"));
 });
 
+test("110000 input tokens fit the configured repair budget while 110001 are blocked before generation", async (t) => {
+  const policy = config({
+    EDUFLOW_AI_INPUT_USD_PER_MILLION: "0.75", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "4.50",
+    EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "8000",
+    EDUFLOW_AI_REQUEST_BUDGET_USD: "0.24",
+  });
+  assert.equal(policy.maxInputTokens, 110000);
+  assert.equal(policy.attemptCost, 118500);
+  assert.equal(policy.reservationCost, 237000);
+  assert.equal(policy.dayBudget, 1000000);
+  assert.equal(policy.monthBudget, 5000000);
+  assert.throws(() => config({ EDUFLOW_AI_MAX_INPUT_TOKENS: "110001" }), coded("AI_NOT_CONFIGURED"));
+  const underfunded = new LocalAIBudget(temporary(t)); t.after(() => underfunded.close());
+  assert.throws(() => underfunded.reserve({ ...policy, requestBudget: 200000 }), coded("BUDGET_EXCEEDED"));
+  for (const counted of [110000, 110001]) {
+    let calls = 0;
+    const provider = { ...fakeAI(async (_, context) => {
+      calls++;
+      assert.equal(context.limits?.maxInputTokens, 110000);
+      assert.equal(context.limits?.maxOutputTokens, 8000);
+      return "accepted";
+    }), countInputTokens: () => counted };
+    const run = protectPaidGeneration(localRequest(), provider, { directory: temporary(t), config: policy });
+    try {
+      const result = run.adapter.generate(input, { task: generationTask(input), signal: new AbortController().signal });
+      if (counted === 110000) assert.equal(await result, "accepted");
+      else await assert.rejects(result, (error: unknown) => {
+        assert.ok(error instanceof GenerationError);
+        assert.equal(error.code, "TOKEN_LIMIT_EXCEEDED");
+        assert.deepEqual(error.inputUsage, { inputTokens: 110001, maxInputTokens: 110000 });
+        return true;
+      });
+    } finally { run.finish(); }
+    assert.equal(calls, counted === 110000 ? 1 : 0);
+  }
+});
+
 test("separate member PCs each receive the shared budget and preserve their own usage", (t) => {
   const firstDirectory = temporary(t), secondDirectory = temporary(t);
   const policy = config({

@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { query as agentQuery, type Options, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { GenerationError } from "../generation-contract";
 import type { GenerationAdapter, GenerationContext } from "./generation-service";
-import type { PdfAttachment } from "./pdf-input";
-import { preparePdfInput } from "./prepare-pdf";
-import { claudeJsonSchema, providerTask } from "./provider-prompt";
+import type { PdfContent } from "./pdf-content";
+import { claudeContent, claudeJsonSchema, createDocumentPreparer, providerTask } from "./provider-prompt";
 
 // Personal experiment only: runs the user's own Claude Code login on their own PC.
 // Anthropic does not allow products to offer claude.ai login without approval.
@@ -23,22 +22,8 @@ export function subscriptionEnv(env: Record<string, string | undefined> = proces
   return Object.fromEntries(PASSED_ENV.filter((name) => env[name] !== undefined).map((name) => [name, env[name]]));
 }
 
-async function* userMessage(context: GenerationContext, taskText: string, pdf?: PdfAttachment): AsyncGenerator<SDKUserMessage> {
-  yield {
-    type: "user",
-    parent_tool_use_id: null,
-    message: {
-      role: "user",
-      content: [
-        ...(pdf ? [{
-          type: "document" as const,
-          source: { type: "base64" as const, media_type: "application/pdf" as const, data: Buffer.from(pdf.data).toString("base64") },
-          title: pdf.filename,
-        }] : []),
-        { type: "text" as const, text: taskText },
-      ],
-    },
-  };
+async function* userMessage(context: GenerationContext, taskText: string, document?: PdfContent): AsyncGenerator<SDKUserMessage> {
+  yield { type: "user", parent_tool_use_id: null, message: { role: "user", content: claudeContent(taskText, document) } };
   context.signal.throwIfAborted();
 }
 
@@ -51,22 +36,14 @@ function failure(status: number | null | undefined, text: string): GenerationErr
 export function createClaudeAgentAdapter(options: { model?: string; query?: AgentQuery; env?: Record<string, string | undefined> } = {}): GenerationAdapter {
   const model = options.model ?? "opus";
   const run = options.query ?? (agentQuery as unknown as AgentQuery);
-  const preparedPdfs = new WeakMap<PdfAttachment, Promise<PdfAttachment>>();
+  const prepareDocument = createDocumentPreparer();
   return {
     mode: "ai", model: `claude-code-subscription/${model}`, promptVersion: "eduflow-claude-agent-v1-selected-pdf",
     billing: { kind: "subscription" },
     async generate(_, context) {
       context.signal.throwIfAborted();
-      let pdf: PdfAttachment | undefined;
-      if (context.pdf) {
-        let prepared = preparedPdfs.get(context.pdf);
-        if (!prepared) {
-          prepared = preparePdfInput(context.pdf, context.signal);
-          preparedPdfs.set(context.pdf, prepared);
-        }
-        pdf = await prepared;
-      }
-      const { instructions, responseSchema, taskText } = providerTask(context);
+      const prepared = await prepareDocument(context);
+      const { instructions, responseSchema, taskText } = providerTask(prepared.context, prepared.document);
       const abortController = new AbortController();
       const abort = () => abortController.abort();
       context.signal.addEventListener("abort", abort, { once: true });
@@ -74,7 +51,7 @@ export function createClaudeAgentAdapter(options: { model?: string; query?: Agen
       const cwd = await mkdtemp(join(tmpdir(), "eduflow-claude-"));
       try {
         for await (const message of run({
-          prompt: userMessage(context, taskText, pdf),
+          prompt: userMessage(context, taskText, prepared.document),
           options: {
             model, cwd, abortController,
             env: subscriptionEnv(options.env),

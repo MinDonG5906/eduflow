@@ -3,21 +3,24 @@ import OpenAI from "openai";
 import { GenerationError, MAX_OUTPUT_CHARS, SERVER_TIMEOUT_MS } from "../generation-contract";
 import { CHATGPT_RESOURCE, chatgptAccessToken, listChatGPTModels, type ChatGPTDeps } from "./chatgpt-auth";
 import type { GenerationAdapter, GenerationContext } from "./generation-service";
-import type { PdfAttachment } from "./pdf-input";
-import { preparePdfInput } from "./prepare-pdf";
-import { providerTask } from "./provider-prompt";
+import type { PdfContent } from "./pdf-content";
+import { createDocumentPreparer, providerTask } from "./provider-prompt";
 
 // Plan-usage preview rules: store:false and stream:true on every request; no
 // max_output_tokens, temperature, metadata or system-role items. Output size is
 // enforced here by stopping the stream instead.
-function body(model: string, context: GenerationContext) {
-  const { instructions, responseSchema, taskText } = providerTask(context);
+function body(model: string, context: GenerationContext, document?: PdfContent) {
+  const { instructions, responseSchema, taskText } = providerTask(context, document);
   return {
     model, instructions,
     input: [{ role: "user" as const, content: [
-      ...(context.pdf ? [{ type: "input_file" as const, filename: context.pdf.filename, detail: "high" as const,
-        file_data: `data:application/pdf;base64,${Buffer.from(context.pdf.data).toString("base64")}` }] : []),
+      ...(document?.pdf ? [{ type: "input_file" as const, filename: document.pdf.filename, detail: "high" as const,
+        file_data: `data:application/pdf;base64,${Buffer.from(document.pdf.data).toString("base64")}` }] : []),
       { type: "input_text" as const, text: taskText },
+      ...(document?.images ?? []).flatMap((image) => [
+        { type: "input_text" as const, text: image.id },
+        { type: "input_image" as const, detail: "high" as const, image_url: `data:image/png;base64,${Buffer.from(image.data).toString("base64")}` },
+      ]),
     ] }],
     text: { format: { type: "json_schema" as const, name: "eduflow_storyboard", strict: true, schema: responseSchema } },
     store: false as const, stream: true as const,
@@ -34,7 +37,7 @@ function providerFailure(status: number | undefined, code: string | null | undef
 }
 
 export function createChatGPTAdapter(options: { model?: string; auth?: ChatGPTDeps; fetch?: typeof fetch } = {}): GenerationAdapter {
-  const preparedPdfs = new WeakMap<PdfAttachment, Promise<PdfAttachment>>();
+  const prepareDocument = createDocumentPreparer();
   return {
     mode: "ai", model: `chatgpt-plan/${options.model ?? "default"}`, promptVersion: "eduflow-chatgpt-v1-selected-pdf",
     billing: { kind: "subscription" },
@@ -44,20 +47,12 @@ export function createChatGPTAdapter(options: { model?: string; auth?: ChatGPTDe
         const token = await chatgptAccessToken(options.auth);
         const model = options.model ?? (await listChatGPTModels(options.auth))[0]?.slug;
         if (!model) throw new GenerationError("AI_NOT_CONFIGURED");
-        let pdfContext = context;
-        if (context.pdf) {
-          let prepared = preparedPdfs.get(context.pdf);
-          if (!prepared) {
-            prepared = preparePdfInput(context.pdf, context.signal);
-            preparedPdfs.set(context.pdf, prepared);
-          }
-          pdfContext = { ...context, pdf: await prepared };
-        }
+        const prepared = await prepareDocument(context);
         const client = new OpenAI({
           apiKey: token, baseURL: CHATGPT_RESOURCE, maxRetries: 0, timeout: SERVER_TIMEOUT_MS, logLevel: "off",
           ...(options.fetch ? { fetch: options.fetch } : {}),
         });
-        const stream = await client.responses.create(body(model, pdfContext), { signal: context.signal });
+        const stream = await client.responses.create(body(model, prepared.context, prepared.document), { signal: context.signal });
         let text = "";
         for await (const event of stream) {
           if (event.type === "response.output_text.delta") {
