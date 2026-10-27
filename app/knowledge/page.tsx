@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { KnowledgeDocument, RetrievedReference } from "@/lib/knowledge";
+import type { KnowledgeDocument, KnowledgeReviewPage, RetrievedReference } from "@/lib/knowledge";
 
 export default function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
@@ -15,6 +15,9 @@ export default function KnowledgePage() {
   const [pdfPages, setPdfPages] = useState("");
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<RetrievedReference[] | null>(null);
+  const [reviewDocument, setReviewDocument] = useState<string | null>(null);
+  const [reviewPages, setReviewPages] = useState<KnowledgeReviewPage[]>([]);
+  const [reviewText, setReviewText] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -39,11 +42,36 @@ export default function KnowledgePage() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "자료 등록에 실패했습니다.");
       await refresh();
+      if (result.document.pendingPages) await openReview(result.document.id);
       setTitle(""); setUrl(""); setPublished(""); setRevision(""); setText(""); setFile(null); setPdfPages("");
       const fileInput = document.getElementById("knowledge-file") as HTMLInputElement | null;
       if (fileInput) fileInput.value = "";
-      setNotice(`“${result.document.title}” 자료 ${result.document.chunks}개 구간을 색인했습니다.`);
+      setNotice(`“${result.document.title}” 자료 ${result.document.chunks}개 구간을 색인했습니다.${result.document.pendingPages ? ` ${result.document.pendingPages}페이지는 확인 전까지 검색에서 제외됩니다.` : ""}`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "자료 등록에 실패했습니다."); }
+    finally { setBusy(false); }
+  }
+
+  async function openReview(id: string) {
+    const response = await fetch(`/api/knowledge/review?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error("확인할 페이지를 읽지 못했습니다.");
+    const result = await response.json();
+    setReviewDocument(id);
+    setReviewPages(result.pages);
+    setReviewText(Object.fromEntries(result.pages.map((page: KnowledgeReviewPage) => [page.page, page.text])));
+  }
+
+  async function decide(page: number, action: "approve" | "exclude") {
+    if (!reviewDocument || busy) return;
+    setBusy(true); setNotice("");
+    try {
+      const response = await fetch("/api/knowledge/review", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: reviewDocument, page, action, text: reviewText[page] ?? "" }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "페이지를 처리하지 못했습니다.");
+      await openReview(reviewDocument);
+      await refresh();
+      setNotice(`${page}페이지를 ${action === "approve" ? "검색 자료로 승인" : "검색에서 제외"}했습니다.`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "페이지를 처리하지 못했습니다."); }
     finally { setBusy(false); }
   }
 
@@ -80,7 +108,7 @@ export default function KnowledgePage() {
     {notice && <p className="knowledge-notice" role="status">{notice}</p>}
     <section className="knowledge-panel">
       <h2>자료 등록</h2>
-      <p>PDF·DOCX·TXT 파일 또는 본문 텍스트를 등록할 수 있습니다. 이미지 전용 PDF는 OCR 후 등록해 주세요. 출처와 발행일은 실제 자료에 맞게 입력하세요.</p>
+      <p>PDF·Word·한글·PPT 파일을 등록하면 페이지별 글자를 자동으로 읽고, 필요한 페이지에 OCR을 적용합니다. 판독이 모호한 페이지는 확인 전까지 검색에 넣지 않습니다.</p>
       <form onSubmit={add} className="knowledge-form">
         <label>자료 제목<input required minLength={2} maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>자료 종류<select value={origin} onChange={(event) => setOrigin(event.target.value as "official" | "internal")}>
@@ -89,22 +117,36 @@ export default function KnowledgePage() {
         <label>출처 주소 {origin === "official" ? "(필수)" : "(선택)"}<input type="url" required={origin === "official"} maxLength={500} value={url} onChange={(event) => setUrl(event.target.value)} /></label>
         <label>발행일·기준일 (선택)<input maxLength={100} value={published} onChange={(event) => setPublished(event.target.value)} placeholder="예: 2026-10-01" /></label>
         <label>판본·개정 정보 (선택)<input maxLength={100} value={revision} onChange={(event) => setRevision(event.target.value)} /></label>
-        <label>문서 파일<input id="knowledge-file" type="file" accept=".pdf,.docx,.txt" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
-        <label>PDF 원본 페이지 범위 (선택)<input value={pdfPages} onChange={(event) => setPdfPages(event.target.value)} placeholder="예: 11, 15-17" /></label>
+        <label>문서 파일<input id="knowledge-file" type="file" accept=".pdf,.docx,.txt,.hwp,.hwpx,.ppt,.pptx" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
+        <label>페이지 범위 (선택)<input value={pdfPages} onChange={(event) => setPdfPages(event.target.value)} placeholder="예: 11, 15-17" /></label>
         <label className="knowledge-wide">본문 텍스트 (파일 대신 입력 가능)<textarea rows={6} maxLength={200000} value={text} onChange={(event) => setText(event.target.value)} /></label>
-        <button disabled={busy || (!file && text.trim().length < 30)} type="submit">자료 색인하기</button>
+        <button disabled={busy || (!file && text.trim().length < 30)} type="submit">{busy ? "자료 읽는 중…" : "자료 읽고 색인하기"}</button>
       </form>
     </section>
     <section className="knowledge-panel">
-      <h2>등록 자료 <small>{documents.filter((document) => document.active).length}개 활성</small></h2>
+      <h2>등록 자료 <small>{documents.filter((document) => document.active && document.chunks > 0).length}개 검색 가능</small></h2>
       {!documents.length && <p>아직 등록된 자료가 없습니다. 관련 자료를 등록해야 AI 스토리보드를 생성할 수 있습니다.</p>}
       <div className="knowledge-documents">{documents.map((document) => <article key={document.id}>
-        <div><strong>{document.title}</strong><span>{document.active ? "활성" : "보관"} · {document.origin === "official" ? "공식" : "내부"} · {document.chunks}개 구간</span></div>
+        <div><strong>{document.title}</strong><span>{!document.active ? "보관" : document.chunks ? "검색 가능" : document.pendingPages ? "검토 대기" : "검색 구간 없음"} · {document.origin === "official" ? "공식" : "내부"} · {document.chunks}개 구간{document.pendingPages ? ` · 확인 필요 ${document.pendingPages}페이지` : ""}</span></div>
         <p>{document.published || "발행일 미기재"}{document.revision ? ` · ${document.revision}` : ""}</p>
         {document.url && <a href={document.url} target="_blank" rel="noopener noreferrer">원본 출처 열기</a>}
         <button type="button" disabled={busy} onClick={() => setActive(document)}>{document.active ? "검색에서 제외" : "다시 활성화"}</button>
+        {document.pendingPages ? <button type="button" disabled={busy} onClick={() => openReview(document.id).catch((error) => setNotice(error.message))}>확인할 페이지 보기</button> : null}
       </article>)}</div>
     </section>
+    {reviewDocument && reviewPages.some((page) => page.status === "pending") && <section className="knowledge-panel" id="knowledge-review">
+      <h2>판독 확인</h2>
+      <p>왼쪽 원본과 오른쪽 추출 글을 비교해 주세요. 승인 전 페이지는 검색되지 않습니다.</p>
+      {reviewPages.filter((page) => page.status === "pending").map((page) => <article className="knowledge-review" key={page.page}>
+        <h3>{page.page}페이지 · {page.reviewReason}</h3>
+        <div className="knowledge-review-columns">
+          <img alt={`${page.page}페이지 원본`} src={`/api/knowledge/page?id=${encodeURIComponent(reviewDocument)}&page=${page.filePage}`} />
+          <label>읽은 글<textarea value={reviewText[page.page] ?? ""} onChange={(event) => setReviewText((previous) => ({ ...previous, [page.page]: event.target.value }))} /></label>
+        </div>
+        <div className="knowledge-review-actions"><button type="button" disabled={busy || (reviewText[page.page] ?? "").trim().length < 10} onClick={() => decide(page.page, "approve")}>이 내용 승인</button>
+          <button type="button" disabled={busy} onClick={() => decide(page.page, "exclude")}>이 페이지 제외</button></div>
+      </article>)}
+    </section>}
     <section className="knowledge-panel">
       <h2>검색 미리보기</h2>
       <form onSubmit={preview} className="knowledge-search"><input aria-label="검색할 원고나 주제" minLength={3} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="원고 제목이나 핵심 내용을 입력하세요" /><button disabled={busy || query.trim().length < 3}>검색</button></form>

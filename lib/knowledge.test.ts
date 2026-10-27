@@ -7,6 +7,9 @@ import { PDFDocument } from "pdf-lib";
 import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
 import { addKnowledge, listKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
+import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowledgePage } from "./server/knowledge-handler";
+import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
+import { createHash } from "node:crypto";
 
 test("persistent knowledge index retrieves original passages with source version and PDF page", () => {
   const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-"));
@@ -86,5 +89,45 @@ test("large PDF registration can index selected original pages", async () => {
     assert.equal(base.search("Fall protection anchorage inspection")[0]?.page, 2);
     assert.ok(base.search("Fall protection anchorage inspection").every((hit) => !hit.excerpt.includes("unrelated")));
     base.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("uncertain OCR page stays outside search until the user approves its extracted text", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-review-"));
+  const headers = { Origin: "http://localhost:3001", Host: "localhost:3001" };
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Fall protection anchorage inspection before elevated work begins");
+    pdf.addPage();
+    const bytes = Buffer.from(await pdf.save());
+    const analyzed = await analyzeKnowledgePdf(bytes, "", new AbortController().signal,
+      async () => ({ recognize: async () => ({ text: "Confined space requires oxygen measurement before work begins", confidence: 61 }), close: async () => {} }));
+    assert.equal(analyzed.pages[0].needsReview, false);
+    assert.equal(analyzed.pages[1].needsReview, true);
+    const base = new KnowledgeBase(directory);
+    const document = base.addImported({ title: "Safety manual", origin: "official", url: "https://example.org/manual",
+      published: "2026", revision: "1" }, createHash("sha256").update(bytes).digest("hex"), bytes, analyzed.pages);
+    assert.equal(document.pendingPages, 1);
+    assert.ok(base.search("Fall protection anchorage inspection").length);
+    assert.deepEqual(base.search("Confined space requires oxygen measurement"), []);
+    base.close();
+    const review = await listKnowledgeReview(new Request(`http://localhost:3001/api/knowledge/review?id=${document.id}`), directory);
+    assert.equal((await review.json()).pages[0].status, "pending");
+    const original = await readKnowledgePdf(new Request(`http://localhost:3001/api/knowledge/file?id=${document.id}`), directory);
+    assert.equal(original.status, 200);
+    assert.equal(Buffer.compare(Buffer.from(await original.arrayBuffer()), bytes), 0);
+    const image = await renderKnowledgePage(new Request(`http://localhost:3001/api/knowledge/page?id=${document.id}&page=2`), directory);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get("content-type"), "image/png");
+    assert.ok(Buffer.from(await image.arrayBuffer()).subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")));
+    const approved = await reviewKnowledgePage(new Request("http://localhost:3001/api/knowledge/review", { method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: document.id, page: 2, action: "approve", text: "Confined space requires oxygen measurement before work begins" }),
+    }), directory);
+    assert.equal(approved.status, 200);
+    const reopened = new KnowledgeBase(directory);
+    assert.equal(reopened.list()[0].pendingPages, 0);
+    assert.equal(reopened.search("Confined space requires oxygen measurement")[0]?.page, 2);
+    reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
