@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
+import { PDFParse } from "pdf-parse";
 import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
 import { addKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
@@ -145,6 +146,25 @@ test("clear table cells are indexed with their row and column positions", async 
     async () => { throw new Error("OCR must not run on a readable table"); });
   assert.equal(analyzed.pages[0].needsReview, false);
   assert.match(analyzed.pages[0].text, /행 2 \| 열 1: Falling from height \| 열 2: Use guardrails and harness/);
+});
+
+test("a single-column text box detected as a table does not require page review", async () => {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage();
+  for (const x of [40, 440]) page.drawLine({ start: { x, y: 500 }, end: { x, y: 700 } });
+  for (const y of [500, 600, 700]) page.drawLine({ start: { x: 40, y }, end: { x: 440, y } });
+  page.drawText("Confined space requires oxygen measurement", { x: 50, y: 650 });
+  page.drawText("Ventilation and gas monitoring must continue", { x: 50, y: 550 });
+  const bytes = Buffer.from(await pdf.save());
+  const parser = new PDFParse({ data: new Uint8Array(bytes) });
+  try {
+    const detected = await parser.getTable();
+    assert.equal(detected.pages[0].tables[0][0].length, 1);
+  } finally { await parser.destroy(); }
+  const analyzed = await analyzeKnowledgePdf(bytes, "", new AbortController().signal,
+    async () => { throw new Error("OCR must not run on readable boxed text"); });
+  assert.equal(analyzed.pages[0].needsReview, false);
+  assert.match(analyzed.pages[0].text, /Confined space requires oxygen measurement/);
 });
 
 test("a previously pending page can be rechecked and indexed without manual approval", async () => {

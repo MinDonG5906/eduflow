@@ -153,7 +153,7 @@ export default function KnowledgePage() {
     </section>
     {reviewDocument && reviewPages.some((page) => page.status === "pending") && <section className="knowledge-panel" id="knowledge-review">
       <h2>판독 확인</h2>
-      <p>왼쪽 원본과 오른쪽 추출 글을 비교해 주세요. 승인 전 페이지는 검색되지 않습니다.</p>
+      <p>각 페이지 제목에 확인이 필요한 이유가 표시됩니다. 원본과 추출 글을 비교해 빠진 글자나 표의 행·열 연결만 확인해 주세요. 승인 전 페이지는 검색되지 않습니다.</p>
       {reviewPages.filter((page) => page.status === "pending").map((page) => <article className="knowledge-review" key={page.page}>
         <h3>{page.page}페이지 · {page.reviewReason}</h3>
         <div className="knowledge-review-columns">

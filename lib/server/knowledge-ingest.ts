@@ -89,12 +89,21 @@ function readablePdfText(raw: string): string {
   return clean(withoutBullets.replace(/\t+/g, " ").replace(/ {2,}/g, " "));
 }
 
-function structuredTables(tables: string[][][]): string | null {
+function structuredTables(tables: string[][][]): { text: string; reason: string } {
   const sections: string[] = [];
   for (const [tableIndex, rows] of tables.entries()) {
     const columns = rows[0]?.length ?? 0;
-    if (!rows.length || columns < 2 || columns > 20 || rows.length > 100 ||
-        rows.some((row) => row.length !== columns || !row.some((cell) => cell.trim()))) return null;
+    const label = `이 페이지의 다열 표 ${tableIndex + 1}`;
+    if (!rows.length || columns > 20 || rows.length > 100)
+      return { text: "", reason: `${label}의 행·열 수를 안정적으로 읽지 못했습니다.` };
+    const mismatch = rows.findIndex((row) => row.length !== columns);
+    if (mismatch >= 0)
+      return { text: "", reason: `${label}: 첫 행은 ${columns}열, ${mismatch + 1}행은 ${rows[mismatch].length}열로 읽혔습니다.` };
+    if (columns < 2)
+      return { text: "", reason: `${label}의 열 구조를 읽지 못했습니다.` };
+    const empty = rows.findIndex((row) => !row.some((cell) => cell.trim()));
+    if (empty >= 0)
+      return { text: "", reason: `${label}의 ${empty + 1}행에서 글자를 읽지 못했습니다.` };
     const lines = rows.map((row, rowIndex) => {
       const cells = row.flatMap((cell, columnIndex) => {
         const text = readablePdfText(cell);
@@ -102,10 +111,11 @@ function structuredTables(tables: string[][][]): string | null {
       });
       return `행 ${rowIndex + 1} | ${cells.join(" | ")}`;
     });
-    if (lines.some((line) => suspicious(line))) return null;
+    if (lines.some((line) => suspicious(line)))
+      return { text: "", reason: `${label}에 판독되지 않은 글자가 있습니다.` };
     sections.push(`[표 ${tableIndex + 1}]\n${lines.join("\n")}`);
   }
-  return sections.join("\n\n");
+  return { text: sections.join("\n\n"), reason: "" };
 }
 
 export async function analyzeKnowledgePdf(
@@ -130,13 +140,16 @@ export async function analyzeKnowledgePdf(
       signal.throwIfAborted();
       const raw = clean(page.text);
       const readable = readablePdfText(raw);
-      const pageTables = tablePages.get(page.num);
-      if (pageTables) {
+      // A single column is a text box or ordered list, not a cell relation to
+      // verify. Only multi-column tables need structural validation.
+      const pageTables = (tablePages.get(page.num) ?? []).filter((rows) => rows.some((row) => row.length > 1));
+      if (pageTables.length) {
         const structure = structuredTables(pageTables);
-        const text = structure && !suspicious(readable) ? `${readable}\n\n${structure}` : raw;
+        const safe = Boolean(structure.text) && !suspicious(readable);
+        const text = safe ? `${readable}\n\n${structure.text}` : raw;
         pages.push({ page: page.num, text, method: "text", confidence: null,
-          reviewReason: structure && !suspicious(readable) ? "" : "표의 행·열 관계를 원본과 확인해 주세요.",
-          needsReview: !structure || suspicious(readable) });
+          reviewReason: safe ? "" : structure.reason || "글자 판독이 불확실합니다.",
+          needsReview: !safe });
         continue;
       }
       if (readable.length >= 40 && !suspicious(readable)) {
