@@ -8,7 +8,8 @@
     "start": "next start --hostname 127.0.0.1 -p 3000",
     "typecheck": "tsc --noEmit",
     "test": "node --conditions=react-server --import tsx --test lib/*.test.ts",
-    "setup:hwp": "node scripts/setup-hwp-converter.mjs"
+    "setup:hwp": "node scripts/setup-hwp-converter.mjs",
+    "eval": "node --conditions=react-server --import tsx scripts/eval-generation.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
