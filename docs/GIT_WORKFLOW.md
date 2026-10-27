@@ -27,7 +27,7 @@ team-c → feature/c-작업명 → team-c
 
 ```bash
 git clone <저장소 주소>
-cd storyboard
+cd eduflow
 git fetch origin
 ```
 

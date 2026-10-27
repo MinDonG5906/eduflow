@@ -9,6 +9,10 @@ export const CONTRACT_VERSION = "eduflow-generation-v1" as const;
 export const SERVER_TIMEOUT_MS = 90000;
 export const CLIENT_TIMEOUT_MS = SERVER_TIMEOUT_MS + 5000;
 export const MAX_OUTPUT_CHARS = 1000000;
+// The manuscript is the primary evidence, so AI generation runs without supplemental
+// sources and records this notice instead of stopping.
+export const NO_REFERENCE_NOTICE_PREFIX = "보강 자료 없음:";
+export const NO_REFERENCE_NOTICE = `${NO_REFERENCE_NOTICE_PREFIX} 지식베이스에서 이 원고와 관련된 자료를 찾지 못해 원고만으로 생성했습니다. 보강이 필요하면 지식베이스에 자료를 등록한 뒤 다시 생성하세요.`;
 export const generationRequestSchema = requestSchema.safeExtend({
   scene: sceneSchema.extend({ id: z.string().uuid() }).optional(),
 });
@@ -65,7 +69,6 @@ export const errorDefinitions = {
   INVALID_PDF: { status: 400, retryable: false, error: "PDF가 손상되었거나 암호로 잠겨 있습니다. 확인 후 다시 선택해 주세요." },
   INVALID_PDF_PAGES: { status: 400, retryable: false, error: "선택한 페이지와 PDF가 일치하지 않습니다. 페이지를 다시 선택해 주세요." },
   PDF_AI_REQUIRED: { status: 503, retryable: false, error: "PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다. 무료 데모에서는 지원하지 않습니다." },
-  KNOWLEDGE_NO_MATCH: { status: 422, retryable: false, error: "지식베이스에서 이 원고와 관련된 근거를 찾지 못했습니다. 자료를 등록하거나 원고 주제를 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_DISABLED: { status: 503, retryable: false, error: "실제 AI 사용이 잠겨 있습니다. 서버 설정을 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_NOT_CONFIGURED: { status: 503, retryable: false, error: "AI 키·모델·비용 한도 설정을 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_ACCESS_DENIED: { status: 403, retryable: false, error: "현재 AI 테스트는 이 PC의 로컬 주소에서만 사용할 수 있습니다. 기존 작업은 유지됩니다." },

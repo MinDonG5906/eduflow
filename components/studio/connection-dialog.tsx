@@ -14,6 +14,7 @@ const providerText: Record<Provider, { title: string; detail: string }> = {
   demo: { title: "무료 데모", detail: "원문을 나누는 데모 · 외부 AI 전송 없음" },
   "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $1·월 $5 한도" },
   "anthropic-api": { title: "Claude API 키", detail: "Claude Console 키로 결제 · 같은 비용 한도" },
+  "gemini-api": { title: "Gemini (팀 키)", detail: "운영자가 서버에 넣은 팀 키 사용 · 키 입력 없이 바로 생성" },
 };
 
 function KeyForm({ vendor, saved, onSave, onRemove, busy }: {
@@ -128,6 +129,22 @@ export function ConnectionDialog({ open, onOpenChange }: {
               onSave={(key) => change({ action: "saveKey", vendor: "anthropic", key, consent: true })}
               onRemove={() => change({ action: "removeKey", vendor: "anthropic" })} />
           </>}
+
+          {selected === "gemini-api" && (status.gemini.teamKey && status.gemini.model ? <>
+            <p className="connection-note">
+              <KeyRound size={14} /> 팀 키가 이 PC의 서버에 설정되어 있습니다 · 모델 {status.gemini.label}
+            </p>
+            <p className="connection-note">
+              키는 서버 설정 파일에만 있고 화면에는 나오지 않습니다. Google 무료 등급 키는 입력한 원고가 Google 제품
+              개선에 쓰일 수 있으니 공개해도 되는 자료로 사용해 주세요.
+            </p>
+          </> : (
+            <p className="connection-error" role="alert">
+              {status.gemini.teamKey
+                ? "서버의 EDUFLOW_GEMINI_MODEL이 지원하지 않는 모델입니다. 운영자에게 설정 확인을 요청해 주세요."
+                : "이 PC의 서버에 Gemini 팀 키가 없습니다. 운영자가 .env.local에 EDUFLOW_GEMINI_API_KEY를 넣고 서버를 다시 시작해야 합니다."}
+            </p>
+          ))}
 
           {error && <p className="connection-error" role="alert">{error}</p>}
         </>}

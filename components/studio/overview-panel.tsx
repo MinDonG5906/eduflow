@@ -5,6 +5,7 @@ import { AlertCircle, ChevronDown, Clock3, Film, GraduationCap, Layers3 } from "
 import { Textarea } from "@/components/ui/textarea";
 import { formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import type { Board } from "@/lib/storyboard";
+import { NO_REFERENCE_NOTICE_PREFIX } from "@/lib/generation-contract";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 
 export function OverviewPanel({
@@ -57,7 +58,8 @@ export function OverviewPanel({
           콘텐츠 개요 <ChevronDown size={16} className={open ? "rotate" : ""} />
         </button>
       </div>
-      {board.generation?.warnings.filter((warning) => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map((warning) => (
+      {board.generation?.warnings.filter((warning) =>
+        warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX) || warning.startsWith(NO_REFERENCE_NOTICE_PREFIX)).map((warning) => (
         <p key={warning} className="term-correction-notice" role="status">{warning}</p>
       ))}
       {open && (

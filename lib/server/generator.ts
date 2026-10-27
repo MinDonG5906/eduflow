@@ -3,9 +3,10 @@ import { GenerationError } from "../generation-contract";
 import { readAIConfig, type AIConfig } from "./ai-config";
 import { createAnthropicAdapter } from "./anthropic-adapter";
 import {
-  CLAUDE_MODELS, readConnectionState, type ConnectionState, type Provider,
+  CLAUDE_MODELS, GEMINI_MODELS, geminiModel, readConnectionState, type ConnectionState, type Provider,
 } from "./connection-store";
 import { demoAdapter } from "./demo-adapter";
+import { createGeminiAdapter } from "./gemini-adapter";
 import type { GenerationAdapter } from "./generation-service";
 import { createOpenAIAdapter, OPENAI_MODEL } from "./openai-adapter";
 
@@ -44,6 +45,23 @@ export function anthropicConfig(state: ConnectionState, env: Env = process.env):
   });
 }
 
+// The team key in the server's .env.local is the operator's decision to pay (or use the
+// free tier) for everyone on this PC, so it unlocks AI like a key saved on the screen.
+// Budgets and token caps stay under the same team limits as the other providers.
+export function geminiConfig(env: Env = process.env): AIConfig {
+  const model = geminiModel(env);
+  const key = env.EDUFLOW_GEMINI_API_KEY?.trim();
+  if (!model || !key) throw new GenerationError("AI_NOT_CONFIGURED");
+  const pricing = GEMINI_MODELS[model];
+  return readAIConfig({
+    ...env, EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: key, EDUFLOW_AI_MODEL: model,
+    EDUFLOW_AI_INPUT_USD_PER_MILLION: pricing.inputUSD, EDUFLOW_AI_OUTPUT_USD_PER_MILLION: pricing.outputUSD,
+    EDUFLOW_AI_REQUEST_BUDGET_USD: pricing.requestBudgetUSD,
+    EDUFLOW_AI_MAX_INPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_INPUT_TOKENS, 16000),
+    EDUFLOW_AI_MAX_OUTPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_OUTPUT_TOKENS, 8000),
+  });
+}
+
 export function adapterFor(state: ConnectionState, env: Env = process.env): GenerationAdapter {
   switch (state.provider) {
     case "demo": return demoAdapter;
@@ -52,6 +70,7 @@ export function adapterFor(state: ConnectionState, env: Env = process.env): Gene
       return { ...createOpenAIAdapter(config), billing: { kind: "metered", config } };
     }
     case "anthropic-api": return createAnthropicAdapter(anthropicConfig(state, env));
+    case "gemini-api": return createGeminiAdapter(geminiConfig(env));
   }
 }
 
@@ -63,9 +82,10 @@ const labels: Record<Provider, string> = {
   demo: "데모 모드",
   "openai-api": "OpenAI API",
   "anthropic-api": "Claude API",
+  "gemini-api": "Gemini",
 };
-const vendors: Record<Provider, "OpenAI" | "Anthropic" | null> = {
-  demo: null, "openai-api": "OpenAI", "anthropic-api": "Anthropic",
+const vendors: Record<Provider, "OpenAI" | "Anthropic" | "Google" | null> = {
+  demo: null, "openai-api": "OpenAI", "anthropic-api": "Anthropic", "gemini-api": "Google",
 };
 
 export function generatorStatus() {

@@ -1,5 +1,5 @@
 import {
-  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, SERVER_TIMEOUT_MS,
+  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, NO_REFERENCE_NOTICE, SERVER_TIMEOUT_MS,
   generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse,
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
@@ -136,7 +136,11 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
 export async function runGeneration(
   input: GenerationInput,
   adapter: GenerationAdapter,
-  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[] } = {},
+  options: {
+    signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[];
+    // True when the knowledge base was searched for this request, so an empty result is reported.
+    knowledgeSearched?: boolean;
+  } = {},
 ): Promise<Board> {
   const controller = new AbortController();
   const cancel = () => controller.abort(new GenerationError("CANCELLED"));
@@ -232,6 +236,12 @@ export async function runGeneration(
           warnings.push("전체 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 확인해 주세요.");
         const correctionNote = termCorrectionNotice(allCorrections);
         if (correctionNote) warnings.push(correctionNote);
+        if (options.knowledgeSearched && !task.supplementalSources.length) {
+          // First, and within the 30-warning limit of the board schema; per-scene warnings
+          // also stay in each scene's reviewReason.
+          warnings.unshift(NO_REFERENCE_NOTICE);
+          warnings.splice(30);
+        }
         const board = {
           ...correctedHeader, scenes, settings: input.settings, mode: adapter.mode,
           ...(input.pdfSource ? { pdfSource: input.pdfSource } : {}),

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaults, generateDemo, sample, newScene, markdown, csv } from "./storyboard";
-import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
+import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, NO_REFERENCE_NOTICE, parseGenerationResponse, type GenerationInput } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { createGenerateHandler } from "./server/generate-handler";
 import { readDraft, serializeDraft } from "./studio-state";
@@ -205,16 +205,22 @@ test("HTTP failure contract distinguishes timeout, cancellation, limits and prov
   assert.equal((await invalid.json()).retryable, true);
 });
 
-test("real knowledge-backed generation stops before paid admission when no related passage exists", async () => {
-  let calls = 0;
-  const ai = { ...adapter(async () => { calls++; return output(); }), mode: "ai" as const };
-  const post = createGenerateHandler(ai, { knowledge: () => [] });
+test("AI generation without a related knowledge passage continues from the manuscript and says so", async () => {
+  let searched = 0;
+  const ai = { ...adapter(async () => output()), mode: "ai" as const };
+  const post = createGenerateHandler(ai, { knowledge: () => { searched++; return []; } });
   const response = await post(new Request("http://localhost/api/generate", { method: "POST",
     headers: { "Content-Type": "application/json", Host: "localhost", Origin: "http://localhost" },
     body: JSON.stringify(input) }));
-  assert.equal(response.status, 422);
-  assert.equal((await response.json()).code, "KNOWLEDGE_NO_MATCH");
-  assert.equal(calls, 0);
+  // The empty search no longer stops the request; it goes on to paid admission (locked in tests).
+  assert.equal(searched, 1);
+  assert.equal((await response.json()).code, "AI_DISABLED");
+
+  const board = await runGeneration(input, ai, { references: [], knowledgeSearched: true });
+  assert.equal(board.generation?.warnings[0], NO_REFERENCE_NOTICE);
+  assert.ok(board.scenes.every((scene) => !scene.references?.length));
+  const withoutSearch = await runGeneration(input, ai, { references: [] });
+  assert.ok(!withoutSearch.generation?.warnings.includes(NO_REFERENCE_NOTICE));
 });
 
 test("input-limit responses preserve measured token counts through client validation and distinguish PDF image size", async () => {
