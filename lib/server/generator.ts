@@ -13,6 +13,11 @@ import type { GenerationAdapter } from "./generation-service";
 import { createOpenAIAdapter, OPENAI_MODEL } from "./openai-adapter";
 
 type Env = Record<string, string | undefined>;
+const cappedTokenLimit = (value: string | undefined, cap: number) => {
+  if (value === undefined) return String(cap);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) return value;
+  return String(Math.min(Number(value), cap));
+};
 
 // A key saved on the connection screen was entered with explicit consent to paid use,
 // so it unlocks AI without EDUFLOW_AI_ENABLED. Budgets and token caps still come from
@@ -35,6 +40,10 @@ export function anthropicConfig(state: ConnectionState, env: Env = process.env):
     ...env, EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: state.anthropicKey, EDUFLOW_AI_MODEL: state.anthropicModel,
     EDUFLOW_AI_INPUT_USD_PER_MILLION: pricing.inputUSD, EDUFLOW_AI_OUTPUT_USD_PER_MILLION: pricing.outputUSD,
     EDUFLOW_AI_REQUEST_BUDGET_USD: env.EDUFLOW_ANTHROPIC_REQUEST_BUDGET_USD || pricing.requestBudgetUSD,
+    // Claude model prices above are valid below 100k input tokens. The 16k/8k
+    // cap also keeps a two-attempt reservation within the default request budget.
+    EDUFLOW_AI_MAX_INPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_INPUT_TOKENS, 16000),
+    EDUFLOW_AI_MAX_OUTPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_OUTPUT_TOKENS, 8000),
   });
 }
 

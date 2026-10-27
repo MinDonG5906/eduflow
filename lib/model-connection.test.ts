@@ -79,6 +79,10 @@ test("old .env.local setups keep OpenAI, and saved Claude keys use pinned prices
   assert.equal(config.inputRate, 4_000_000);
   assert.equal(config.dayBudget, 1_000_000);
   assert.ok(config.reservationCost <= config.requestBudget);
+  // Claude prices hold below 100k input tokens; raised personal caps stay at 16k/8k.
+  const capped = anthropicConfig(state, { EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "12000" });
+  assert.equal(capped.maxInputTokens, 16000);
+  assert.equal(capped.maxOutputTokens, 8000);
   assert.equal(adapterFor({ ...state, anthropicModel: "claude-haiku-5-5" }, {}).model, "claude-haiku-5-5");
   assert.throws(() => adapterFor({ ...state, provider: "chatgpt" }, {}), coded("AI_SIGN_IN_REQUIRED"));
   assert.throws(() => adapterFor({ ...state, provider: "claude-subscription", claudeSubscriptionAcknowledged: true }, {}), coded("AI_NOT_CONFIGURED"));

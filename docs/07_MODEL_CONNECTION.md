@@ -16,11 +16,11 @@
 
 키를 입력하고 유료 호출 동의를 선택한 뒤 저장합니다. 저장한 키는 `EDUFLOW_AI_ENABLED` 없이도 사용하지만, 비용 한도와 토큰 상한은 기존 `.env.local` 값과 팀 공통 상한(하루 $1·월 $5)을 그대로 따릅니다. 화면에 저장한 OpenAI 키가 없으면 예전처럼 `.env.local`의 `EDUFLOW_AI_API_KEY`를 씁니다.
 
-Claude 모델은 가격을 아는 모델만 고를 수 있습니다(100만 토큰당 입력/출력: Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50). 기본 1회 예약 한도는 Opus $0.50, Sonnet $0.25, Haiku $0.02이며 `EDUFLOW_ANTHROPIC_REQUEST_BUDGET_USD`로 낮출 수 있습니다. 기본 상한(입력 16,000·출력 8,000 토큰)에서 Opus 5.5는 하루 최소 2회(보완 호출 없이 끝나면 예약이 일부 환급되어 더 많이) 생성할 수 있습니다. Opus 5.5의 사고 토큰도 출력 상한에 포함되므로 장면이 많아 결과가 잘리면 `EDUFLOW_AI_MAX_OUTPUT_TOKENS`를 비용 한도 안에서 올리세요. 거절 시 다른 모델로 자동 재실행하는 서버 폴백은 가격이 정해지지 않은 모델로 넘어갈 수 있어 사용하지 않습니다.
+Claude 모델은 가격을 아는 모델만 고를 수 있습니다(100만 토큰당 입력/출력: Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50). 기본 1회 예약 한도는 Opus $0.50, Sonnet $0.25, Haiku $0.02이며 `EDUFLOW_ANTHROPIC_REQUEST_BUDGET_USD`로 낮출 수 있습니다. Claude 요청은 입력 16,000·출력 8,000 토큰으로 고정합니다. Haiku 5.5는 100,000 입력 토큰을 넘으면 가격이 올라가고, 이 상한이어야 보완 1회를 포함한 예약이 기본 1회 한도 안에 들어가기 때문입니다. 개인 설정이 더 낮으면 낮은 값을 유지합니다. 이 상한에서 Opus 5.5는 하루 최소 2회(보완 호출 없이 끝나면 예약이 일부 환급되어 더 많이) 생성할 수 있습니다. Opus 5.5의 사고 토큰도 출력 상한에 포함되므로 장면이 많아 결과가 잘리면 장면 수나 목표 시간을 줄여 주세요. 거절 시 다른 모델로 자동 재실행하는 서버 폴백은 가격이 정해지지 않은 모델로 넘어갈 수 있어 사용하지 않습니다.
 
 ## ChatGPT 로그인
 
-OpenAI의 [Sign in with ChatGPT 플랜 사용](https://developers.openai.com/siwc/token-sharing-open-source)은 오픈소스·로컬 실행 앱용입니다. EduFlow는 각자의 PC에서 실행하므로 이 조건에 맞춥니다. 원격 서버나 유료 서비스로 배포하려면 OpenAI 신청서를 먼저 제출해야 합니다.
+OpenAI의 [플랜 사용 안내](https://developers.openai.com/siwc/token-sharing-open-source)는 "오픈소스·로컬 실행 앱"을 대상으로 하지만, [빠른 시작](https://developers.openai.com/siwc/quickstart)은 "공개 오픈소스 앱과 선정된 비공개 클라이언트"에 제공한다고 적고 있습니다. EduFlow는 각자의 PC에서 실행하지만 **비공개 저장소**이므로 대상에 해당하는지 확실하지 않습니다. 그래서 C팀의 첫 연결 기능(PR #11)은 이 기능을 넣지 않았습니다. 팀 기능으로 쓸지는 팀장이 정하고, 필요하면 OpenAI [신청서](https://openai.com/form/sign-in-with-chatgpt-interest/)로 확인합니다. 원격 서버나 유료 서비스로 배포할 때는 반드시 신청해야 합니다.
 
 1. `http://127.0.0.1:3000`으로 화면을 엽니다(`localhost`는 다른 주소로 취급되어 로그인할 수 없습니다).
 2. **Continue with ChatGPT**를 누르고 OpenAI 화면에서 로그인·플랜 사용을 허용합니다.
