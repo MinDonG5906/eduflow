@@ -17,8 +17,8 @@ export function usePdfSelection(fileId: string | undefined, onError: (message: s
     loadPdf(fileId).then((file) => {
       if (cancelled) return;
       setSelected(file ?? null);
-      if (!file) onError("저장된 PDF를 찾지 못했습니다. 원본 PDF를 다시 불러와 페이지를 선택해 주세요.");
-    }).catch(() => { if (!cancelled) onError("저장된 PDF를 열지 못했습니다. PDF를 다시 불러와 주세요."); });
+      if (!file) onError("저장된 선택 자료를 찾지 못했습니다. 원본 파일을 다시 불러와 선택해 주세요.");
+    }).catch(() => { if (!cancelled) onError("저장된 선택 자료를 열지 못했습니다. 원본 파일을 다시 불러와 주세요."); });
     return () => { cancelled = true; };
   }, [fileId]);
 

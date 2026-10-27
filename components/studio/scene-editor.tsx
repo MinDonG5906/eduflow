@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { sourceFormat } from "@/lib/pdf-source";
 import { fieldLabels, type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
 
@@ -167,7 +168,7 @@ export function SceneEditor({
                   <span className="source-tag">{scene.sourceId}</span>
                 )}
               </label>
-              {key === "evidence" && scene.pdfSource && <small>원본 PDF: {scene.pdfSource.name}</small>}
+              {key === "evidence" && scene.pdfSource && <small>원본 {sourceFormat(scene.pdfSource.name)}: {scene.pdfSource.name}</small>}
               <Textarea
                 id={`field-${key}`}
                 value={scene[key]}

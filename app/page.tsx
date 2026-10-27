@@ -31,8 +31,10 @@ import {
 } from "@/lib/storyboard";
 import { captureGeneration, retryConflict, type GenerationJob } from "@/lib/studio-state";
 import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResponse } from "@/lib/generation-contract";
-import { documentSchema, findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
+import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, savePdf } from "@/lib/pdf-storage";
+import { readDocumentUpload } from "@/lib/document-upload";
+import { sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
@@ -65,14 +67,14 @@ export default function Studio() {
   const draft = useDraftStorage(
     { manuscript, settings, board, document: sourceDocument },
     {
-      onRestore(parsed) {
+      onRestore(parsed, removedExample) {
         setManuscript(parsed.manuscript);
         setSettings(parsed.settings);
         setSourceDocument(parsed.document ?? null);
-        if (parsed.board) {
-          setBoard(parsed.board);
-          setView("board");
-        }
+        setBoard(parsed.board);
+        setView(parsed.board ? "board" : "input");
+        if (removedExample)
+          setNotice("이전 훈민정음 예제 결과를 정리했어요. 현재 원고·첨부 자료·설정은 유지됩니다.");
       },
       onError: fail,
     },
@@ -83,6 +85,8 @@ export default function Studio() {
   const [progress, setProgress] = useBusyProgress(busy);
 
   const isPdf = Boolean(sourceDocument && (sourceDocument.kind === "pdf" || /\.pdf$/i.test(sourceDocument.name)));
+  const documentUnit = sourceUnit(sourceDocument?.name ?? "");
+  const documentFormat = sourceFormat(sourceDocument?.name ?? "");
   const pdfReady = isPdf && Boolean(pdf.selected) && Boolean(sourceDocument?.selectedPages?.length) && !pdf.pickerOpen;
   const valid = manuscript.length <= 20000 && (isPdf ? pdfReady : manuscript.replace(/\s/g, "").length >= 100);
   const scene = board?.scenes[active];
@@ -117,22 +121,20 @@ export default function Studio() {
     setImporting(true);
     setError("");
     try {
-      if (!/\.(txt|pdf|docx)$/i.test(file.name))
-        throw new Error("PDF, Word(.docx), TXT 파일을 지원합니다. HWP·DOC는 PDF 또는 DOCX로 저장해 주세요.");
+      if (!/\.(txt|pdf|pptx?|hwpx?|docx)$/i.test(file.name))
+        throw new Error("PDF, PPT/PPTX, HWP/HWPX, Word(.docx), TXT 파일을 지원합니다. 구형 DOC는 PDF 또는 DOCX로 저장해 주세요.");
       const response = await fetch("/api/documents", {
         method: "POST", headers: { "Content-Type": "application/octet-stream", "X-Document-Name": encodeURIComponent(file.name) },
         body: file, signal: controller.signal,
       });
-      const raw = await response.json();
-      if (!response.ok) throw new Error(typeof raw.error === "string" ? raw.error : "문서를 읽지 못했습니다.");
-      const document = documentSchema.parse(raw);
+      const { document, pdf: converted } = await readDocumentUpload(response, file);
       controller.signal.throwIfAborted();
       pdf.clear();
-      if (document.kind === "pdf") pdf.open(file);
+      if (document.kind === "pdf") pdf.open(converted!);
       setSourceDocument({ ...document, appliedQuery: "" });
       setManuscript(document.kind !== "pdf" && document.text.length <= MAX_MANUSCRIPT_CHARS ? document.text : "");
       setFailedRequest(null);
-      notify(document.kind === "pdf" ? "PDF를 열었어요. AI에 보낼 페이지를 먼저 선택해 주세요." : document.text.length <= MAX_MANUSCRIPT_CHARS ? `${file.name}의 내용을 불러왔어요. 원하는 부분만 찾아서 제작할 수도 있어요.` : `${file.name}을 읽었어요. 제작할 부분을 입력해 원고로 가져와 주세요.`);
+      notify(document.kind === "pdf" ? `${sourceFormat(file.name)}를 열었어요. AI에 보낼 ${sourceUnit(file.name)}를 먼저 선택해 주세요.` : document.text.length <= MAX_MANUSCRIPT_CHARS ? `${file.name}의 내용을 불러왔어요. 원하는 부분만 찾아서 제작할 수도 있어요.` : `${file.name}을 읽었어요. 제작할 부분을 입력해 원고로 가져와 주세요.`);
     } catch (e) {
       setFailedRequest(null);
       if (controller.signal.aborted) notify("문서 불러오기를 취소했어요. 기존 원고를 유지합니다.");
@@ -150,12 +152,12 @@ export default function Studio() {
     const id = crypto.randomUUID();
     let storedId: string | undefined;
     try { await savePdf(id, blob); storedId = id; }
-    catch { setError("PDF는 현재 화면에서 사용할 수 있지만 브라우저에 저장하지 못했습니다. 새로고침하면 다시 첨부해 주세요."); }
+    catch { setError("선택 자료는 현재 화면에서 사용할 수 있지만 브라우저에 저장하지 못했습니다. 새로고침하면 다시 첨부해 주세요."); }
     if (!pdf.isCurrent(original)) { if (storedId) void deletePdf(storedId).catch(() => {}); return; }
     pdf.select(blob);
     setSourceDocument((document) => document ? { ...document, selectedPages: pages, fileId: storedId } : document);
     setFailedRequest(null);
-    notify(`원본 ${pages.join(", ")}페이지를 선택했어요. 제작 요청과 설정을 확인한 뒤 생성해 주세요.`);
+    notify(`${pages.length}${documentUnit}를 선택했어요. 제작 요청과 설정을 확인한 뒤 생성해 주세요.`);
   }
   function findDocumentPart() {
     if (!sourceDocument) return;
@@ -374,6 +376,8 @@ export default function Studio() {
                   manuscript={manuscript}
                   onManuscriptChange={setManuscript}
                   isPdf={isPdf}
+                  documentFormat={documentFormat}
+                  documentUnit={documentUnit}
                   valid={valid}
                   busy={busy}
                   importing={importing}
@@ -412,6 +416,8 @@ export default function Studio() {
               <GenerationBar
                 settings={settings}
                 isPdf={isPdf}
+                documentFormat={documentFormat}
+                documentUnit={documentUnit}
                 canGenerate={canGenerate}
                 storageBlocked={storageBlocked}
                 generator={generator}

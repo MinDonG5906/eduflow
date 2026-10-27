@@ -257,7 +257,7 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         <li>
           <strong>원고를 준비하세요</strong>
           <p>
-            PDF를 불러오면 AI에 보낼 페이지를 먼저 선택합니다. 표·그림이 포함된 선택 페이지로 생성하며, 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
+            PDF·PPT·HWP/HWPX를 불러오면 AI에 보낼 페이지·슬라이드를 먼저 선택합니다. PPT와 한글 파일은 이 PC에서 PDF로 변환하며, 미리보기에서 글꼴·배치를 확인해 주세요. 선택한 부분의 표·그림으로 생성하며 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
           </p>
         </li>
         <li>

@@ -4,16 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import type { SourceDocument } from "@/lib/documents";
 import { deletePdf } from "@/lib/pdf-storage";
 import type { Board, Settings } from "@/lib/storyboard";
-import { readDraft, serializeDraft, type Draft } from "@/lib/studio-state";
+import { DRAFT_STORAGE_KEY, restoreBrowserDraft, serializeDraft, type Draft } from "@/lib/studio-state";
 
 // Keep the original key so existing Frame drafts open in EduFlow without migration.
-const STORAGE = "frame-studio-v1";
+const STORAGE = DRAFT_STORAGE_KEY;
 
 type DraftState = { manuscript: string; settings: Settings; board: Board | null; document: SourceDocument | null };
 
 export function useDraftStorage(
   { manuscript, settings, board, document }: DraftState,
-  { onRestore, onError }: { onRestore: (draft: Draft) => void; onError: (message: string) => void },
+  { onRestore, onError }: { onRestore: (draft: Draft, removedExample: boolean) => void; onError: (message: string) => void },
 ) {
   const [ready, setReady] = useState(false);
   const [storageBlocked, setStorageBlocked] = useState(false);
@@ -25,10 +25,10 @@ export function useDraftStorage(
     let stored: string | null = null;
     try {
       stored = localStorage.getItem(STORAGE);
-      if (stored !== null) {
-        const parsed = readDraft(stored);
+      const { draft: parsed, removedExample } = restoreBrowserDraft(stored, localStorage);
+      if (parsed) {
         savedPdfIdRef.current = parsed.document?.fileId;
-        onRestore(parsed);
+        onRestore(parsed, removedExample);
         setSaved("이전 작업을 복구했어요");
       }
     } catch {

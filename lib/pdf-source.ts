@@ -2,11 +2,19 @@ import { z } from "zod";
 
 export const MAX_AI_PDF_BYTES = 50_000_000;
 export const pdfSourceSchema = z.object({
-  name: z.string().min(1).max(255).regex(/\.pdf$/i),
+  // Display metadata uses the original filename; the attachment is always a PDF.
+  name: z.string().min(1).max(255).regex(/\.(pdf|pptx?|hwpx?)$/i),
   pages: z.array(z.number().int().min(1).max(200)).min(1).max(200)
     .refine((pages) => pages.every((page, i) => i === 0 || page > pages[i - 1])),
 });
 export type PdfSource = z.infer<typeof pdfSourceSchema>;
+
+export const isPresentation = (name: string) => /\.pptx?$/i.test(name);
+export const isHangul = (name: string) => /\.hwpx?$/i.test(name);
+export const sourceUnit = (name: string) => isPresentation(name) ? "슬라이드" : "페이지";
+export type SourceFormat = "PDF" | "PPT" | "HWP" | "HWPX";
+export const sourceFormat = (name: string): SourceFormat => isPresentation(name) ? "PPT" : isHangul(name) ? /\.hwpx$/i.test(name) ? "HWPX" : "HWP" : "PDF";
+export const sourceNote = (source: PdfSource) => `원본 ${sourceFormat(source.name)}: ${source.name}\n선택 ${sourceUnit(source.name)}: ${source.pages.join(", ")}\n\n`;
 
 export function parsePdfPages(value: string, total: number): number[] {
   if (!value.trim()) return [];
@@ -19,6 +27,18 @@ export function parsePdfPages(value: string, total: number): number[] {
     for (let page = start; page <= end; page++) pages.add(page);
   }
   return [...pages].sort((a, b) => a - b);
+}
+
+/** Compact an already sorted selection for the range field and saved summary. */
+export function formatPdfPages(pages: number[]): string {
+  const ranges: string[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    const start = pages[i];
+    while (i + 1 < pages.length && pages[i + 1] === pages[i] + 1) i++;
+    const end = pages[i];
+    ranges.push(start === end ? String(start) : `${start}-${end}`);
+  }
+  return ranges.join(", ");
 }
 
 export async function selectPdfPages(data: Uint8Array, pages: number[]) {

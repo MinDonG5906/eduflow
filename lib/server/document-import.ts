@@ -1,9 +1,10 @@
 import "server-only";
 import { MAX_DOCUMENT_CHARS, documentSchema, type SourceDocument } from "../documents";
-
-export class DocumentImportError extends Error {
-  constructor(message: string, public status = 400) { super(message); }
-}
+import { DocumentImportError } from "./document-import-error";
+import { convertPresentation } from "./presentation-import";
+import { convertHangul } from "./hangul-import";
+import { isHangul, isPresentation } from "../pdf-source";
+export { DocumentImportError } from "./document-import-error";
 
 async function inspectPdf(name: string, data: Buffer): Promise<SourceDocument> {
   if (!name || name.length > 255 || !data.length || !data.subarray(0, 1024).includes(Buffer.from("%PDF-")))
@@ -65,7 +66,7 @@ export async function extractDocument(name: string, data: Buffer): Promise<Sourc
           throw new DocumentImportError("PDF에서 글자를 찾지 못했습니다. 스캔·이미지 PDF는 문자 인식(OCR) 후 올리거나 내용을 붙여 넣어 주세요.");
       } finally { await parser.destroy(); }
     } else {
-      throw new DocumentImportError("PDF, Word(.docx), UTF-8 TXT 파일을 지원합니다. HWP·DOC 파일은 PDF 또는 DOCX로 저장해 주세요.");
+      throw new DocumentImportError("PDF, PPT/PPTX, HWP/HWPX, Word(.docx), UTF-8 TXT 파일을 지원합니다. 구형 DOC 파일은 PDF 또는 DOCX로 저장해 주세요.");
     }
   } catch (error) {
     if (error instanceof DocumentImportError) throw error;
@@ -80,7 +81,7 @@ export async function extractDocument(name: string, data: Buffer): Promise<Sourc
   return documentSchema.parse({ name, text, ...(pages ? { pages } : {}), query: "" });
 }
 
-export async function importDocumentRequest(request: Request) {
+export async function importDocumentRequest(request: Request, convert = convertPresentation, convertHwp = convertHangul) {
   const headers = { "Cache-Control": "no-store" };
   try {
     const url = new URL(request.url);
@@ -95,6 +96,7 @@ export async function importDocumentRequest(request: Request) {
     try {
       while (true) {
         const { done, value } = await reader.read();
+        request.signal.throwIfAborted();
         if (done) break;
         chunks.push(value);
       }
@@ -103,6 +105,11 @@ export async function importDocumentRequest(request: Request) {
     try { name = decodeURIComponent(request.headers.get("x-document-name") ?? ""); }
     catch { throw new DocumentImportError("파일 이름을 읽을 수 없습니다."); }
     const data = Buffer.concat(chunks);
+    if (isPresentation(name) || isHangul(name)) {
+      const { pdf, pages } = await (isHangul(name) ? convertHwp : convert)(name, data, request.signal);
+      return new Response(new Uint8Array(pdf), { headers: { ...headers, "Content-Type": "application/pdf",
+        "X-Document-Pages": String(pages), "X-Content-Type-Options": "nosniff" } });
+    }
     return Response.json(await (/\.pdf$/i.test(name) ? inspectPdf(name, data) : extractDocument(name, data)), { headers });
   } catch (error) {
     const failure = error instanceof DocumentImportError ? error : new DocumentImportError("파일을 읽지 못했습니다. 다시 올려 주세요.");

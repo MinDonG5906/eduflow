@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AlertCircle, ChevronDown, Clock3, Film, GraduationCap, Layers3 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import type { Board } from "@/lib/storyboard";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 
@@ -81,7 +82,7 @@ export function OverviewPanel({
             />
           </label>
           <div className="settings-summary">
-            {board.pdfSource && <p>원본 PDF: {board.pdfSource.name} · {board.pdfSource.pages.join(", ")}페이지</p>}
+            {board.pdfSource && <p>원본 {sourceFormat(board.pdfSource.name)}: {board.pdfSource.name} · {formatPdfPages(board.pdfSource.pages)}{sourceUnit(board.pdfSource.name)}</p>}
             {board.settings.difficulty} · 목표 {board.settings.minutes}분 ·{" "}
             {board.settings.tone} · {board.settings.language}
             {board.settings.keywords.length > 0 &&

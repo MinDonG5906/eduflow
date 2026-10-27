@@ -1,11 +1,14 @@
 import type { ReactNode, RefObject } from "react";
 import { BookOpen, FileText, Lightbulb, PencilLine, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { SourceFormat } from "@/lib/pdf-source";
 
 export function ManuscriptPanel({
   manuscript,
   onManuscriptChange,
   isPdf,
+  documentFormat,
+  documentUnit,
   valid,
   busy,
   importing,
@@ -19,6 +22,8 @@ export function ManuscriptPanel({
   manuscript: string;
   onManuscriptChange: (value: string) => void;
   isPdf: boolean;
+  documentFormat: SourceFormat;
+  documentUnit: string;
   valid: boolean;
   busy: boolean;
   importing: boolean;
@@ -60,14 +65,14 @@ export function ManuscriptPanel({
         <input
           ref={uploadRef}
           type="file"
-          accept=".txt,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".txt,.pdf,.ppt,.pptx,.hwp,.hwpx,.docx,application/x-hwp,application/haansofthwp,application/hwp+zip,text/plain,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="sr-only"
-          aria-label="PDF, Word, TXT 원고 불러오기"
+          aria-label="PDF, PPT, 한글, Word, TXT 원고 불러오기"
           disabled={busy || importing || storageBlocked}
           onChange={(e) => onImport(e.target.files?.[0])}
         />
       </div>
-      <p className="file-formats" role="status">PDF · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 큰 문서는 읽는 데 시간이 걸릴 수 있습니다."}</p>
+      <p className="file-formats" role="status">PDF · PPT/PPTX · HWP/HWPX · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 문서 변환과 큰 문서 읽기는 시간이 걸릴 수 있습니다."}</p>
       {documentSource}
       <div
         className="manuscript-editor"
@@ -78,7 +83,7 @@ export function ManuscriptPanel({
         }}
       >
         <label className="sr-only" htmlFor="manuscript">
-          {isPdf ? "PDF에 덧붙일 설명 (선택)" : "교육 원고"}
+          {isPdf ? `${documentFormat}에 덧붙일 설명 (선택)` : "교육 원고"}
         </label>
         <textarea
           id="manuscript"
@@ -88,7 +93,7 @@ export function ManuscriptPanel({
           onChange={(e) => onManuscriptChange(e.target.value)}
           disabled={busy || importing || storageBlocked}
           placeholder={
-            isPdf ? "PDF에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 PDF 페이지를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다." : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
+            isPdf ? `${documentFormat}에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 ${documentUnit}를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다.` : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
           }
         />
         {!manuscript && !isPdf && (
@@ -101,7 +106,7 @@ export function ManuscriptPanel({
               </span>
             </div>
             <p>아이디어가 장면이 되는 곳</p>
-            <small>원고를 작성하거나 PDF·Word·TXT 파일을 여기에 놓아 주세요.</small>
+            <small>원고를 작성하거나 PDF·PPT·한글·Word·TXT 파일을 여기에 놓아 주세요.</small>
           </div>
         )}
       </div>
@@ -109,10 +114,10 @@ export function ManuscriptPanel({
         <span id="manuscript-hint" className={manuscript.length > 20000 ? "invalid" : ""}>
           {manuscript.length > 20000
             ? `${(manuscript.length - 20000).toLocaleString()}자 초과`
-            : isPdf ? "PDF에 덧붙일 설명 · 선택 입력"
+            : isPdf ? `${documentFormat}에 덧붙일 설명 · 선택 입력`
             : manuscript && !valid
               ? "공백 제외 100자 이상 입력해 주세요"
-              : "공백 제외 최소 100자 · PDF·Word·TXT 지원"}
+              : "공백 제외 최소 100자 · PDF·PPT·한글·Word·TXT 지원"}
         </span>
         <span>
           <strong>{manuscript.length.toLocaleString()}</strong> / 20,000자

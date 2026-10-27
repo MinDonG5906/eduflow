@@ -7,7 +7,7 @@ import { fieldLabels, manuscriptSource, type Board } from "../storyboard";
 import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection } from "../term-corrections";
 import type { PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
-import type { PdfSource } from "../pdf-source";
+import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -89,8 +89,8 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
   if (pdfSource) {
     const match = /^pdf-page:(\d+)$/.exec(scene.sourceId);
     if (!match || !pdfSource.pages.includes(Number(match[1])) || !scene.evidence)
-      return "선택한 PDF 페이지의 근거를 확인할 수 없습니다. 원본과 대조해 주세요.";
-    return `PDF 원본 ${match[1]}페이지를 근거로 한 AI 해석입니다. 인용·표·그림의 정확성을 원본과 대조해 주세요.`;
+      return `선택한 ${sourceFormat(pdfSource.name)} ${sourceUnit(pdfSource.name)}의 근거를 확인할 수 없습니다. 원본과 대조해 주세요.`;
+    return `${sourceFormat(pdfSource.name)} 원본 ${match[1]}${sourceUnit(pdfSource.name)}를 근거로 한 AI 해석입니다. 인용·표·그림의 정확성을 원본과 대조해 주세요.`;
   }
   const match = /^sentence:(\d+)-(\d+)$/.exec(scene.sourceId);
   if (!match || !scene.evidence) return "원문 근거 구간을 확인할 수 없습니다. 원문과 대조해 주세요.";

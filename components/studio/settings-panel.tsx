@@ -3,6 +3,7 @@ import { ArrowRight, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { SourceFormat } from "@/lib/pdf-source";
 import { audienceOptions, defaults, type Settings } from "@/lib/storyboard";
 import { SelectField } from "./select-field";
 import type { GeneratorStatus } from "./types";
@@ -195,6 +196,8 @@ export function SettingsPanel({
 export function GenerationBar({
   settings,
   isPdf,
+  documentFormat,
+  documentUnit,
   canGenerate,
   storageBlocked,
   generator,
@@ -202,6 +205,8 @@ export function GenerationBar({
 }: {
   settings: Settings;
   isPdf: boolean;
+  documentFormat: SourceFormat;
+  documentUnit: string;
   canGenerate: boolean;
   storageBlocked: boolean;
   generator: GeneratorStatus;
@@ -228,7 +233,7 @@ export function GenerationBar({
           disabled={!canGenerate}
           onClick={onGenerate}
         >
-          <Sparkles size={17} /> {isPdf ? "선택한 PDF로 생성" : "스토리보드 생성"} <ArrowRight size={17} />
+          <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
         </Button>
       </div>
       <div className="bottom-note">
@@ -236,7 +241,7 @@ export function GenerationBar({
         <span>{storageBlocked ? "기존 저장 원본을 보호하는 동안 자동 저장이 중지됩니다." : "작업은 이 브라우저에 자동 저장됩니다."}</span>
         <span className="note-dot">·</span>
         <span>
-          {generator?.mode === "ai" ? isPdf ? "생성 시 선택한 PDF 페이지·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택된 PDF는 이 브라우저에 저장됩니다." : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
+          {generator?.mode === "ai" ? isPdf ? `생성 시 선택한 ${documentUnit}만 담은 PDF·추가 설명·설정·제작 요청을 OpenAI에 전송합니다. 선택본은 이 브라우저에 저장됩니다.` : "생성 시 선택한 원고·설정·제작 요청을 OpenAI에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다." : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF·PPT·한글의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
         </span>
       </div>
     </>
