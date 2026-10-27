@@ -15,6 +15,7 @@ const updateSchema = z.object({ id: z.string().uuid(), active: z.boolean() });
 const searchSchema = z.object({ query: z.string().trim().min(3).max(20000) });
 const reviewSchema = z.object({ id: z.string().uuid(), page: z.number().int().positive(),
   action: z.enum(["approve", "exclude"]), text: z.string().max(20000).optional() });
+const recheckSchema = z.object({ id: z.string().uuid() });
 let ingesting = false;
 
 function localRead(request: Request) {
@@ -107,6 +108,26 @@ export async function reviewKnowledgePage(request: Request, directory?: string) 
     const changed = withBase((base) => base.resolvePage(id, page, action, text), directory);
     if (!changed) return Response.json({ error: "검토 대기 중인 페이지를 찾지 못했습니다." }, { status: 404, headers });
     return Response.json({ ok: true }, { headers });
+  } catch (error) { return failure(error); }
+}
+
+export async function recheckKnowledge(request: Request, directory?: string) {
+  try {
+    assertLocalAIRequest(request);
+    const { id } = recheckSchema.parse(await request.json());
+    if (ingesting) throw new DocumentImportError("다른 자료를 읽는 중입니다. 완료 후 다시 시도해 주세요.", 429);
+    ingesting = true;
+    try {
+      const source = withBase((base) => ({ pdf: base.pdf(id), pending: base.reviewPages(id).filter((page) => page.status === "pending") }), directory);
+      if (!source.pdf) return Response.json({ error: "등록된 파일을 찾지 못했습니다." }, { status: 404, headers });
+      if (!source.pending.length) return Response.json({ autoIndexed: 0, pendingPages: 0 }, { headers });
+      const range = source.pending.map((page) => page.filePage).join(",");
+      const analyzed = await analyzeKnowledgePdf(source.pdf, range, request.signal);
+      const originalByFilePage = new Map(source.pending.map((page) => [page.filePage, page.page]));
+      const updates = analyzed.pages.map((result) => ({ originalPage: originalByFilePage.get(result.page)!, result }));
+      const outcome = withBase((base) => base.recheckPending(id, updates), directory);
+      return Response.json(outcome, { headers });
+    } finally { ingesting = false; }
   } catch (error) { return failure(error); }
 }
 

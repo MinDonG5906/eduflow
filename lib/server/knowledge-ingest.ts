@@ -79,6 +79,34 @@ export async function createKoreanOcr(): Promise<{ recognize: OcrPage; close: ()
 
 const clean = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\u0000/g, "").trim();
 const suspicious = (text: string) => /[\ufffd\ue000-\uf8ff]/u.test(text);
+function readablePdfText(raw: string): string {
+  // pdf-parse inserts tabs for ordinary word gaps (its default cell threshold
+  // is 7), so a tab alone cannot identify a table. U+F000 is an empty bullet
+  // glyph in some converted PDFs; keep all other unknown glyphs for review.
+  const bullets = (raw.match(/\uf000/gu) ?? []).length;
+  const withoutBullets = bullets && bullets <= Math.max(3, Math.floor(raw.length * 0.02))
+    ? raw.replace(/\uf000/gu, "") : raw;
+  return clean(withoutBullets.replace(/\t+/g, " ").replace(/ {2,}/g, " "));
+}
+
+function structuredTables(tables: string[][][]): string | null {
+  const sections: string[] = [];
+  for (const [tableIndex, rows] of tables.entries()) {
+    const columns = rows[0]?.length ?? 0;
+    if (!rows.length || columns < 2 || columns > 20 || rows.length > 100 ||
+        rows.some((row) => row.length !== columns || !row.some((cell) => cell.trim()))) return null;
+    const lines = rows.map((row, rowIndex) => {
+      const cells = row.flatMap((cell, columnIndex) => {
+        const text = readablePdfText(cell);
+        return text ? [`열 ${columnIndex + 1}: ${text}`] : [];
+      });
+      return `행 ${rowIndex + 1} | ${cells.join(" | ")}`;
+    });
+    if (lines.some((line) => suspicious(line))) return null;
+    sections.push(`[표 ${tableIndex + 1}]\n${lines.join("\n")}`);
+  }
+  return sections.join("\n\n");
+}
 
 export async function analyzeKnowledgePdf(
   pdf: Buffer, range: string, signal: AbortSignal,
@@ -96,11 +124,23 @@ export async function analyzeKnowledgePdf(
   const pages: KnowledgeImportPage[] = [];
   try {
     const extracted = await parser.getText({ partial: selected, pageJoiner: "" });
+    const tables = await parser.getTable({ partial: selected });
+    const tablePages = new Map(tables.pages.filter((page) => page.tables.length).map((page) => [page.num, page.tables]));
     for (const page of extracted.pages) {
       signal.throwIfAborted();
       const raw = clean(page.text);
-      if (raw.length >= 40 && !suspicious(raw) && !raw.includes("\t")) {
-        pages.push({ page: page.num, text: raw, method: "text", confidence: null, reviewReason: "", needsReview: false });
+      const readable = readablePdfText(raw);
+      const pageTables = tablePages.get(page.num);
+      if (pageTables) {
+        const structure = structuredTables(pageTables);
+        const text = structure && !suspicious(readable) ? `${readable}\n\n${structure}` : raw;
+        pages.push({ page: page.num, text, method: "text", confidence: null,
+          reviewReason: structure && !suspicious(readable) ? "" : "표의 행·열 관계를 원본과 확인해 주세요.",
+          needsReview: !structure || suspicious(readable) });
+        continue;
+      }
+      if (readable.length >= 40 && !suspicious(readable)) {
+        pages.push({ page: page.num, text: readable, method: "text", confidence: null, reviewReason: "", needsReview: false });
         continue;
       }
       let recognized: OcrResult | undefined;
@@ -116,11 +156,11 @@ export async function analyzeKnowledgePdf(
         reason = "OCR을 실행하지 못했습니다. 원본을 확인해 주세요.";
       }
       const ocrText = clean(recognized?.text ?? "");
-      const text = raw.includes("\t") ? raw : suspicious(raw) && ocrText ? ocrText : ocrText.length > raw.length ? ocrText : raw;
+      const text = suspicious(readable) && ocrText ? ocrText : ocrText.length > readable.length ? ocrText : readable;
       const confidence = recognized?.confidence ?? null;
-      const safe = ocrText.length >= 40 && confidence !== null && confidence >= 90 && !suspicious(ocrText) && !ocrText.includes("\t") && !raw.includes("\t");
+      const safe = ocrText.length >= 40 && confidence !== null && confidence >= 90 && !suspicious(ocrText);
       pages.push({ page: page.num, text, method: recognized ? "ocr" : raw ? "text" : "unreadable",
-        confidence, reviewReason: safe ? "" : reason || (raw.includes("\t") ? "표·단 배치가 있어 원본 확인이 필요합니다." : "글자 판독이 불확실합니다."),
+        confidence, reviewReason: safe ? "" : reason || "글자 판독이 불확실합니다.",
         needsReview: !safe });
     }
   } finally { await ocr?.close(); await parser.destroy(); }

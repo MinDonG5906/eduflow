@@ -34,7 +34,7 @@ export type KnowledgeImportPage = {
 };
 
 export type KnowledgeReviewPage = Omit<KnowledgeImportPage, "needsReview"> & {
-  status: "pending" | "approved" | "excluded";
+  status: "pending" | "approved" | "auto_indexed" | "excluded";
   filePage: number;
 };
 

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
-import { addKnowledge, listKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
+import { addKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
 import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowledgePage } from "./server/knowledge-handler";
 import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
 import { createHash } from "node:crypto";
@@ -128,6 +128,53 @@ test("uncertain OCR page stays outside search until the user approves its extrac
     const reopened = new KnowledgeBase(directory);
     assert.equal(reopened.list()[0].pendingPages, 0);
     assert.equal(reopened.search("Confined space requires oxygen measurement")[0]?.page, 2);
+    reopened.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("clear table cells are indexed with their row and column positions", async () => {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage();
+  for (const x of [40, 240, 440]) page.drawLine({ start: { x, y: 500 }, end: { x, y: 700 } });
+  for (const y of [500, 600, 700]) page.drawLine({ start: { x: 40, y }, end: { x: 440, y } });
+  page.drawText("Hazard", { x: 50, y: 650 });
+  page.drawText("Control", { x: 250, y: 650 });
+  page.drawText("Falling from height", { x: 50, y: 550 });
+  page.drawText("Use guardrails and harness", { x: 250, y: 550 });
+  const analyzed = await analyzeKnowledgePdf(Buffer.from(await pdf.save()), "", new AbortController().signal,
+    async () => { throw new Error("OCR must not run on a readable table"); });
+  assert.equal(analyzed.pages[0].needsReview, false);
+  assert.match(analyzed.pages[0].text, /행 2 \| 열 1: Falling from height \| 열 2: Use guardrails and harness/);
+});
+
+test("a previously pending page can be rechecked and indexed without manual approval", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-recheck-"));
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Fall protection anchorage inspection before elevated work begins");
+    pdf.addPage().drawText("Confined space oxygen measurement before entry begins");
+    const bytes = Buffer.from(await pdf.save());
+    const base = new KnowledgeBase(directory);
+    const document = base.addImported({ title: "Earlier manual", origin: "official", url: "https://example.org/manual",
+      published: "", revision: "" }, createHash("sha256").update(bytes).digest("hex"), bytes,
+    [{ page: 1, text: "Earlier uncertain extraction", method: "ocr", confidence: 50,
+      reviewReason: "글자 판독이 불확실합니다.", needsReview: true },
+    { page: 2, text: "Earlier uncertain extraction", method: "ocr", confidence: 50,
+      reviewReason: "글자 판독이 불확실합니다.", needsReview: true }]);
+    assert.deepEqual(base.search("Fall protection anchorage inspection"), []);
+    base.resolvePage(document.id, 2, "approve", "Confined space oxygen measurement before entry begins");
+    base.close();
+    const response = await recheckKnowledge(new Request("http://localhost:3001/api/knowledge/recheck", {
+      method: "POST", headers: { Origin: "http://localhost:3001", Host: "localhost:3001", "Content-Type": "application/json" },
+      body: JSON.stringify({ id: document.id }),
+    }), directory);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { autoIndexed: 1, pendingPages: 0 });
+    const reopened = new KnowledgeBase(directory);
+    assert.equal(reopened.reviewPages(document.id)[0].status, "auto_indexed");
+    assert.equal(reopened.reviewPages(document.id)[1].status, "approved");
+    assert.equal(reopened.search("Fall protection anchorage inspection")[0]?.page, 1);
+    assert.equal(reopened.search("Confined space oxygen measurement")[0]?.page, 2);
     reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

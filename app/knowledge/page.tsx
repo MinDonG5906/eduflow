@@ -75,6 +75,22 @@ export default function KnowledgePage() {
     finally { setBusy(false); }
   }
 
+  async function recheck(id: string) {
+    if (busy) return;
+    setBusy(true); setNotice("");
+    try {
+      const response = await fetch("/api/knowledge/recheck", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "다시 판독하지 못했습니다.");
+      await refresh();
+      if (reviewDocument === id) await openReview(id);
+      setMatches(null);
+      setNotice(`${result.autoIndexed}페이지를 자동으로 검색 자료에 추가했습니다.${result.pendingPages ? ` 확인이 필요한 페이지는 ${result.pendingPages}쪽입니다.` : ""}`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "다시 판독하지 못했습니다."); }
+    finally { setBusy(false); }
+  }
+
   async function setActive(document: KnowledgeDocument) {
     if (busy) return;
     setBusy(true); setNotice("");
@@ -108,7 +124,7 @@ export default function KnowledgePage() {
     {notice && <p className="knowledge-notice" role="status">{notice}</p>}
     <section className="knowledge-panel">
       <h2>자료 등록</h2>
-      <p>PDF·Word·한글·PPT 파일을 등록하면 페이지별 글자를 자동으로 읽고, 필요한 페이지에 OCR을 적용합니다. 판독이 모호한 페이지는 확인 전까지 검색에 넣지 않습니다.</p>
+      <p>PDF·Word·한글·PPT 파일의 글자를 자동으로 읽고, 글자가 없는 페이지에는 OCR을 적용합니다. 실제 표나 판독이 모호한 페이지는 확인 전까지 검색에 넣지 않습니다.</p>
       <form onSubmit={add} className="knowledge-form">
         <label>자료 제목<input required minLength={2} maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
         <label>자료 종류<select value={origin} onChange={(event) => setOrigin(event.target.value as "official" | "internal")}>
@@ -131,7 +147,8 @@ export default function KnowledgePage() {
         <p>{document.published || "발행일 미기재"}{document.revision ? ` · ${document.revision}` : ""}</p>
         {document.url && <a href={document.url} target="_blank" rel="noopener noreferrer">원본 출처 열기</a>}
         <button type="button" disabled={busy} onClick={() => setActive(document)}>{document.active ? "검색에서 제외" : "다시 활성화"}</button>
-        {document.pendingPages ? <button type="button" disabled={busy} onClick={() => openReview(document.id).catch((error) => setNotice(error.message))}>확인할 페이지 보기</button> : null}
+        {document.pendingPages ? <><button type="button" disabled={busy} onClick={() => recheck(document.id)}>미확인 페이지 다시 판독</button>
+          <button type="button" disabled={busy} onClick={() => openReview(document.id).catch((error) => setNotice(error.message))}>확인할 페이지 보기</button></> : null}
       </article>)}</div>
     </section>
     {reviewDocument && reviewPages.some((page) => page.status === "pending") && <section className="knowledge-panel" id="knowledge-review">

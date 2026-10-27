@@ -134,6 +134,36 @@ export class KnowledgeBase {
     return row ? Buffer.from(row.pdf) : null;
   }
 
+  recheckPending(id: string, updates: { originalPage: number; result: KnowledgeImportPage }[]): { autoIndexed: number; pendingPages: number } {
+    let autoIndexed = 0;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const getPending = this.db.prepare("SELECT file_page FROM knowledge_review_pages WHERE document_id=? AND page=? AND status='pending'");
+      const getUsage = this.db.prepare("SELECT coalesce(sum(length(text)),0) AS characters, count(*) AS chunks, coalesce(max(ordinal),0) AS last FROM chunks WHERE document_id=?");
+      const insert = this.db.prepare("INSERT INTO chunks(document_id,ordinal,page,text) VALUES(?,?,?,?)");
+      const update = this.db.prepare("UPDATE knowledge_review_pages SET text=?,method=?,confidence=?,reason=?,status=?,approved_text=?,resolved_at=? WHERE document_id=? AND page=? AND status='pending'");
+      const usage = getUsage.get(id) as { characters: number; chunks: number; last: number };
+      for (const { originalPage, result } of updates) {
+        const pending = getPending.get(id, originalPage) as { file_page: number } | undefined;
+        if (!pending || pending.file_page !== result.page) continue;
+        if (!result.needsReview) {
+          const pieces = chunkKnowledge(`[PDF ${originalPage}페이지]\n\n${result.text}`);
+          const addedCharacters = pieces.reduce((sum, piece) => sum + piece.text.length, 0);
+          if (usage.characters + addedCharacters > 200000 || usage.chunks + pieces.length > 400) throw new Error("KNOWLEDGE_SIZE");
+          for (const piece of pieces) insert.run(id, ++usage.last, originalPage, piece.text);
+          usage.characters += addedCharacters; usage.chunks += pieces.length; autoIndexed++;
+        }
+        update.run(result.text, result.method, result.confidence, result.reviewReason,
+          result.needsReview ? "pending" : "auto_indexed", result.needsReview ? "" : result.text,
+          result.needsReview ? "" : new Date().toISOString(), id, originalPage);
+      }
+      const pendingPages = (this.db.prepare("SELECT count(*) AS n FROM knowledge_review_pages WHERE document_id=? AND status='pending'")
+        .get(id) as { n: number }).n;
+      this.db.exec("COMMIT");
+      return { autoIndexed, pendingPages };
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
   resolvePage(id: string, page: number, action: "approve" | "exclude", text = ""): boolean {
     this.db.exec("BEGIN IMMEDIATE");
     try {
