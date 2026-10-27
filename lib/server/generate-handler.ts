@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GenerationError, generationRequestSchema } from "../generation-contract";
 import { runGeneration, type GenerationAdapter } from "./generation-service";
 import { protectPaidGeneration } from "./ai-protection";
+import { protectSubscriptionGeneration } from "./subscription-guard";
 import { assertLocalAIRequest } from "./ai-config";
 import { readPdfGenerationRequest, type PdfAttachment } from "./pdf-input";
 
@@ -27,7 +28,9 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
       const adapter = typeof adapterOrFactory === "function" ? adapterOrFactory() : adapterOrFactory;
       if (pdf && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
       // Every paid adapter is protected automatically; selecting one cannot bypass admission.
-      const protectedRun = adapter.mode === "ai" ? protectPaidGeneration(request, adapter) : null;
+      const protectedRun = adapter.mode !== "ai" ? null
+        : adapter.billing?.kind === "subscription" ? protectSubscriptionGeneration(request, adapter)
+        : protectPaidGeneration(request, adapter, adapter.billing ? { config: adapter.billing.config } : {});
       let board;
       try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { ...options, signal: request.signal, pdf }); }
       finally { protectedRun?.finish(); }

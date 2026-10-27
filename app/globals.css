@@ -517,3 +517,32 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .progress-track.ai-pending > div { width: 35% !important; animation: ai-wait 1.5s ease-in-out infinite alternate; }
 @keyframes ai-wait { from { transform: translateX(0); } to { transform: translateX(180%); } }
 @media (prefers-reduced-motion: reduce) { .progress-track.ai-pending > div { animation: none; } }
+
+/* Model connection screen */
+.connection-badge { background: var(--canvas); color: var(--ink); cursor: pointer; }
+.connection-badge:hover { border-color: var(--ink); }
+.connection-badge.needs-setup { color: var(--warning); border-color: var(--warning-border); background: var(--warning-bg); }
+.connection-dialog { display: flex; flex-direction: column; gap: 16px; }
+.provider-list { display: flex; flex-direction: column; gap: 6px; }
+.provider-option { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--hairline-strong); border-radius: 10px; cursor: pointer; }
+.provider-option.active { border-color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / 6%); }
+.provider-option input { margin-top: 3px; accent-color: var(--ink); }
+.provider-option span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.provider-option strong { font-size: 13px; font-weight: 600; }
+.provider-option small { color: var(--body); font-size: 11px; }
+.connection-fields { display: flex; flex-direction: column; gap: 12px; }
+.connection-saved { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; padding: 8px 10px; border-radius: 8px; background: var(--success-bg); color: var(--success); }
+.connection-saved button { margin-left: auto; }
+.connection-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; }
+.connection-check input { margin-top: 3px; accent-color: var(--ink); }
+.connection-select { height: 36px; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 0 10px; background: var(--canvas); font-size: 13px; width: 100%; }
+.connection-note { color: var(--body); font-size: 11px; line-height: 1.7; }
+.connection-note code,.connection-saved code,.connection-warning code,.connection-steps code { font-family: var(--font-code); font-size: 11px; }
+.connection-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--warning-border); border-radius: 8px; background: var(--warning-bg); color: var(--warning); font-size: 12px; line-height: 1.7; }
+.connection-warning svg { flex: none; margin-top: 3px; }
+.connection-steps { padding-left: 18px; font-size: 12px; line-height: 1.8; color: var(--body); list-style: decimal; }
+.connection-error { color: var(--error); font-size: 12px; }
+.chatgpt-button { width: 100%; }
+@media (max-width: 767px) {
+  .connection-select { font-size: 16px; height: 40px; }
+}

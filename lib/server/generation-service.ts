@@ -5,7 +5,7 @@ import {
 } from "../generation-contract";
 import { fieldLabels, manuscriptSource, type Board } from "../storyboard";
 import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection } from "../term-corrections";
-import type { PaidGenerationLimits } from "./ai-config";
+import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
 
@@ -22,6 +22,9 @@ export type GenerationAdapter = {
   mode: Board["mode"];
   model: string;
   promptVersion: string;
+  // Metered keys reserve the dollar budget with this config; subscription logins are
+  // billed to the signed-in plan and get call limits only. Omitted: env config.
+  billing?: { kind: "metered"; config: AIConfig } | { kind: "subscription" };
   // Count the complete provider payload before starting a paid generation.
   countInputTokens?: (input: GenerationInput, context: GenerationContext) => number | Promise<number>;
   generate: (input: GenerationInput, context: GenerationContext) => Promise<unknown>;
