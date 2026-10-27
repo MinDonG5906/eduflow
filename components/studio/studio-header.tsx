@@ -1,4 +1,4 @@
-import { AlertCircle, Check, ChevronRight, CloudCheck, PanelLeftClose, X } from "lucide-react";
+import { AlertCircle, Check, ChevronRight, CloudCheck, PanelLeftClose, PlugZap, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { GeneratorStatus, StudioView } from "./types";
 
@@ -8,12 +8,14 @@ export function StudioTopbar({
   generator,
   sidebarOpen,
   onToggleSidebar,
+  onOpenConnection,
 }: {
   view: StudioView;
   saved: string;
   generator: GeneratorStatus;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  onOpenConnection: () => void;
 }) {
   return (
     <header className="topbar">
@@ -37,10 +39,11 @@ export function StudioTopbar({
           <CloudCheck size={16} />
           {saved}
         </span>
-        <span className="demo-badge">
-          <span />
-          {generator?.mode === "ai" ? (generator.available ? "OpenAI 연결" : "OpenAI 키 설정 필요") : generator ? "데모 모드" : "연결 확인 중"}
-        </span>
+        <button className={`demo-badge connection-badge ${generator?.mode === "ai" && !generator.available ? "needs-setup" : ""}`}
+          aria-label="모델 연결 설정 열기" onClick={onOpenConnection}>
+          <PlugZap size={12} />
+          {generator ? (generator.mode === "ai" && !generator.available ? `${generator.label} · 설정 필요` : generator.label) : "연결 확인 중"}
+        </button>
       </div>
     </header>
   );
