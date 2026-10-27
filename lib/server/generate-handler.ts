@@ -35,7 +35,9 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
       const references = adapter.mode === "ai" && options.knowledge ? await options.knowledge(input) : [];
       if (adapter.mode === "ai" && options.knowledge && !references.length) throw new GenerationError("KNOWLEDGE_NO_MATCH");
       // Every paid adapter is protected automatically; selecting one cannot bypass admission.
-      const protectedRun = adapter.mode === "ai" ? protectPaidGeneration(request, adapter) : null;
+      const protectedRun = adapter.mode === "ai"
+        ? protectPaidGeneration(request, adapter, adapter.billing ? { config: adapter.billing.config } : {})
+        : null;
       let board;
       try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { timeoutMs: options.timeoutMs,
         signal: request.signal, pdf, references }); }

@@ -62,7 +62,7 @@ export function ProgressDialog({
           </span>
           <span>{ai ? "생성 대기 중" : `${progress}%`}</span>
         </div>
-        <p>{ai ? "OpenAI로 생성 중 · 최대 90초 · 취소해도 이미 시작한 호출에는 비용이 발생할 수 있습니다" : "원문 발췌 데모 · 외부 AI 전송 없음"}</p>
+        <p>{ai ? `${generator?.label}로 생성 중 · 최대 90초 · 취소해도 이미 시작한 호출은 비용이나 플랜 사용량에 반영될 수 있습니다` : "원문 발췌 데모 · 외부 AI 전송 없음"}</p>
         <Button variant="ghost" onClick={onCancel}>
           생성 취소
         </Button>
@@ -304,7 +304,7 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         <Sparkles size={16} />
         <p>
           {generator?.mode === "ai"
-            ? "OpenAI로 초안을 생성합니다. 원고·설정·선택 장면·추가 지시가 OpenAI에 전송되며, 생성 결과는 현재 브라우저에 저장합니다. AI 결과는 원문과 대조한 뒤 사용해 주세요."
+            ? `${generator.label}로 초안을 생성합니다. 원고·설정·선택 장면·추가 지시가 ${generator.vendor}에 전송되며, 생성 결과는 현재 브라우저에 저장합니다. AI 결과는 원문과 대조한 뒤 사용해 주세요.`
             : "원문 발췌 데모입니다. 추가 지시는 제작 메모로 반영됩니다. 원고는 로컬 서버에서 처리하고 현재 브라우저에 저장합니다."}
         </p>
       </div>
