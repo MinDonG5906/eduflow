@@ -169,11 +169,19 @@ export async function analyzeKnowledgePdf(
         reason = "OCR을 실행하지 못했습니다. 원본을 확인해 주세요.";
       }
       const ocrText = clean(recognized?.text ?? "");
-      const text = suspicious(readable) && ocrText ? ocrText : ocrText.length > readable.length ? ocrText : readable;
       const confidence = recognized?.confidence ?? null;
-      const safe = ocrText.length >= 40 && confidence !== null && confidence >= 90 && !suspicious(ocrText);
-      pages.push({ page: page.num, text, method: recognized ? "ocr" : raw ? "text" : "unreadable",
-        confidence, reviewReason: safe ? "" : reason || "글자 판독이 불확실합니다.",
+      // A few extra OCR characters do not make it more accurate than the PDF's
+      // readable text. Low-confidence OCR remains available only when the PDF
+      // has no usable text of its own.
+      const useOcr = Boolean(ocrText) && (!readable || suspicious(readable) ||
+        (confidence !== null && confidence >= 90 && !suspicious(ocrText) && ocrText.length > readable.length));
+      const text = useOcr ? ocrText : readable;
+      const safe = useOcr && ocrText.length >= 40 && confidence !== null && confidence >= 90 && !suspicious(ocrText);
+      const reviewReason = reason || (readable && !useOcr
+        ? "PDF에서 읽힌 글이 적고 OCR 판독도 불확실합니다. 원본에서 빠진 글자를 확인해 주세요."
+        : "글자 판독이 불확실합니다.");
+      pages.push({ page: page.num, text, method: useOcr ? "ocr" : raw ? "text" : "unreadable",
+        confidence: useOcr ? confidence : null, reviewReason: safe ? "" : reviewReason,
         needsReview: !safe });
     }
   } finally { await ocr?.close(); await parser.destroy(); }

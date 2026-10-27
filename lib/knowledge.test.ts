@@ -172,6 +172,18 @@ test("uncertain OCR page stays outside search until the user approves its extrac
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("low-confidence OCR cannot replace readable PDF title text just because it is longer", async () => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage().drawText("TBM activity stages");
+  const analyzed = await analyzeKnowledgePdf(Buffer.from(await pdf.save()), "", new AbortController().signal,
+    async () => ({ recognize: async () => ({ text: "Dx random AO 2 and misleading extra letters", confidence: 55 }),
+      close: async () => {} }));
+  assert.equal(analyzed.pages[0].text, "TBM activity stages");
+  assert.equal(analyzed.pages[0].method, "text");
+  assert.equal(analyzed.pages[0].needsReview, true);
+  assert.match(analyzed.pages[0].reviewReason, /빠진 글자/);
+});
+
 test("clear table cells are indexed with their row and column positions", async () => {
   const pdf = await PDFDocument.create();
   const page = pdf.addPage();
