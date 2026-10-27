@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleHelp, Clock3, Download, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConnectionDialog } from "@/components/studio/connection-dialog";
 import { DocumentSource } from "@/components/studio/document-source";
 import { ManuscriptPanel } from "@/components/studio/manuscript-panel";
 import { OverviewPanel } from "@/components/studio/overview-panel";
@@ -54,6 +55,7 @@ export default function Studio() {
   const [filename, setFilename] = useState("나의 스토리보드");
   const [reviewOnly, setReviewOnly] = useState(false);
   const [sidebar, setSidebar] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<AbortController | null>(null);
   const importRequestRef = useRef<AbortController | null>(null);
@@ -350,6 +352,7 @@ export default function Studio() {
           view={view}
           saved={draft.saved}
           generator={generator}
+          onOpenConnection={() => setConnectionOpen(true)}
           sidebarOpen={sidebar}
           onToggleSidebar={() => setSidebar(!sidebar)}
         />
@@ -489,6 +492,7 @@ export default function Studio() {
           </footer>
         </main>
       </div>
+      <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
       <Toast message={notice} onClose={() => setNotice("")} />
       <ProgressDialog open={busy} progress={progress} generator={generator} onCancel={() => requestRef.current?.abort()} />
       <StudioDialog
