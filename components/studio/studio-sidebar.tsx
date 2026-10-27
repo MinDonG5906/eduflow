@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { ChevronRight, CircleHelp, FileText, LayoutGrid, Plus, ShieldCheck } from "lucide-react";
+import { BookOpen, ChevronRight, CircleHelp, FileText, LayoutGrid, Plus, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioView } from "./types";
 
@@ -113,6 +113,9 @@ export function StudioSidebar({
           <LayoutGrid size={18} /> 스토리보드{" "}
           <span className="nav-count">{sceneCount}</span>
         </button>
+        <a className="nav-item" href="/knowledge">
+          <BookOpen size={18} /> 지식베이스 관리 <ChevronRight size={14} />
+        </a>
         <div className="sidebar-bottom">
           <div className="privacy">
             <ShieldCheck size={16} />

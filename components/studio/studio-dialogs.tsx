@@ -1,4 +1,4 @@
-import { AlertCircle, BookOpen, CheckCircle2, ChevronRight, Copy, Download, FileText, Film, LayoutGrid, Sparkles, X } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, LayoutGrid, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -91,6 +91,11 @@ export function StudioDialog({
   onExport,
   direction,
   onDirectionChange,
+  isPdf,
+  citedPage,
+  documentUnit,
+  sceneSourceScope,
+  onSceneSourceScopeChange,
   onRegenerate,
   onReset,
   onRemoveScene,
@@ -106,6 +111,11 @@ export function StudioDialog({
   onExport: (format: ExportFormat) => void;
   direction: string;
   onDirectionChange: (value: string) => void;
+  isPdf: boolean;
+  citedPage: number | null;
+  documentUnit: string;
+  sceneSourceScope: "citation" | "selection";
+  onSceneSourceScopeChange: (value: "citation" | "selection") => void;
   onRegenerate: () => void;
   onReset: () => void;
   onRemoveScene: () => void;
@@ -146,6 +156,20 @@ export function StudioDialog({
         )}
         {modal === "regenerate" && (
           <>
+            {isPdf && (
+              <label className="form-field">
+                다시 참고할 자료
+                <div className="select-wrap">
+                  <select value={citedPage === null ? "selection" : sceneSourceScope}
+                    onChange={(e) => onSceneSourceScopeChange(e.target.value as "citation" | "selection")}>
+                    {citedPage !== null && <option value="citation">기존 출처 {citedPage}{documentUnit}만</option>}
+                    <option value="selection">선택 자료 전체</option>
+                  </select>
+                  <ChevronDown size={15} />
+                </div>
+                <small>{citedPage === null ? "현재 선택 자료에서 기존 출처를 확인할 수 없어 전체를 참고합니다." : "다른 페이지의 내용으로 바꾸려면 ‘선택 자료 전체’를 선택하세요."}</small>
+              </label>
+            )}
             <label className="form-field">
               어떻게 바꿀까요?{" "}
               <Textarea

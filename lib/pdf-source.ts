@@ -9,6 +9,13 @@ export const pdfSourceSchema = z.object({
 });
 export type PdfSource = z.infer<typeof pdfSourceSchema>;
 
+export function citedPdfPage(source?: PdfSource, scene?: { sourceId: string; pdfSource?: PdfSource }): number | null {
+  const match = /^pdf-page:(\d+)$/.exec(scene?.sourceId ?? "");
+  const page = match ? Number(match[1]) : 0;
+  return source && scene?.pdfSource?.name === source.name &&
+    scene.pdfSource.pages.includes(page) && source.pages.includes(page) ? page : null;
+}
+
 export const isPresentation = (name: string) => /\.pptx?$/i.test(name);
 export const isHangul = (name: string) => /\.hwpx?$/i.test(name);
 export const sourceUnit = (name: string) => isPresentation(name) ? "슬라이드" : "페이지";

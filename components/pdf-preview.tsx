@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { MAX_AI_PDF_BYTES, type SourceFormat } from "@/lib/pdf-source";
 import { defaults } from "@/lib/storyboard";
+import type { SourceBox } from "@/lib/source-location";
 
-export function PdfPreview({ file, total, selectedPages, originalPages, format = "PDF", initialPage = 1 }: {
+export function PdfPreview({ file, total, selectedPages, originalPages, format = "PDF", initialPage = 1, highlightBoxes, evidenceMode = false }: {
   file: Blob; total: number; selectedPages?: number[]; originalPages?: number[];
-  format?: SourceFormat; initialPage?: number;
+  format?: SourceFormat; initialPage?: number; highlightBoxes?: SourceBox[]; evidenceMode?: boolean;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [images, setImages] = useState<Record<number, string>>({});
@@ -41,7 +42,7 @@ export function PdfPreview({ file, total, selectedPages, originalPages, format =
         const { width, height } = page.getCropBox();
         const rotated = Math.abs(page.getRotation().angle % 180) === 90;
         const ratio = rotated ? height / width : width / height;
-        return Number.isFinite(ratio) && ratio > 0 ? Math.max(0.5, Math.min(2, ratio)) : 1;
+        return Number.isFinite(ratio) && ratio > 0 ? evidenceMode ? ratio : Math.max(0.5, Math.min(2, ratio)) : 1;
       }));
     }).catch(() => {
       if (!controller.signal.aborted) setDocumentError("미리보기를 열지 못했습니다. 범위 입력은 계속 사용할 수 있습니다.");
@@ -105,7 +106,7 @@ export function PdfPreview({ file, total, selectedPages, originalPages, format =
       controller.abort(); observer.disconnect();
       for (const url of cache.values()) URL.revokeObjectURL(url);
     };
-  }, [file, total]);
+  }, [file, total, evidenceMode]);
 
   useEffect(() => {
     if (!ratios.length || !viewport.current) return;
@@ -113,17 +114,25 @@ export function PdfPreview({ file, total, selectedPages, originalPages, format =
     if (page) viewport.current.scrollTop = page.offsetTop - 8;
   }, [ratios, initialPage]);
 
+  useEffect(() => {
+    if (!evidenceMode || !highlightBoxes?.length || !images[1] || !viewport.current) return;
+    const image = viewport.current.querySelector<HTMLElement>(".pdf-scroll-image");
+    if (image) viewport.current.scrollTop = image.offsetTop + highlightBoxes[0][1] * image.offsetHeight - 80;
+  }, [images, highlightBoxes, evidenceMode]);
+
   return <div className="pdf-scroll-preview">
-    <p className="pdf-scroll-hint">마우스 휠로 {unit}를 내려보세요.</p>
+    {!evidenceMode && <p className="pdf-scroll-hint">마우스 휠로 {unit}를 내려보세요.</p>}
     <div ref={viewport} className="pdf-scroll-viewport" role="region" aria-label={`${format} ${unit} 미리보기 목록`} tabIndex={0}>
       {Array.from({ length: total }, (_, i) => i + 1).map((page) => {
         const original = originalPages?.[page - 1] ?? page;
         const included = !selected || selected.has(page);
         return <figure key={page} data-preview-page={page} className={included ? "pdf-scroll-page is-selected" : "pdf-scroll-page"}>
           <div className="pdf-scroll-image" style={{ aspectRatio: ratios[page - 1] ?? (format === "PPT" ? 16 / 9 : 1 / Math.SQRT2) }} aria-busy={!images[page] && !errors[page] && !documentError}>
-            {images[page] ? <img src={images[page]} alt={`원본 ${format} ${original}${unit} 미리보기`} /> : <p>{documentError || errors[page] || "미리보기 준비 중…"}</p>}
+            {images[page] ? <><img src={images[page]} alt={`원본 ${format} ${original}${unit} 미리보기`} />
+              {highlightBoxes?.map((box, index) => <span key={index} className="source-box" aria-hidden="true" style={{ left: `${box[0] * 100}%`, top: `${box[1] * 100}%`, width: `${(box[2] - box[0]) * 100}%`, height: `${(box[3] - box[1]) * 100}%` }} />)}
+            </> : <p>{documentError || errors[page] || "미리보기 준비 중…"}</p>}
           </div>
-          <figcaption><span>원본 {original}{unit}</span>{included && <small>사용 예정</small>}</figcaption>
+          <figcaption><span>원본 {original}{unit}</span>{included && !evidenceMode && <small>사용 예정</small>}{evidenceMode && Boolean(highlightBoxes?.length) && <small>일치 구절 강조</small>}</figcaption>
         </figure>;
       })}
     </div>

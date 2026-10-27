@@ -4,8 +4,13 @@ import { runGeneration, type GenerationAdapter } from "./generation-service";
 import { protectPaidGeneration } from "./ai-protection";
 import { assertLocalAIRequest } from "./ai-config";
 import { readPdfGenerationRequest, type PdfAttachment } from "./pdf-input";
+import type { RetrievedReference } from "../knowledge";
+import type { GenerationInput } from "../generation-contract";
 
-export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() => GenerationAdapter), options: { timeoutMs?: number } = {}) {
+export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() => GenerationAdapter), options: {
+  timeoutMs?: number;
+  knowledge?: (input: GenerationInput) => RetrievedReference[] | Promise<RetrievedReference[]>;
+} = {}) {
   return async (request: Request) => {
     try {
       if (request.signal.aborted) throw new GenerationError("CANCELLED");
@@ -26,10 +31,14 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
       }
       const adapter = typeof adapterOrFactory === "function" ? adapterOrFactory() : adapterOrFactory;
       if (pdf && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
+      if (adapter.mode === "ai") assertLocalAIRequest(request);
+      const references = adapter.mode === "ai" && options.knowledge ? await options.knowledge(input) : [];
+      if (adapter.mode === "ai" && options.knowledge && !references.length) throw new GenerationError("KNOWLEDGE_NO_MATCH");
       // Every paid adapter is protected automatically; selecting one cannot bypass admission.
       const protectedRun = adapter.mode === "ai" ? protectPaidGeneration(request, adapter) : null;
       let board;
-      try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { ...options, signal: request.signal, pdf }); }
+      try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { timeoutMs: options.timeoutMs,
+        signal: request.signal, pdf, references }); }
       finally { protectedRun?.finish(); }
       return NextResponse.json(board, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {

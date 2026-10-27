@@ -8,6 +8,7 @@ import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection 
 import type { PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
+import type { RetrievedReference } from "../knowledge";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -48,7 +49,9 @@ export function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function inspectOutput(raw: unknown, expected: number) {
+const unexpectedScript = /[\u0900-\u097f]/;
+
+function inspectOutput(raw: unknown, expected: number, language: GenerationInput["settings"]["language"], mode: Board["mode"]) {
   const scenes = new Map<number, GeneratedScene>();
   const issues: Issue[] = [];
   let header: Header | null = null;
@@ -77,12 +80,37 @@ function inspectOutput(raw: unknown, expected: number) {
         issues.push(...parsed.error.issues.map((issue) => ({ path: `scenes.${index}.${issue.path.join(".")}`, reason: issue.code })));
       } else if (parsed.data.sceneNo > expected || counts.get(parsed.data.sceneNo) !== 1) {
         issues.push({ path: `scenes.${index}.sceneNo`, reason: "invalid_or_duplicate_scene_number" });
+      } else if (mode === "ai" && language === "한국어" &&
+        (["title", "purpose", "visual", "assets", "narration", "subtitle"] as const)
+          .some((field) => unexpectedScript.test(parsed.data[field]))) {
+        issues.push({ path: `scenes.${index}`, reason: "unexpected_script_in_korean_output" });
       } else scenes.set(parsed.data.sceneNo, parsed.data);
     });
   } catch {
     issues.push({ path: "response", reason: "invalid_json_or_response_size" });
   }
   return { header, scenes, issues: issues.slice(0, 50) };
+}
+
+function cleanEvidence(value: string) {
+  // Models sometimes append a machine-readable locator to an otherwise verbatim quote.
+  // Remove only exact locator syntax; citationWarning still verifies the quote itself.
+  return value.replace(/\s*\[(?:sentence:\d+-\d+|pdf-page:\d+)\]\s*/g, " ").trim();
+}
+
+function normalizeExactManuscriptCitation(scene: GeneratedScene, sentences: string[]): GeneratedScene {
+  const evidence = cleanEvidence(scene.evidence);
+  if (scene.sourceId || !evidence) return { ...scene, evidence };
+  const possibleQuote = evidence.replace(/\s+\/\s+/g, " ").replace(/\s+/g, " ").trim();
+  for (let start = 0; start < sentences.length; start++) {
+    for (let end = start; end < sentences.length; end++) {
+      const quote = sentences.slice(start, end + 1).join(" ");
+      if (quote.replace(/\s+/g, " ").trim() === possibleQuote)
+        return { ...scene, evidence: quote, sourceId: `sentence:${start + 1}-${end + 1}` };
+      if (quote.length > possibleQuote.length) break;
+    }
+  }
+  return { ...scene, evidence };
 }
 
 function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?: PdfSource): string | null {
@@ -106,7 +134,7 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
 export async function runGeneration(
   input: GenerationInput,
   adapter: GenerationAdapter,
-  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[] } = {},
 ): Promise<Board> {
   const controller = new AbortController();
   const cancel = () => controller.abort(new GenerationError("CANCELLED"));
@@ -117,7 +145,7 @@ export async function runGeneration(
     controller.signal.throwIfAborted();
     if (Boolean(input.pdfSource) !== Boolean(options.pdf)) throw new GenerationError("PDF_NOT_ATTACHED");
     if (input.pdfSource && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
-    const task = generationTask(input);
+    const task = generationTask(input, options.references ?? []);
     const expected = task.requestedSceneCount;
     const accepted = new Map<number, GeneratedScene>();
     let header: Header | null = null;
@@ -134,7 +162,7 @@ export async function runGeneration(
         throw new GenerationError("PROVIDER_UNAVAILABLE");
       }
       controller.signal.throwIfAborted();
-      const inspected = inspectOutput(raw, expected);
+      const inspected = inspectOutput(raw, expected, input.settings.language, adapter.mode);
       header ??= inspected.header;
       for (const [sceneNo, scene] of inspected.scenes) {
         if (!accepted.has(sceneNo)) {
@@ -161,19 +189,34 @@ export async function runGeneration(
           createdAt: new Date().toISOString(), attempts: attempt, mode: adapter.mode,
         };
         const sentences = manuscriptSource(input.manuscript).sentences;
+        const availableReferences = new Map(task.supplementalSources.map((reference) => [reference.id, reference]));
         const scenes = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
-          const warning = citationWarning(scene, sentences, input.pdfSource);
+          const normalizedScene = adapter.mode === "ai"
+            ? input.pdfSource ? { ...scene, evidence: cleanEvidence(scene.evidence) }
+              : normalizeExactManuscriptCitation(scene, sentences)
+            : scene;
+          const warning = citationWarning(normalizedScene, sentences, input.pdfSource);
           if (warning) warnings.push(`${scene.sceneNo}번 장면: ${warning}`);
-          const correctedScene = { ...scene };
+          const correctedScene = { ...normalizedScene };
           const corrections: FieldTermCorrection[] = [];
           for (const field of ["title", "purpose", "visual", "assets", "narration", "subtitle"] as const)
             correctedScene[field] = correct(scene[field], fieldLabels[field], corrections);
           allCorrections.push(...corrections);
           const correctionNote = termCorrectionNotice(corrections);
           // Evidence and source IDs are never spelling-corrected: preserve citations.
-          const { sceneNo, ...content } = correctedScene;
+          const { sceneNo, referenceIds, phase, ...content } = correctedScene;
+          const expectedPhase = input.scene?.phase ?? (sceneNo === 1 ? "intro" : sceneNo === expected ? "outro" : "body");
+          if (phase && phase !== expectedPhase)
+            warnings.push(`${sceneNo}번 장면: 도입·본문·마무리 위치를 확인해 주세요.`);
+          const unknownIds = (referenceIds ?? []).filter((id) => !availableReferences.has(id));
+          if (unknownIds.length)
+            warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강 자료 출처가 있어 제외했습니다.`);
+          const references = [...new Set(referenceIds ?? [])]
+            .map((id) => availableReferences.get(id)).filter((item) => item !== undefined);
           return {
             ...content,
+            phase: expectedPhase,
+            references,
             ...(input.pdfSource ? { pdfSource: input.pdfSource } : {}),
             id: input.scene?.id || crypto.randomUUID(),
             review: true,
