@@ -12,6 +12,7 @@ import { selectPdfPages } from "../pdf-source";
 
 const headers = { "Cache-Control": "no-store" };
 const updateSchema = z.object({ id: z.string().uuid(), active: z.boolean() });
+const deleteSchema = z.object({ id: z.string().uuid() });
 const searchSchema = z.object({ query: z.string().trim().min(3).max(20000) });
 const reviewSchema = z.object({ id: z.string().uuid(), page: z.number().int().positive(),
   action: z.enum(["approve", "exclude"]), text: z.string().max(20000).optional() });
@@ -167,6 +168,17 @@ export async function updateKnowledge(request: Request, directory?: string) {
     const update = updateSchema.parse(await request.json());
     const changed = withBase((base) => base.setActive(update.id, update.active), directory);
     if (!changed) return Response.json({ error: "해당 자료를 찾지 못했습니다." }, { status: 404, headers });
+    return Response.json({ ok: true }, { headers });
+  } catch (error) { return failure(error); }
+}
+
+export async function deleteKnowledge(request: Request, directory?: string) {
+  try {
+    assertLocalAIRequest(request);
+    const { id } = deleteSchema.parse(await request.json());
+    if (ingesting) throw new DocumentImportError("자료를 읽는 중입니다. 완료 후 다시 시도해 주세요.", 429);
+    const deleted = withBase((base) => base.deleteDocument(id), directory);
+    if (!deleted) return Response.json({ error: "해당 자료를 찾지 못했습니다." }, { status: 404, headers });
     return Response.json({ ok: true }, { headers });
   } catch (error) { return failure(error); }
 }

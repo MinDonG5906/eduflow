@@ -7,7 +7,7 @@ import { PDFDocument } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
-import { addKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
+import { addKnowledge, deleteKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
 import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowledgePage } from "./server/knowledge-handler";
 import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
 import { createHash } from "node:crypto";
@@ -69,6 +69,45 @@ test("local knowledge API registers, searches and reversibly excludes a source",
       body: JSON.stringify({ id, active: false }) }), directory);
     assert.equal(changed.status, 200);
     assert.deepEqual((await (await search()).json()).references, []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("deleting a registered PDF removes search chunks, review pages and its stored file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-delete-"));
+  const url = "http://localhost:3001/api/knowledge";
+  const headers = { Origin: "http://localhost:3001", Host: "localhost:3001", "Content-Type": "application/json" };
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Oxygen monitoring before confined space entry");
+    pdf.addPage();
+    const bytes = Buffer.from(await pdf.save());
+    const base = new KnowledgeBase(directory);
+    const source = { title: "Confined space manual", origin: "official" as const, url: "https://example.org/manual",
+      published: "", revision: "" };
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const pages = [
+      { page: 1, text: "Oxygen monitoring before confined space entry", method: "text" as const,
+        confidence: null, reviewReason: "", needsReview: false },
+      { page: 2, text: "Uncertain safety chart", method: "ocr" as const,
+        confidence: 50, reviewReason: "글자 판독이 불확실합니다.", needsReview: true },
+    ];
+    const document = base.addImported(source, hash, bytes, pages);
+    assert.equal(base.list()[0].pendingPages, 1);
+    assert.ok(base.search("Oxygen monitoring before confined space entry").length);
+    base.close();
+
+    const request = (id: string, requestHeaders = headers) => new Request(url, { method: "DELETE", headers: requestHeaders,
+      body: JSON.stringify({ id }) });
+    assert.equal((await deleteKnowledge(request(document.id, { ...headers, Origin: "https://example.org" }), directory)).status, 403);
+    assert.equal((await deleteKnowledge(request(document.id), directory)).status, 200);
+    assert.equal((await deleteKnowledge(request(document.id), directory)).status, 404);
+    const reopened = new KnowledgeBase(directory);
+    assert.deepEqual(reopened.list(), []);
+    assert.deepEqual(reopened.search("Oxygen monitoring before confined space entry"), []);
+    assert.deepEqual(reopened.reviewPages(document.id), []);
+    assert.equal(reopened.pdf(document.id), null);
+    assert.ok(reopened.addImported(source, hash, bytes, pages).id !== document.id);
+    reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

@@ -105,6 +105,22 @@ export default function KnowledgePage() {
     finally { setBusy(false); }
   }
 
+  async function remove(document: KnowledgeDocument) {
+    if (busy || !window.confirm(`“${document.title}” 자료를 완전히 삭제할까요?\n검색 구간, 원본 파일, 판독 기록이 함께 삭제되며 복구할 수 없습니다.`)) return;
+    setBusy(true); setNotice("");
+    try {
+      const response = await fetch("/api/knowledge", { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: document.id }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "자료를 삭제하지 못했습니다.");
+      if (reviewDocument === document.id) { setReviewDocument(null); setReviewPages([]); setReviewText({}); }
+      setMatches(null);
+      await refresh();
+      setNotice(`“${document.title}” 자료를 삭제했습니다.`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "자료를 삭제하지 못했습니다."); }
+    finally { setBusy(false); }
+  }
+
   async function preview(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true); setNotice("");
@@ -147,6 +163,7 @@ export default function KnowledgePage() {
         <p>{document.published || "발행일 미기재"}{document.revision ? ` · ${document.revision}` : ""}</p>
         {document.url && <a href={document.url} target="_blank" rel="noopener noreferrer">원본 출처 열기</a>}
         <button type="button" disabled={busy} onClick={() => setActive(document)}>{document.active ? "검색에서 제외" : "다시 활성화"}</button>
+        <button type="button" className="knowledge-delete" disabled={busy} onClick={() => remove(document)}>완전 삭제</button>
         {document.pendingPages ? <><button type="button" disabled={busy} onClick={() => recheck(document.id)}>미확인 페이지 다시 판독</button>
           <button type="button" disabled={busy} onClick={() => openReview(document.id).catch((error) => setNotice(error.message))}>확인할 페이지 보기</button></> : null}
       </article>)}</div>

@@ -194,6 +194,23 @@ export class KnowledgeBase {
     return Number(this.db.prepare("UPDATE documents SET active=? WHERE id=?").run(active ? 1 : 0, id).changes) === 1;
   }
 
+  deleteDocument(id: string): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!this.db.prepare("SELECT 1 FROM documents WHERE id=?").get(id)) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      // The chunks trigger removes each row from the FTS index as well.
+      this.db.prepare("DELETE FROM chunks WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM knowledge_review_pages WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM knowledge_files WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM documents WHERE id=?").run(id);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
   search(query: string, limit = 6, topic = ""): RetrievedReference[] {
     const needles = searchNeedles(query);
     if (!needles.length) return [];
