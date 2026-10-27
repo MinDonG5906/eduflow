@@ -39,6 +39,18 @@ export const generationRecordSchema = z.object({
   attempts: z.number().int().min(1).max(2),
   mode: z.enum(["demo", "ai"]),
 });
+export const scenePhaseSchema = z.enum(["intro", "body", "outro"]);
+export const sceneReferenceSchema = z.object({
+  id: z.string().max(100),
+  title: z.string().max(160),
+  url: z.string().max(500),
+  excerpt: z.string().max(1500),
+  published: z.string().max(100),
+  origin: z.enum(["official", "internal", "user"]),
+  documentId: z.string().uuid().optional(),
+  revision: z.string().max(100).optional(),
+  page: z.number().int().positive().optional(),
+});
 export const sceneSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -55,6 +67,8 @@ export const sceneSchema = z.object({
   edited: z.array(z.string()),
   generation: generationRecordSchema.optional(),
   pdfSource: pdfSourceSchema.optional(),
+  phase: scenePhaseSchema.optional(),
+  references: z.array(sceneReferenceSchema).max(6).optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
@@ -79,6 +93,7 @@ export const requestSchema = z.object({
   sourceRequest: z.string().trim().max(500).optional(),
   scene: sceneSchema.optional(),
   direction: z.string().max(300).optional(),
+  sceneSourceScope: z.enum(["citation", "selection"]).optional(),
 }).refine((input) => Boolean(input.pdfSource) || input.manuscript.replace(/\s/g, "").length >= 100, { path: ["manuscript"] });
 
 export const sample = `일상에서 시작하는 탄소중립
@@ -172,6 +187,8 @@ export function generateDemo(
       purpose: guide,
       evidence,
       sourceId: current?.sourceId || `sentence:${start + 1}-${Math.min(end, sentences.length)}`,
+      phase: current?.phase ?? (i === 0 ? "intro" : i === count - 1 ? "outro" : "body"),
+      ...(current?.references?.length ? { references: current.references } : {}),
       visual: english
         ? `Show a title card, then highlight this source excerpt: “${snippet}”.`
         : `밝은 배경에 “${snippet}”을 제목으로 배치합니다. 원문의 핵심 구절을 한 줄씩 강조하고, 마지막에 핵심 메시지를 화면 중앙에 보여줍니다.${production ? `\n제작 요청: ${production}` : ""}`,
@@ -239,13 +256,13 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>
                 `### ${label}\n${typeof s[k as keyof Scene] === "boolean" ? (s.review ? "검토 필요" : "검토 완료") : Array.isArray(s[k as keyof Scene]) ? (s[k as keyof Scene] as string[]).map((k) => fieldLabels[k] || k).join(", ") : s[k as keyof Scene]}\n`,
             )
-            .join("\n")}`,
+            .join("\n")}${s.references?.length ? `\n### 보강 자료 근거\n${s.references.map((reference) => `- ${reference.title} (${reference.published})${reference.url ? `: ${reference.url}` : ""}\n  ${reference.excerpt}`).join("\n")}\n` : ""}`,
       )
       .join("\n")
   );
@@ -267,6 +284,8 @@ export function csv(board: Board) {
     "생성 기록",
     "장면 번호",
     "장면 생성 기록",
+    "구성 단계",
+    "보강 자료 근거",
     ...Object.values(fieldLabels),
     "원본 문서", "선택 페이지·슬라이드",
   ];
@@ -284,6 +303,8 @@ export function csv(board: Board) {
         board.generation ? JSON.stringify(board.generation) : "",
         i + 1,
         s.generation ? JSON.stringify(s.generation) : "",
+        s.phase ? { intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase] : "",
+        s.references ? JSON.stringify(s.references) : "",
         ...keys.map((k) => (k === "review" ? (s.review ? "검토 필요" : "검토 완료") : s[k])),
         s.pdfSource?.name ?? "", s.pdfSource?.pages ?? [],
       ]),

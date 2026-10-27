@@ -2,6 +2,8 @@ import { CheckCheck, Clock3, FileText, Plus, Settings2, ShieldCheck } from "luci
 import { Button } from "@/components/ui/button";
 import type { Scene } from "@/lib/storyboard";
 
+const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
+
 export function SceneList({
   scenes,
   active,
@@ -52,6 +54,7 @@ export function SceneList({
               </div>
               <div className="scene-item-body">
                 <strong>{s.title || "제목 없는 장면"}</strong>
+                {s.phase && <em className="scene-phase">{phaseLabels[s.phase]}</em>}
                 <span>
                   <Clock3 size={11} />
                   {s.duration}초{" "}

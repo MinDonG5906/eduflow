@@ -2,6 +2,7 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
+  BookOpen,
   Check,
   CheckCircle2,
   Clock3,
@@ -18,7 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { sourceFormat } from "@/lib/pdf-source";
+import { EvidenceSource } from "@/components/evidence-source";
+import type { PdfSource } from "@/lib/pdf-source";
 import { fieldLabels, type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
 
@@ -39,6 +41,7 @@ const fieldIcons = {
   evidence: Quote,
   reviewReason: AlertCircle,
 } as const;
+const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
 
 function ScenePreview({ scene, index }: { scene: Scene; index: number }) {
   return (
@@ -63,6 +66,9 @@ export function SceneEditor({
   scene,
   index,
   sceneCount,
+  manuscript,
+  sourceFile,
+  source,
   onChange,
   onMove,
   onDelete,
@@ -72,6 +78,9 @@ export function SceneEditor({
   scene: Scene;
   index: number;
   sceneCount: number;
+  manuscript: string;
+  sourceFile: Blob | null;
+  source?: PdfSource;
   onChange: <K extends keyof Scene>(key: K, value: Scene[K]) => void;
   onMove: (delta: number) => void;
   onDelete: () => void;
@@ -85,6 +94,7 @@ export function SceneEditor({
           <span className="scene-number">
             SCENE {String(index + 1).padStart(2, "0")}
           </span>
+          {scene.phase && <span className="scene-phase-tag">{phaseLabels[scene.phase]}</span>}
           <span className={`status-tag ${scene.review ? "" : "done"}`}>
             {scene.review ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}{" "}
             {scene.review ? "검토 필요" : "검토 완료"}
@@ -164,11 +174,8 @@ export function SceneEditor({
                 <Icon size={15} />{" "}
                 {fieldLabels[key]}
                 {scene.edited.includes(key) && <small>수정됨</small>}
-                {key === "evidence" && (
-                  <span className="source-tag">{scene.sourceId}</span>
-                )}
               </label>
-              {key === "evidence" && scene.pdfSource && <small>원본 {sourceFormat(scene.pdfSource.name)}: {scene.pdfSource.name}</small>}
+              {key === "evidence" && <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
               <Textarea
                 id={`field-${key}`}
                 value={scene[key]}
@@ -179,6 +186,15 @@ export function SceneEditor({
           );
         })}
       </div>
+      {Boolean(scene.references?.length) && <div className="scene-references">
+        <h3><BookOpen size={15} /> 보강 자료 근거</h3>
+        <p>나레이션·자막에 활용한 외부 자료입니다. 원문 근거와 구분해 검토해 주세요.</p>
+        {scene.references!.map((reference) => <div className="scene-reference" key={reference.id}>
+          <strong>{reference.url ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a> : reference.title}</strong>
+          <small>{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "사용자 제공 자료"} · {reference.published}{reference.revision ? ` · ${reference.revision}` : ""}{reference.page ? ` · ${reference.page}페이지` : ""}</small>
+          <p>{reference.excerpt}</p>
+        </div>)}
+      </div>}
       <div className="scene-editor-footer">
         <Button
           variant="outline"

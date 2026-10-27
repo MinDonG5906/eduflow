@@ -10,7 +10,7 @@ export const demoAdapter: GenerationAdapter = {
     const board = generateDemo(input.manuscript, input.settings, input.scene, input.direction);
     return {
       title: board.title, summary: board.summary, objectives: board.objectives,
-      scenes: board.scenes.map(({ id, review, reviewReason, edited, generation, ...content }, i) => ({ sceneNo: i + 1, ...content })),
+      scenes: board.scenes.map(({ id, review, reviewReason, edited, generation, references, ...content }, i) => ({ sceneNo: i + 1, ...content })),
     };
   },
 };
