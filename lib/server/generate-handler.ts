@@ -32,16 +32,15 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
       const adapter = typeof adapterOrFactory === "function" ? adapterOrFactory() : adapterOrFactory;
       if (pdf && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
       if (adapter.mode === "ai") assertLocalAIRequest(request);
-      // No related passage is not a reason to stop: the manuscript itself is the evidence.
-      const knowledgeSearched = adapter.mode === "ai" && Boolean(options.knowledge);
-      const references = knowledgeSearched && options.knowledge ? await options.knowledge(input) : [];
+      const references = adapter.mode === "ai" && options.knowledge ? await options.knowledge(input) : [];
+      if (adapter.mode === "ai" && options.knowledge && !references.length) throw new GenerationError("KNOWLEDGE_NO_MATCH");
       // Every paid adapter is protected automatically; selecting one cannot bypass admission.
       const protectedRun = adapter.mode === "ai"
         ? protectPaidGeneration(request, adapter, adapter.billing ? { config: adapter.billing.config } : {})
         : null;
       let board;
       try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { timeoutMs: options.timeoutMs,
-        signal: request.signal, pdf, references, knowledgeSearched }); }
+        signal: request.signal, pdf, references }); }
       finally { protectedRun?.finish(); }
       return NextResponse.json(board, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {

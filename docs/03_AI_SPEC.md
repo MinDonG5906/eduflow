@@ -2,7 +2,7 @@
 
 계약 버전: `eduflow-generation-v1`
 
-현재 실행 방식: 무료 원문 발췌 데모, 또는 실제 AI 생성(OpenAI, Claude, Gemini). 방식은 화면의 **모델 연결** 창과 서버 `.env.local`로 고른다([모델 연결](07_MODEL_CONNECTION.md)). PDF의 표·그림 해석은 실제 AI 모드에서 지원한다. 이 문서의 요청·응답·검증 규칙은 모든 AI 제공자에 같게 적용한다.
+현재 실행 방식: 서버 설정에 따른 무료 원문 발췌 데모 또는 실제 OpenAI 생성. PDF의 표·그림 해석은 실제 AI 모드에서 지원한다.
 
 ## 1. 요청과 원문 구간
 
@@ -18,7 +18,7 @@ PDF 생성은 `multipart/form-data`의 `input` JSON과 `pdf` 파일을 받는다
 
 AI 모드의 출력 장면에는 `phase`(`intro`/`body`/`outro`)와 `referenceIds`가 필요하다. 첫 장면은 위험·질문으로 교육 이유를 제시하고, 중간 장면은 원문을 절차·주제별로 묶어 설명하며, 마지막 장면은 핵심 수칙과 행동을 정리하도록 지시한다. 기존 저장 장면과 데모 출력을 위해 서버 파서는 두 필드가 없어도 받아들이고, 최종 장면에는 위치에 맞는 `phase`를 부여한다. 장면 재생성은 기존 `phase`를 유지한다.
 
-`/knowledge`에서 등록한 PDF·DOCX·TXT 또는 텍스트는 `.eduflow-private/knowledge.sqlite`에 자료 메타데이터와 원문 구간으로 영구 저장한다. PDF는 전체 또는 지정한 원본 페이지 범위를 페이지 번호를 보존해 색인한다. 공식 자료는 원본 URL이 필수다. FTS5 3글자 인덱스로 원고·문서명·제작 요청·키워드와 관련된 활성 구간을 찾고, 출처별 최대 두 구간·전체 최대 여섯 구간을 `supplementalSources`로 전달한다. 검색 결과가 없으면 `supplementalSources`를 빈 배열로 두고 원고만으로 생성하며, 생성 기록의 첫 경고에 "보강 자료 없음" 안내(`NO_REFERENCE_NOTICE`)를 남겨 편집 화면 상단에 표시한다(2026-10-27 변경, 이전에는 `KNOWLEDGE_NO_MATCH`로 중단). 자료 보관(비활성화)과 재활성화를 지원하며, 과거에 만든 장면의 출처 메타데이터는 남는다. 모델은 보강에 사용한 구간 ID를 `referenceIds`로 반환하고 서버는 이번 검색 결과에 없는 ID를 버리고 경고한다. 최종 `references`에는 자료 ID·출처명·URL·날짜·판본·PDF 페이지·원문 구간을 저장해 원고 `evidence`/`sourceId`와 분리한다. 출처 ID 확인은 문장별 사실 관계를 보증하지 않는다. 검색은 현재 어휘 기반이며 자동 웹 수집이나 벡터 임베딩은 없다.
+`/knowledge`에서 등록한 PDF·DOCX·TXT 또는 텍스트는 `.eduflow-private/knowledge.sqlite`에 자료 메타데이터와 원문 구간으로 영구 저장한다. PDF는 전체 또는 지정한 원본 페이지 범위를 페이지 번호를 보존해 색인한다. 공식 자료는 원본 URL이 필수다. FTS5 3글자 인덱스로 원고·문서명·제작 요청·키워드와 관련된 활성 구간을 찾고, 출처별 최대 두 구간·전체 최대 여섯 구간을 `supplementalSources`로 전달한다. 검색 결과가 없으면 `KNOWLEDGE_NO_MATCH`로 유료 호출 전에 중단한다. 자료 보관(비활성화)과 재활성화를 지원하며, 과거에 만든 장면의 출처 메타데이터는 남는다. 모델은 보강에 사용한 구간 ID를 `referenceIds`로 반환하고 서버는 이번 검색 결과에 없는 ID를 버리고 경고한다. 최종 `references`에는 자료 ID·출처명·URL·날짜·판본·PDF 페이지·원문 구간을 저장해 원고 `evidence`/`sourceId`와 분리한다. 출처 ID 확인은 문장별 사실 관계를 보증하지 않는다. 검색은 현재 어휘 기반이며 자동 웹 수집이나 벡터 임베딩은 없다.
 
 PDF는 서버에서 페이지별로 분석한다. 단순하고 읽는 순서가 확실한 글은 `document.textPages`의 `{ page: 원본번호, text: 추출원문 }`로 보낸다. 벡터·이미지·스캔·표·복잡한 배치·불확실한 글자는 페이지 전체를 최대 1536×2048픽셀로 고정한 호환 PDF 하나로 묶어 Responses API의 `input_file`로 보낸다. 이 첨부의 순서는 `document.visualPages`의 원본 번호와 대응하며 전체 선택 번호와 혼동하지 않는다. 텍스트 전용 입력은 PDF 첨부가 없다. 시각 페이지의 `detail: high`, 잘림 영역·회전 보존과 별도 `input_image`를 보내지 않는 정책은 유지한다. 추출 실패 시 기존 시각 경로를 사용한다. 입력 토큰 계산·생성·보완은 같은 요청 범위의 추출 결과와 호환 PDF 바이트를 재사용한다. 선택하지 않은 페이지는 포함하지 않는다. PDF 근거는 `pdf-page:원본번호` 하나와 해당 페이지의 직접 인용 또는 보이는 표·그림 설명으로 작성한다. 서버는 선택 페이지에 속하는 식별자인지 확인하며 시각적 내용의 사실 검증은 수행하지 않는다. 원본 대조 안내와 검토 필요 표시는 유지한다.
 
@@ -123,7 +123,7 @@ PDF 재시도도 실패 당시 선택본 Blob과 원본 페이지 번호를 사�
 
 ## 6. 실제 모델 연결 위치와 검증
 
-현재 Route Handler는 `lib/server/generator.ts`에서 연결 설정(`.eduflow-private/connection.json`, 없으면 `.env.local`의 `EDUFLOW_GENERATOR`)에 따라 데모·OpenAI(`openai-adapter.ts`)·Claude(`anthropic-adapter.ts`)·Gemini(`gemini-adapter.ts`) 어댑터 중 하나를 선택한다. 아래 OpenAI 절의 원칙(고정 모델과 단가, 전체 입력 토큰 사전 계산, 출력 8,000토큰 상한, SDK 자동 재시도 끔, 안전한 오류 변환)은 Claude·Gemini 어댑터에도 같게 적용한다. 실제 모델 어댑터는 `GenerationAdapter`의 `mode`, `model`, `promptVersion`, `generate(input, context)`를 구현하고 Route Handler에서 선택한다. `context.task`의 JSON Schema와 원문 구간을 제공자에게 전달하고, `context.repair`의 정상 장면과 보완 항목을 다음 호출에 반영한다. API 키와 제공자 SDK는 서버 모듈에서만 사용한다. 제공자별 429·장애 응답은 대응하는 `GenerationError`로 변환한다.
+현재 Route Handler는 `lib/server/generator.ts`에서 서버 설정에 따라 데모 또는 OpenAI 어댑터를 선택한다. 실제 모델 어댑터는 `GenerationAdapter`의 `mode`, `model`, `promptVersion`, `generate(input, context)`를 구현하고 Route Handler에서 선택한다. `context.task`의 JSON Schema와 원문 구간을 제공자에게 전달하고, `context.repair`의 정상 장면과 보완 항목을 다음 호출에 반영한다. API 키와 제공자 SDK는 서버 모듈에서만 사용한다. 제공자별 429·장애 응답은 대응하는 `GenerationError`로 변환한다.
 
 OpenAI 어댑터, 토큰·비용 상한, 데이터 전송 안내와 모드별 진행 안내를 구현했다. 실제 키가 등록되어야 유료 호출을 시작할 수 있으며 실제 계정에서의 생성 성공·품질은 별도 확인이 필요하다.
 
