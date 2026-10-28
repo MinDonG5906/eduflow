@@ -1,15 +1,18 @@
 import { z } from "zod";
 
-export const knowledgeSourceSchema = z.object({
+export const knowledgeMetadataSchema = z.object({
   title: z.string().trim().min(2).max(160),
   origin: z.enum(["official", "internal"]),
   url: z.url().max(500).refine((url) => /^https?:\/\//i.test(url)).optional(),
   published: z.string().trim().max(100).default(""),
   revision: z.string().trim().max(100).default(""),
-  text: z.string().trim().min(30).max(200000),
 }).refine((source) => source.origin !== "official" || Boolean(source.url), {
   message: "공식 자료에는 원본 출처 주소가 필요합니다.", path: ["url"],
 });
+export const knowledgeSourceSchema = knowledgeMetadataSchema.safeExtend({
+  text: z.string().trim().min(30).max(200000),
+});
+export type KnowledgeMetadata = z.infer<typeof knowledgeMetadataSchema>;
 export type KnowledgeSource = z.infer<typeof knowledgeSourceSchema>;
 
 export type KnowledgeDocument = Omit<KnowledgeSource, "text"> & {
@@ -18,6 +21,21 @@ export type KnowledgeDocument = Omit<KnowledgeSource, "text"> & {
   active: boolean;
   chunks: number;
   sha256: string;
+  pendingPages?: number;
+};
+
+export type KnowledgeImportPage = {
+  page: number;
+  text: string;
+  method: "text" | "ocr" | "unreadable";
+  confidence: number | null;
+  reviewReason: string;
+  needsReview: boolean;
+};
+
+export type KnowledgeReviewPage = Omit<KnowledgeImportPage, "needsReview"> & {
+  status: "pending" | "approved" | "auto_indexed" | "excluded";
+  filePage: number;
 };
 
 export type RetrievedReference = {

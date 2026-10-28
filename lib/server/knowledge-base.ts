@@ -3,12 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { chunkKnowledge, knowledgeSourceSchema, searchNeedles, type KnowledgeDocument, type KnowledgeSource, type RetrievedReference } from "../knowledge";
+import { chunkKnowledge, knowledgeMetadataSchema, knowledgeSourceSchema, searchNeedles, type KnowledgeDocument, type KnowledgeImportPage, type KnowledgeMetadata, type KnowledgeReviewPage, type KnowledgeSource, type RetrievedReference } from "../knowledge";
 
 type DocumentRow = {
   id: string; title: string; origin: "official" | "internal"; url: string;
   published: string; revision: string; sha256: string; created_at: string;
-  active: number; chunks: number;
+  active: number; chunks: number; pending_pages?: number;
 };
 type SearchRow = DocumentRow & { ordinal: number; page: number | null; text: string };
 
@@ -16,7 +16,7 @@ function documentFromRow(row: DocumentRow): KnowledgeDocument {
   return {
     id: row.id, title: row.title, origin: row.origin, ...(row.url ? { url: row.url } : {}),
     published: row.published, revision: row.revision, sha256: row.sha256,
-    createdAt: row.created_at, active: Boolean(row.active), chunks: row.chunks,
+    createdAt: row.created_at, active: Boolean(row.active), chunks: row.chunks, pendingPages: row.pending_pages ?? 0,
   };
 }
 
@@ -54,6 +54,17 @@ export class KnowledgeBase {
       CREATE TRIGGER IF NOT EXISTS chunks_delete AFTER DELETE ON chunks BEGIN
         INSERT INTO chunk_search(chunk_search, rowid, text) VALUES('delete', old.id, old.text);
       END;
+      CREATE TABLE IF NOT EXISTS knowledge_files (
+        document_id TEXT PRIMARY KEY REFERENCES documents(id),
+        pdf BLOB NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS knowledge_review_pages (
+        document_id TEXT NOT NULL REFERENCES documents(id),
+        page INTEGER NOT NULL, file_page INTEGER NOT NULL, text TEXT NOT NULL, method TEXT NOT NULL,
+        confidence REAL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        approved_text TEXT NOT NULL DEFAULT '', resolved_at TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY(document_id, page)
+      ) STRICT;
     `);
   }
 
@@ -78,13 +89,126 @@ export class KnowledgeBase {
   }
 
   list(): KnowledgeDocument[] {
-    const rows = this.db.prepare(`SELECT d.*, count(c.id) AS chunks FROM documents d
-      LEFT JOIN chunks c ON c.document_id=d.id GROUP BY d.id ORDER BY d.created_at DESC`).all() as DocumentRow[];
+    const rows = this.db.prepare(`SELECT d.*,
+      (SELECT count(*) FROM chunks c WHERE c.document_id=d.id) AS chunks,
+      (SELECT count(*) FROM knowledge_review_pages r WHERE r.document_id=d.id AND r.status='pending') AS pending_pages
+      FROM documents d ORDER BY d.created_at DESC`).all() as DocumentRow[];
     return rows.map(documentFromRow);
+  }
+
+  addImported(meta: KnowledgeMetadata, sha256: string, pdf: Buffer, pages: KnowledgeImportPage[]): KnowledgeDocument {
+    const source = knowledgeMetadataSchema.parse(meta);
+    if (!pages.length || pages.length > 200 || pages.reduce((sum, page) => sum + page.text.length, 0) > 200000)
+      throw new Error("KNOWLEDGE_SIZE");
+    const safe = pages.filter((page) => !page.needsReview);
+    const pieces = safe.flatMap((page) => chunkKnowledge(`[PDF ${page.page}페이지]\n\n${page.text}`));
+    if (pieces.length > 400) throw new Error("KNOWLEDGE_SIZE");
+    const id = randomUUID(), createdAt = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (this.db.prepare("SELECT id FROM documents WHERE sha256=? AND active=1 LIMIT 1").get(sha256))
+        throw new Error("KNOWLEDGE_DUPLICATE");
+      this.db.prepare("INSERT INTO documents(id,title,origin,url,published,revision,sha256,created_at) VALUES(?,?,?,?,?,?,?,?)")
+        .run(id, source.title, source.origin, source.url ?? "", source.published, source.revision, sha256, createdAt);
+      this.db.prepare("INSERT INTO knowledge_files(document_id,pdf) VALUES(?,?)").run(id, pdf);
+      const insertChunk = this.db.prepare("INSERT INTO chunks(document_id,ordinal,page,text) VALUES(?,?,?,?)");
+      for (const [index, piece] of pieces.entries()) insertChunk.run(id, index + 1, piece.page ?? null, piece.text);
+      const insertReview = this.db.prepare("INSERT INTO knowledge_review_pages(document_id,page,file_page,text,method,confidence,reason) VALUES(?,?,?,?,?,?,?)");
+      for (const [index, page] of pages.entries()) if (page.needsReview)
+        insertReview.run(id, page.page, index + 1, page.text, page.method, page.confidence, page.reviewReason);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return { id, title: source.title, origin: source.origin, ...(source.url ? { url: source.url } : {}),
+      published: source.published, revision: source.revision, sha256, createdAt, active: true,
+      chunks: pieces.length, pendingPages: pages.length - safe.length };
+  }
+
+  reviewPages(id: string): KnowledgeReviewPage[] {
+    const rows = this.db.prepare("SELECT page,file_page,text,method,confidence,reason,status FROM knowledge_review_pages WHERE document_id=? ORDER BY page")
+      .all(id) as { page: number; file_page: number; text: string; method: KnowledgeReviewPage["method"]; confidence: number | null; reason: string; status: KnowledgeReviewPage["status"] }[];
+    return rows.map(({ reason, file_page, ...row }) => ({ ...row, filePage: file_page, reviewReason: reason }));
+  }
+
+  pdf(id: string): Buffer | null {
+    const row = this.db.prepare("SELECT pdf FROM knowledge_files WHERE document_id=?").get(id) as { pdf: Uint8Array } | undefined;
+    return row ? Buffer.from(row.pdf) : null;
+  }
+
+  recheckPending(id: string, updates: { originalPage: number; result: KnowledgeImportPage }[]): { autoIndexed: number; pendingPages: number } {
+    let autoIndexed = 0;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const getPending = this.db.prepare("SELECT file_page FROM knowledge_review_pages WHERE document_id=? AND page=? AND status='pending'");
+      const getUsage = this.db.prepare("SELECT coalesce(sum(length(text)),0) AS characters, count(*) AS chunks, coalesce(max(ordinal),0) AS last FROM chunks WHERE document_id=?");
+      const insert = this.db.prepare("INSERT INTO chunks(document_id,ordinal,page,text) VALUES(?,?,?,?)");
+      const update = this.db.prepare("UPDATE knowledge_review_pages SET text=?,method=?,confidence=?,reason=?,status=?,approved_text=?,resolved_at=? WHERE document_id=? AND page=? AND status='pending'");
+      const usage = getUsage.get(id) as { characters: number; chunks: number; last: number };
+      for (const { originalPage, result } of updates) {
+        const pending = getPending.get(id, originalPage) as { file_page: number } | undefined;
+        if (!pending || pending.file_page !== result.page) continue;
+        if (!result.needsReview) {
+          const pieces = chunkKnowledge(`[PDF ${originalPage}페이지]\n\n${result.text}`);
+          const addedCharacters = pieces.reduce((sum, piece) => sum + piece.text.length, 0);
+          if (usage.characters + addedCharacters > 200000 || usage.chunks + pieces.length > 400) throw new Error("KNOWLEDGE_SIZE");
+          for (const piece of pieces) insert.run(id, ++usage.last, originalPage, piece.text);
+          usage.characters += addedCharacters; usage.chunks += pieces.length; autoIndexed++;
+        }
+        update.run(result.text, result.method, result.confidence, result.reviewReason,
+          result.needsReview ? "pending" : "auto_indexed", result.needsReview ? "" : result.text,
+          result.needsReview ? "" : new Date().toISOString(), id, originalPage);
+      }
+      const pendingPages = (this.db.prepare("SELECT count(*) AS n FROM knowledge_review_pages WHERE document_id=? AND status='pending'")
+        .get(id) as { n: number }).n;
+      this.db.exec("COMMIT");
+      return { autoIndexed, pendingPages };
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
+  resolvePage(id: string, page: number, action: "approve" | "exclude", text = ""): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db.prepare("SELECT status,text FROM knowledge_review_pages WHERE document_id=? AND page=?")
+        .get(id, page) as { status: string; text: string } | undefined;
+      if (!row || row.status !== "pending") { this.db.exec("ROLLBACK"); return false; }
+      const approvedText = text.trim() || row.text.trim();
+      if (action === "approve") {
+        if (approvedText.length < 10 || approvedText.length > 20000) throw new Error("KNOWLEDGE_REVIEW_TEXT");
+        const start = (this.db.prepare("SELECT coalesce(max(ordinal),0) AS last FROM chunks WHERE document_id=?")
+          .get(id) as { last: number }).last;
+        const pieces = chunkKnowledge(`[PDF ${page}페이지]\n\n${approvedText}`);
+        const usage = this.db.prepare("SELECT coalesce(sum(length(text)),0) AS characters, count(*) AS chunks FROM chunks WHERE document_id=?")
+          .get(id) as { characters: number; chunks: number };
+        if (usage.characters + pieces.reduce((sum, piece) => sum + piece.text.length, 0) > 200000 || usage.chunks + pieces.length > 400)
+          throw new Error("KNOWLEDGE_SIZE");
+        const insert = this.db.prepare("INSERT INTO chunks(document_id,ordinal,page,text) VALUES(?,?,?,?)");
+        for (const [index, piece] of pieces.entries()) insert.run(id, start + index + 1, page, piece.text);
+      }
+      this.db.prepare("UPDATE knowledge_review_pages SET approved_text=?,status=?,resolved_at=? WHERE document_id=? AND page=?")
+        .run(action === "approve" ? approvedText : "", action === "approve" ? "approved" : "excluded", new Date().toISOString(), id, page);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 
   setActive(id: string, active: boolean): boolean {
     return Number(this.db.prepare("UPDATE documents SET active=? WHERE id=?").run(active ? 1 : 0, id).changes) === 1;
+  }
+
+  deleteDocument(id: string): boolean {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (!this.db.prepare("SELECT 1 FROM documents WHERE id=?").get(id)) {
+        this.db.exec("ROLLBACK");
+        return false;
+      }
+      // The chunks trigger removes each row from the FTS index as well.
+      this.db.prepare("DELETE FROM chunks WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM knowledge_review_pages WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM knowledge_files WHERE document_id=?").run(id);
+      this.db.prepare("DELETE FROM documents WHERE id=?").run(id);
+      this.db.exec("COMMIT");
+      return true;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 
   search(query: string, limit = 6, topic = ""): RetrievedReference[] {
