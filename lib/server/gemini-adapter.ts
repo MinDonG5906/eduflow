@@ -64,7 +64,7 @@ export function createGeminiAdapter(config: AIConfig, options: { fetch?: typeof 
     return request({ ...context, pdf });
   }
   return {
-    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v1-selected-pdf",
+    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v2-duration-target",
     billing: { kind: "metered", config },
     async countInputTokens(_, context) {
       try {

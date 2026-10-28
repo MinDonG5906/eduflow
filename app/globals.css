@@ -226,13 +226,14 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .keyword-tags > span { display: flex; align-items: center; gap: 4px; background: var(--surface); border-radius: 4px; padding: 3px 5px 3px 8px; font-size: 11px; overflow-wrap: anywhere; }
 .keyword-tags button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; background: none; }
 .settings-divider { height: 1px; background: var(--hairline); }
-.additional summary { display: flex; gap: 7px; align-items: center; list-style: none; font-size: 12px; min-height: 28px; }
-.additional summary::-webkit-details-marker { display: none; }
-.additional summary > span { margin-left: auto; font-size: 10px; color: var(--body); }
-.additional[open] summary { margin-bottom: 12px; }
-.additional[open] summary > svg { transform: rotate(45deg); }
-.additional textarea { font-size: 12px; }
-.additional small { display: block; font-size: 10px; color: var(--body); margin-top: 8px; }
+.advanced-toggle { display: flex; gap: 7px; align-items: center; width: 100%; min-height: 28px; padding: 0; border: 0; background: none; color: var(--ink); font-size: 12px; font-weight: 500; text-align: left; }
+.advanced-toggle > span { margin-left: auto; font-size: 10px; font-weight: 400; color: var(--body); }
+.advanced-toggle > svg { transition: transform .15s; }
+.advanced-toggle[aria-expanded="true"] > svg { transform: rotate(180deg); }
+/* Advanced fields stay items of the settings grid, so the responsive columns still apply. */
+.advanced-settings { display: contents; }
+.advanced-settings[hidden] { display: none; }
+.additional-request textarea { font-size: 12px; }
 .knowledge-settings { grid-column: 1/-1; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 12px; border: 1px solid var(--hairline); border-radius: 9px; font-size: 11px; }
 .knowledge-settings span { flex: 1; }
 .knowledge-settings a { color: var(--link); text-decoration: underline; font-weight: 700; }
@@ -474,7 +475,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .input-layout { grid-template-columns: minmax(0,1fr); }
   .settings-fields { grid-template-columns: 1fr 1fr; }
   .settings-divider { display: none; }
-  .additional { grid-column: 1/-1; }
+  .advanced-toggle,.additional-request { grid-column: 1/-1; }
   .manuscript-editor,.manuscript-editor textarea { min-height: 360px; }
   .board-layout { grid-template-columns: 1fr; }
   .scene-list { position: static; max-height: none; display: flex; gap: 10px; overflow-x: auto; padding: 2px 2px 8px; align-items: stretch; }
@@ -546,7 +547,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .select-wrap > svg { top: 15px; }
   .segmented button { height: 36px; }
   .keyword-input input { min-height: 44px; font-size: 14px; }
-  .additional summary { min-height: 36px; }
+  .advanced-toggle { min-height: 44px; }
   .generation-bar { position: static; flex-direction: column; padding: 18px 16px; gap: 16px; }
   .generation-bar strong { max-width: none; font-size: 12px; }
   .generation-bar p { font-size: 11px; }

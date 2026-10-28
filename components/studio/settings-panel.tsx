@@ -1,5 +1,5 @@
-import type { Dispatch, SetStateAction } from "react";
-import { ArrowRight, BookOpen, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { ArrowRight, BookOpen, ChevronDown, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +28,14 @@ export function SettingsPanel({
 }) {
   const setting = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((s) => ({ ...s, [key]: value }));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // The collapsed toggle reports changed or pending advanced values so none stay hidden.
+  const advancedChanges = [
+    settings.difficulty !== defaults.difficulty,
+    settings.tone !== defaults.tone,
+    settings.keywords.length > 0,
+    Boolean(settings.instructions.trim()),
+  ].filter(Boolean).length;
   function addKeyword() {
     const k = keyword.trim();
     if (!k) return;
@@ -73,21 +81,6 @@ export function SettingsPanel({
           options={[...audienceOptions]}
           onChange={(v) => setting("audience", v as Settings["audience"])}
         />
-        <div className="form-field">
-          <span>설명 난이도</span>
-          <div className="segmented">
-            {["쉬움", "보통", "심화"].map((v) => (
-              <button
-                key={v}
-                aria-pressed={settings.difficulty === v}
-                className={settings.difficulty === v ? "active" : ""}
-                onClick={() => setting("difficulty", v as Settings["difficulty"])}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </div>
         <div className="field-row">
           <SelectField
             label="영상 길이"
@@ -112,56 +105,111 @@ export function SettingsPanel({
           />
         </div>
         <SelectField
-          label="톤앤매너"
-          value={settings.tone}
-          options={["친근한 설명", "차분한 교육", "공식적", "간결한 안내"]}
-          onChange={(v) => setting("tone", v as Settings["tone"])}
+          label="출력 언어"
+          value={settings.language}
+          options={["한국어", "영어"]}
+          onChange={(v) => setting("language", v as Settings["language"])}
         />
-        <div className="form-field">
-          <label htmlFor="keywords">
-            강조 키워드 <small>선택 · 최대 10개</small>
-          </label>
-          <div className="keyword-input">
-            <Input
-              id="keywords"
-              placeholder="키워드 입력 후 Enter"
-              value={keyword}
-              maxLength={40}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addKeyword();
-                }
-              }}
-            />
-            <button aria-label="키워드 추가" onClick={addKeyword}>
-              <Plus size={15} />
-            </button>
-          </div>
-          {settings.keywords.length > 0 && (
-            <div className="keyword-tags">
-              {settings.keywords.map((k) => (
-                <span key={k}>
-                  {k}
-                  <button
-                    aria-label={`${k} 키워드 삭제`}
-                    onClick={() =>
-                      setting(
-                        "keywords",
-                        settings.keywords.filter((v) => v !== k),
-                      )
-                    }
-                  >
-                    <X size={11} />
-                  </button>
-                </span>
+        <div className="settings-divider" />
+        <button
+          type="button"
+          className="advanced-toggle"
+          aria-expanded={advancedOpen}
+          aria-controls="advanced-settings"
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <ChevronDown size={14} /> 고급 설정
+          <span className={keyword.trim() ? "invalid" : undefined}>
+            {keyword.trim()
+              ? "추가하지 않은 키워드가 있어요"
+              : advancedChanges
+                ? `${advancedChanges}개 변경됨`
+                : "난이도·톤·키워드·추가 요청"}
+          </span>
+        </button>
+        <div id="advanced-settings" className="advanced-settings" hidden={!advancedOpen}>
+          <div className="form-field">
+            <span>설명 난이도</span>
+            <div className="segmented">
+              {["쉬움", "보통", "심화"].map((v) => (
+                <button
+                  key={v}
+                  aria-pressed={settings.difficulty === v}
+                  className={settings.difficulty === v ? "active" : ""}
+                  onClick={() => setting("difficulty", v as Settings["difficulty"])}
+                >
+                  {v}
+                </button>
               ))}
             </div>
-          )}
-          {keyword.trim() && (
-            <small>Enter 또는 + 버튼으로 키워드를 추가해 주세요.</small>
-          )}
+          </div>
+          <SelectField
+            label="톤앤매너"
+            value={settings.tone}
+            options={["친근한 설명", "차분한 교육", "공식적", "간결한 안내"]}
+            onChange={(v) => setting("tone", v as Settings["tone"])}
+          />
+          <div className="form-field">
+            <label htmlFor="keywords">
+              강조 키워드 <small>선택 · 최대 10개</small>
+            </label>
+            <div className="keyword-input">
+              <Input
+                id="keywords"
+                placeholder="키워드 입력 후 Enter"
+                value={keyword}
+                maxLength={40}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addKeyword();
+                  }
+                }}
+              />
+              <button aria-label="키워드 추가" onClick={addKeyword}>
+                <Plus size={15} />
+              </button>
+            </div>
+            {settings.keywords.length > 0 && (
+              <div className="keyword-tags">
+                {settings.keywords.map((k) => (
+                  <span key={k}>
+                    {k}
+                    <button
+                      aria-label={`${k} 키워드 삭제`}
+                      onClick={() =>
+                        setting(
+                          "keywords",
+                          settings.keywords.filter((v) => v !== k),
+                        )
+                      }
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {keyword.trim() && (
+              <small>Enter 또는 + 버튼으로 키워드를 추가해 주세요.</small>
+            )}
+          </div>
+          <div className="form-field additional-request">
+            <label htmlFor="instructions">
+              추가 요청 <small>선택 · 최대 500자</small>
+            </label>
+            <Textarea
+              id="instructions"
+              maxLength={500}
+              value={settings.instructions}
+              onChange={(e) => setting("instructions", e.target.value)}
+              placeholder="예: 실천 방법을 중심으로 구성해 주세요."
+            />
+            <small>
+              {settings.instructions.length} / 500자 · {generator?.mode === "ai" ? "AI 생성에 반영" : "데모에서는 제작 메모로 반영"}
+            </small>
+          </div>
         </div>
         <div className="settings-divider" />
         <div className="knowledge-settings">
@@ -169,31 +217,6 @@ export function SettingsPanel({
           <span>AI는 등록된 지식베이스에서 원고와 관련된 근거를 검색합니다.</span>
           <a href="/knowledge">지식베이스 관리</a>
         </div>
-        <div className="settings-divider" />
-        <SelectField
-          label="출력 언어"
-          value={settings.language}
-          options={["한국어", "영어"]}
-          onChange={(v) => setting("language", v as Settings["language"])}
-        />
-        <details className="additional">
-          <summary>
-            <Plus size={14} /> 추가 요청 <span>선택</span>
-          </summary>
-          <label className="sr-only" htmlFor="instructions">
-            추가 요청
-          </label>
-          <Textarea
-            id="instructions"
-            maxLength={500}
-            value={settings.instructions}
-            onChange={(e) => setting("instructions", e.target.value)}
-            placeholder="예: 실천 방법을 중심으로 구성해 주세요."
-          />
-          <small>
-            {settings.instructions.length} / 500자 · {generator?.mode === "ai" ? "AI 생성에 반영" : "데모에서는 제작 메모로 반영"}
-          </small>
-        </details>
       </fieldset>
     </section>
   );

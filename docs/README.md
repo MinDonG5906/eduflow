@@ -11,6 +11,7 @@
 | [04_AI_SAFETY.md](04_AI_SAFETY.md) | API 키 보관, 비용 장부와 한도, 로컬 접근 검사 (뒤쪽 날짜 절은 검증 기록) |
 | [05_KNOWLEDGE_SOURCES.md](05_KNOWLEDGE_SOURCES.md) | RAG 지식베이스 동작 방식과 공식 자료 등록 기록 |
 | [07_MODEL_CONNECTION.md](07_MODEL_CONNECTION.md) | 모델 연결: Gemini 팀 키, 개인 OpenAI·Claude 키 |
+| [08_PROMPT_TEMPLATE.md](08_PROMPT_TEMPLATE.md) | 프롬프트 템플릿(과제 산출물): 지시문 원문, 작업 데이터·응답 형식, 서버 검사 범위, 버전 기록 |
 | [DOCUMENT_INPUT.md](DOCUMENT_INPUT.md) | PDF·PPT·한글·Word·TXT 불러오기, 원문 위치 확인, 브라우저 저장·복구 |
 | [EDUFLOW_DESIGN.md](EDUFLOW_DESIGN.md) | 화면 디자인 원칙과 교육 대상 |
 | [GIT_WORKFLOW.md](GIT_WORKFLOW.md) | 팀 브랜치·PR 규칙 (관리자용) |
