@@ -20,9 +20,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EvidenceSource } from "@/components/evidence-source";
+import { KnowledgeSource } from "@/components/knowledge-source";
+import { knowledgeUsageLabel } from "@/lib/knowledge";
 import type { PdfSource } from "@/lib/pdf-source";
 import { fieldLabels, type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
+import { VisualRecommendations } from "./visual-recommendations";
 
 // Purpose sits beside the preview; the rest are stacked below it.
 const textFields = [
@@ -87,6 +90,8 @@ export function SceneEditor({
   onRegenerate: () => void;
   canRegenerate: boolean;
 }) {
+  const knowledgeReferences = [...new Map([...(scene.references ?? []), ...(scene.visualReferences ?? [])]
+    .map(reference => [reference.id, reference])).values()];
   return (
     <section className="scene-editor panel">
       <div className="scene-editor-head">
@@ -175,7 +180,7 @@ export function SceneEditor({
                 {fieldLabels[key]}
                 {scene.edited.includes(key) && <small>수정됨</small>}
               </label>
-              {key === "evidence" && <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
+              {key === "evidence" && <><EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} /><div className="scene-knowledge-location"><KnowledgeSource key={scene.id} references={knowledgeReferences} />{!knowledgeReferences.length && <small>이 장면에 선택된 지식베이스 근거가 없습니다.</small>}</div></>}
               <Textarea
                 id={`field-${key}`}
                 value={scene[key]}
@@ -186,6 +191,8 @@ export function SceneEditor({
           );
         })}
       </div>
+      {scene.generation?.mode === "ai" && <p className="scene-knowledge-status">{scene.generation.knowledge ? `${knowledgeUsageLabel(scene.generation.knowledge)} 이 장면: 보강 근거 ${scene.references?.length ?? 0}개 · 시각자료 ${scene.visuals?.length ?? 0}개` : "이 장면에는 지식베이스 검색 기록이 없습니다."}</p>}
+      <VisualRecommendations key={scene.id} visuals={scene.visuals ?? []} references={knowledgeReferences} />
       {Boolean(scene.references?.length) && <div className="scene-references">
         <h3><BookOpen size={15} /> 보강 자료 근거</h3>
         <p>나레이션·자막에 활용한 외부 자료입니다. 원문 근거와 구분해 검토해 주세요.</p>
@@ -193,6 +200,7 @@ export function SceneEditor({
           <strong>{reference.url ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a> : reference.title}</strong>
           <small>{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "사용자 제공 자료"} · {reference.published}{reference.revision ? ` · ${reference.revision}` : ""}{reference.page ? ` · ${reference.page}페이지` : ""}</small>
           <p>{reference.excerpt}</p>
+          <KnowledgeSource references={[reference]} />
         </div>)}
       </div>}
       <div className="scene-editor-footer">
