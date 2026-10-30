@@ -15,6 +15,7 @@ import { ErrorBanner, StudioStepper, StudioTopbar } from "@/components/studio/st
 import { StudioSidebar } from "@/components/studio/studio-sidebar";
 import type { ExportFormat, StudioModal, StudioView } from "@/components/studio/types";
 import { useDraftStorage } from "@/hooks/use-draft-storage";
+import { canStartGeneration } from "@/lib/generation-availability";
 import { useGeneratorStatus } from "@/hooks/use-generator-status";
 import { usePdfSelection } from "@/hooks/use-pdf-selection";
 import { useBusyProgress, useNotice } from "@/hooks/use-timed-state";
@@ -97,7 +98,7 @@ export default function Studio() {
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
-  const canGenerate = Boolean(generator?.available && (!isPdf || generator.mode === "ai") && valid && ready && !busy && !importing && !documentPending && !keyword.trim() && !storageBlocked);
+  const canGenerate = canStartGeneration({ generator, isPdf, valid, ready, busy, importing, documentPending: Boolean(documentPending), keyword, storageBlocked });
   const notify = (text: string) => setNotice(text);
 
   useEffect(() => () => {
@@ -462,6 +463,7 @@ export default function Studio() {
                 canGenerate={canGenerate}
                 storageBlocked={storageBlocked}
                 generator={generator}
+                onOpenConnection={() => setConnectionOpen(true)}
                 onGenerate={() => generate()}
               />
             </>

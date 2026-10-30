@@ -249,3 +249,23 @@ test("PDF export API validates origin, size, JSON and attached page metadata bef
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("content-type"), "application/pdf");
 });
+
+
+test("long production fields and image sources survive unlimited continuation pages", async () => {
+  const board = structuredClone(sampleBoard);
+  board.scenes = [board.scenes[0]];
+  const scene = board.scenes[0];
+  const fields = ["title", "purpose", "subtitle", "narration", "visual", "assets", "evidence", "reviewReason"] as const;
+  scene.review = true;
+  for (const field of fields) scene[field] = ("긴 제작 정보는 생략 없이 다음 페이지에 이어서 표시합니다. ").repeat(field === "title" ? 4 : 25) + field + "END";
+  scene.image!.sourceText = "https://example.com/" + "long-source/".repeat(80) + "SOURCEEND";
+  scene.references = [{id:"reference",title:"보강 자료",excerpt:"자료 설명 ".repeat(120)+"REFERENCEEND",url:"https://example.com/reference",published:"2026-10-31",origin:"official"}];
+  const pdf = await exportStoryboardPdf({board,sceneImages:new Map([[scene.id,createDummyImage(200,450,"#171717")]])});
+  const document = await PDFDocument.load(pdf);
+  assert.ok(document.getPageCount() > 2);
+  const parser = new PDFParse({data:pdf});
+  try {
+    const text = (await parser.getText()).text.replace(/\s/g, "");
+    for (const marker of [...fields.map(f=>f+"END"),"SOURCEEND","REFERENCEEND"]) assert.ok(text.includes(marker),marker);
+  } finally { await parser.destroy(); }
+});
