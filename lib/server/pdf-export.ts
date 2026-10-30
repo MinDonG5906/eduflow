@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { Board, Scene } from "../storyboard";
-import { citedPdfPage, sourceUnit } from "../pdf-source";
+import { citedPdfPage, sourceUnit, type PdfSource } from "../pdf-source";
 import { officeFontCandidates } from "./office-fonts";
 import { renderPdfPages } from "./pdf-render";
 
@@ -34,7 +34,7 @@ async function loadKoreanFonts(doc: PDFDocument): Promise<FontSet> {
   doc.registerFontkit(fontkit);
 
   const candidates = [
-    ...officeFontCandidates(),
+    ...officeFontCandidates().filter(file => !file.endsWith(".ttc")),
     "C:\\Windows\\Fonts\\malgun.ttf",
     "C:\\Windows\\Fonts\\malgunbd.ttf",
   ];
@@ -165,10 +165,12 @@ interface FormattedSceneContent {
 export async function exportStoryboardPdf({
   board,
   pdfBuffer,
+  attachedPdfSource,
   sceneImages,
 }: {
   board: Board;
   pdfBuffer?: Uint8Array;
+  attachedPdfSource?: PdfSource;
   sceneImages?: Map<string, Uint8Array>;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -235,7 +237,7 @@ export async function exportStoryboardPdf({
     }
     // B. Priority 2: PDF source document page screenshot
     else {
-      const pdfSource = scene.pdfSource || board.pdfSource;
+      const pdfSource = attachedPdfSource;
       if (pdfSource && pdfBuffer) {
         const pageNum = citedPdfPage(pdfSource, scene);
         if (pageNum !== null) {

@@ -56,4 +56,3 @@ export async function loadSceneImages(ids: string[]): Promise<Map<string, Blob>>
   }
   return map;
 }
-

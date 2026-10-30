@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, PDFPage, rgb } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { createCanvas } from "@napi-rs/canvas";
 import { exportStoryboardPdf } from "./server/pdf-export";
 import type { Board } from "./storyboard";
 import { moveScene } from "./board-edit";
 import { serializeDraft, restoreBrowserDraft } from "./studio-state";
+import { POST } from "../app/api/export/pdf/route";
 
 // Helper to create dummy PNG image buffers with specified dimensions
 function createDummyImage(width: number, height: number, color: string): Uint8Array {
@@ -209,4 +210,42 @@ test("browser draft serialization preserves scene image metadata across refresh"
   // Check scene 3 without image
   const restoredScene3 = draft.board.scenes[2];
   assert.equal(restoredScene3.image, undefined);
+});
+
+test("PDF export maps scene citations against the attached selection and rejects different documents", async (t) => {
+  const original = await PDFDocument.create();
+  original.addPage([400, 200]).drawRectangle({ x: 0, y: 0, width: 400, height: 200, color: rgb(1, 0, 0) });
+  original.addPage([200, 400]).drawRectangle({ x: 0, y: 0, width: 200, height: 400, color: rgb(0, 0, 1) });
+  const pdfBuffer = await original.save();
+  const attachedPdfSource = { name: "manual.pdf", pages: [22, 24] };
+  const board: Board = { ...sampleBoard, pdfSource: attachedPdfSource, scenes: [{ ...sampleBoard.scenes[0],
+    image: undefined, sourceId: "pdf-page:24", pdfSource: { name: "manual.pdf", pages: [24] } }] };
+  const draw = t.mock.method(PDFPage.prototype, "drawImage");
+  const result = await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource });
+  assert.equal(draw.mock.callCount(), 1);
+  const selectedImage = draw.mock.calls[0].arguments[0];
+  assert.ok(selectedImage.height > selectedImage.width, "citation must use second attached page, not first scene-selected page");
+  const parser = new PDFParse({ data: result });
+  try { assert.ok((await parser.getText()).text.includes("원본 24페이지")); }
+  finally { await parser.destroy(); }
+
+  await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource: { ...attachedPdfSource, name: "different.pdf" } });
+  assert.equal(draw.mock.callCount(), 1, "a different attached document cannot become this scene's source image");
+});
+
+test("PDF export API validates origin, size, JSON and attached page metadata before rendering", async () => {
+  const url = "http://localhost:3000/api/export/pdf";
+  const headers = { Origin: "http://localhost:3000", "Content-Type": "application/json" };
+  assert.equal((await POST(new Request(url, { method: "POST", headers: { ...headers, Origin: "https://other.test" }, body: "{}" }))).status, 403);
+  assert.equal((await POST(new Request(url, { method: "POST", headers: { ...headers, "Content-Length": "70000001" }, body: "{}" }))).status, 413);
+  assert.equal((await POST(new Request(url, { method: "POST", headers, body: "bad-json" }))).status, 400);
+  const pdf = await PDFDocument.create(); pdf.addPage();
+  const form = new FormData();
+  form.set("board", JSON.stringify(sampleBoard));
+  form.set("pdf", new Blob([new Uint8Array(await pdf.save())], { type: "application/pdf" }));
+  form.set("pdfSource", JSON.stringify({ name: "manual.pdf", pages: [22, 24] }));
+  assert.equal((await POST(new Request(url, { method: "POST", headers: { Origin: headers.Origin }, body: form }))).status, 400);
+  const response = await POST(new Request(url, { method: "POST", headers, body: JSON.stringify({ board: sampleBoard }) }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/pdf");
 });

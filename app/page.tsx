@@ -316,8 +316,9 @@ export default function Studio() {
         notify("PDF 스토리보드를 생성하고 있어요...");
         const formData = new FormData();
         formData.set("board", JSON.stringify(board));
-        if (pdf.selected) {
+        if (pdfReady && pdf.selected && sourceDocument?.selectedPages?.length) {
           formData.set("pdf", pdf.selected, "selected-pages.pdf");
+          formData.set("pdfSource", JSON.stringify({ name: sourceDocument.name, pages: sourceDocument.selectedPages }));
         }
         // Attach scene reference images from IndexedDB
         const imageIds = board.scenes
