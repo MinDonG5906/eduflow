@@ -6,6 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatPdfPages, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import type { Board } from "@/lib/storyboard";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
+import { KnowledgeSource } from "@/components/knowledge-source";
+import { knowledgeUsageLabel } from "@/lib/knowledge";
 
 export function OverviewPanel({
   board,
@@ -57,9 +59,11 @@ export function OverviewPanel({
           콘텐츠 개요 <ChevronDown size={16} className={open ? "rotate" : ""} />
         </button>
       </div>
+      <p className="scene-knowledge-status">{board.mode === "demo" ? board.scenes.some(scene => scene.generation?.mode === "ai") ? "일부 장면을 AI로 재생성했습니다. 각 장면에서 지식베이스 활용 내역을 확인하세요." : "무료 데모 · 지식베이스를 검색하거나 AI에 전달하지 않습니다." : board.generation?.knowledge ? `전체 생성: ${knowledgeUsageLabel(board.generation.knowledge)}` : "전체 생성 시 지식베이스 검색 기록이 없습니다. 재생성한 장면의 기록은 각 장면에서 확인하세요."}</p>
       {board.generation?.warnings.filter((warning) => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map((warning) => (
         <p key={warning} className="term-correction-notice" role="status">{warning}</p>
       ))}
+      {Boolean(board.generation?.knowledgeSources?.length) && <div className="overview-knowledge-location"><KnowledgeSource references={board.generation!.knowledgeSources!} label="검색한 지식베이스 위치 확인" /></div>}
       {open && (
         <div className="overview-edit">
           <label>

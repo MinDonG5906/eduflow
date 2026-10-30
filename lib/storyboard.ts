@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { pdfSourceSchema, sourceNote } from "./pdf-source";
+import { visualRecommendationSchema } from "./knowledge-structure";
+import { knowledgeSearchStatusSchema, knowledgeUsageLabel } from "./knowledge";
 
 export const audienceOptions = [
   "산업현장 근무자",
@@ -38,6 +40,11 @@ export const generationRecordSchema = z.object({
   createdAt: z.string().datetime(),
   attempts: z.number().int().min(1).max(2),
   mode: z.enum(["demo", "ai"]),
+  knowledge: z.object({
+    status: knowledgeSearchStatusSchema.optional(),
+    retrievedCount: z.number().int().min(0).max(6),
+    documentCount: z.number().int().min(0).max(6),
+  }).optional(),
 });
 export const scenePhaseSchema = z.enum(["intro", "body", "outro"]);
 export const sceneReferenceSchema = z.object({
@@ -50,6 +57,8 @@ export const sceneReferenceSchema = z.object({
   documentId: z.string().uuid().optional(),
   revision: z.string().max(100).optional(),
   page: z.number().int().positive().optional(),
+  blockIds: z.array(z.string().max(120)).max(50).optional(),
+  visuals: z.array(visualRecommendationSchema).max(10).optional(),
 });
 export const sceneSchema = z.object({
   id: z.string(),
@@ -69,11 +78,14 @@ export const sceneSchema = z.object({
   pdfSource: pdfSourceSchema.optional(),
   phase: scenePhaseSchema.optional(),
   references: z.array(sceneReferenceSchema).max(6).optional(),
+  visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
+  visuals: z.array(visualRecommendationSchema).max(20).optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
   repairedScenes: z.array(z.number().int().min(1).max(20)).max(20),
   warnings: z.array(z.string().max(300)).max(30),
+  knowledgeSources: z.array(sceneReferenceSchema).max(6).optional(),
 });
 export const boardSchema = z.object({
   title: z.string(),
@@ -245,7 +257,7 @@ export function markdown(board: Board) {
   const label = modes.size > 1 ? "AI·데모 장면 포함" : modes.has("ai") ? "AI 생성 초안" : "원문 발췌 기반 데모";
   const pdfNote = board.pdfSource ? sourceNote(board.pdfSource) : "";
   return pdfNote + (
-    `# ${board.title}\n\n> ${label} · 제작 전 검토 필요\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
+    `# ${board.title}\n\n> ${label} · 제작 전 검토 필요\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}${generation.knowledge ? `\n${knowledgeUsageLabel(generation.knowledge)}\n${generation.knowledgeSources?.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n") ?? ""}` : ""}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
       board.settings,
     )
       .map(
@@ -262,7 +274,7 @@ export function markdown(board: Board) {
               ([k, label]) =>
                 `### ${label}\n${typeof s[k as keyof Scene] === "boolean" ? (s.review ? "검토 필요" : "검토 완료") : Array.isArray(s[k as keyof Scene]) ? (s[k as keyof Scene] as string[]).map((k) => fieldLabels[k] || k).join(", ") : s[k as keyof Scene]}\n`,
             )
-            .join("\n")}${s.references?.length ? `\n### 보강 자료 근거\n${s.references.map((reference) => `- ${reference.title} (${reference.published})${reference.url ? `: ${reference.url}` : ""}\n  ${reference.excerpt}`).join("\n")}\n` : ""}`,
+            .join("\n")}${s.visuals?.length ? `\n### 시각자료 추천\n${s.visuals.map(visual => `- ${visual.title} · 원본 ${visual.page}페이지\n  연결 원문: ${visual.quote}\n  연결 근거: ${visual.reason}\n  문서 ID: ${visual.documentId} / 그림 ID: ${visual.figureId} / 영역: ${visual.bounds.join(", ")}`).join("\n")}\n` : ""}${s.visualReferences?.length ? `\n### 시각자료 지식베이스 근거\n${s.visualReferences.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}${reference.revision ? ` · ${reference.revision}` : ""}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n")}\n` : ""}${s.references?.length ? `\n### 보강 자료 근거\n${s.references.map((reference) => `- ${reference.title} (${reference.published})${reference.url ? `: ${reference.url}` : ""}\n  ${reference.excerpt}`).join("\n")}\n` : ""}`,
       )
       .join("\n")
   );
@@ -286,6 +298,8 @@ export function csv(board: Board) {
     "장면 생성 기록",
     "구성 단계",
     "보강 자료 근거",
+    "시각자료 추천",
+    "시각자료 지식베이스 근거",
     ...Object.values(fieldLabels),
     "원본 문서", "선택 페이지·슬라이드",
   ];
@@ -305,6 +319,8 @@ export function csv(board: Board) {
         s.generation ? JSON.stringify(s.generation) : "",
         s.phase ? { intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase] : "",
         s.references ? JSON.stringify(s.references) : "",
+        s.visuals ? JSON.stringify(s.visuals) : "",
+        s.visualReferences ? JSON.stringify(s.visualReferences) : "",
         ...keys.map((k) => (k === "review" ? (s.review ? "검토 필요" : "검토 완료") : s[k])),
         s.pdfSource?.name ?? "", s.pdfSource?.pages ?? [],
       ]),

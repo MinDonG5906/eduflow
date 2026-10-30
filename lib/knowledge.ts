@@ -1,4 +1,15 @@
 import { z } from "zod";
+import type { KnowledgeStructure, VisualRecommendation } from "./knowledge-structure";
+
+export const knowledgeSearchStatusSchema = z.enum(["retrieved", "no_match", "unavailable", "not_used"]);
+export type KnowledgeSearchStatus = z.infer<typeof knowledgeSearchStatusSchema>;
+
+export function knowledgeUsageLabel(knowledge: { status?: KnowledgeSearchStatus; documentCount: number; retrievedCount: number }) {
+  if (knowledge.status === "unavailable") return "원문 기반 생성 · 지식베이스 검색에 실패해 보강 자료를 사용하지 않았습니다.";
+  if (knowledge.status === "not_used") return "원문 기반 생성 · 지식베이스를 사용하지 않았습니다.";
+  if (!knowledge.retrievedCount) return "원문 기반 생성 · 관련 지식베이스 근거가 없어 원문만 사용했습니다.";
+  return `지식베이스 ${knowledge.documentCount}개 자료의 ${knowledge.retrievedCount}개 구절을 AI에 전달했습니다.`;
+}
 
 export const knowledgeMetadataSchema = z.object({
   title: z.string().trim().min(2).max(160),
@@ -22,6 +33,7 @@ export type KnowledgeDocument = Omit<KnowledgeSource, "text"> & {
   chunks: number;
   sha256: string;
   pendingPages?: number;
+  hasFile?: boolean;
 };
 
 export type KnowledgeImportPage = {
@@ -31,6 +43,7 @@ export type KnowledgeImportPage = {
   confidence: number | null;
   reviewReason: string;
   needsReview: boolean;
+  structure?: KnowledgeStructure;
 };
 
 export type KnowledgeReviewPage = Omit<KnowledgeImportPage, "needsReview"> & {
@@ -48,9 +61,26 @@ export type RetrievedReference = {
   revision: string;
   origin: "official" | "internal";
   page?: number;
+  blockIds?: string[];
+  visuals?: VisualRecommendation[];
 };
 
 export type KnowledgeChunk = { ordinal: number; page?: number; text: string };
+
+export type KnowledgeLocation = {
+  document: KnowledgeDocument;
+  page?: number;
+  filePage?: number;
+  passages: { id: string; text: string }[];
+};
+
+export function knowledgeLocationUrl(source: { documentId: string; page?: number; blockIds?: string[]; figureId?: string }) {
+  const params = new URLSearchParams({ document: source.documentId });
+  if (source.page) params.set("page", String(source.page));
+  if (source.blockIds?.[0]) params.set("block", source.blockIds[0]);
+  if (source.figureId) params.set("figure", source.figureId);
+  return `/knowledge?${params}`;
+}
 
 // Keep PDF pages separate so a retrieved passage retains its original page number.
 export function chunkKnowledge(text: string, maxChars = 900): KnowledgeChunk[] {
@@ -80,7 +110,7 @@ export function chunkKnowledge(text: string, maxChars = 900): KnowledgeChunk[] {
 
 const common = new Set(["작업", "안전", "교육", "내용", "설명", "영상", "확인", "합니다", "있습니다", "그리고", "위해서", "대한", "통해서"]);
 export function searchNeedles(query: string): string[] {
-  const tokens = query.toLocaleLowerCase("ko-KR").match(/[\p{L}\p{N}]{3,}/gu) ?? [];
+  const tokens = query.normalize("NFC").toLocaleLowerCase("ko-KR").match(/[\p{L}\p{N}]{3,}/gu) ?? [];
   const grams = new Map<string, number>();
   for (const token of tokens) {
     if (common.has(token)) continue;
