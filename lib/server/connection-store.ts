@@ -34,7 +34,7 @@ export const DEFAULT_GEMINI_MODEL: GeminiModel = "gemini-3.8-flash";
 /** The team's Gemini model from .env.local; null when it names an unpriced model. */
 export function geminiModel(env: Record<string, string | undefined> = process.env): GeminiModel | null {
   const model = env.EDUFLOW_GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-  return model in GEMINI_MODELS ? (model as GeminiModel) : null;
+  return Object.hasOwn(GEMINI_MODELS, model) ? (model as GeminiModel) : null;
 }
 
 const apiKey = z.string().trim().min(10).max(1000).refine((value) => !/\s/.test(value));

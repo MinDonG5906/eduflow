@@ -1,4 +1,4 @@
-import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, LayoutGrid, Sparkles, X } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,7 +54,7 @@ export function ProgressDialog({
         </div>
         <div className="progress-label">
           <span>
-            {ai ? "AI 응답을 기다린 뒤 필수 항목과 원문 근거를 확인합니다" : progress < 35
+            {ai ? "원문으로 장면을 생성하고, 지식베이스에서 찾은 관련 자료가 있으면 함께 활용합니다" : progress < 35
               ? "원고의 흐름을 살펴보고 있어요"
               : progress < 70
                 ? "장면별 내용을 구성하고 있어요"
@@ -235,6 +235,16 @@ function ExportOptions({
         />
       </label>
       <div className="export-options">
+        <button onClick={() => onExport("pdf")}>
+          <div>
+            <FileText size={22} />
+          </div>
+          <span>
+            <strong>PDF 스토리보드</strong>
+            <small>영상 제작자용 A4 가로 인쇄 및 문서</small>
+          </span>
+          <Download size={17} />
+        </button>
         <button onClick={() => onExport("md")}>
           <div>
             <FileText size={22} />
@@ -242,16 +252,6 @@ function ExportOptions({
           <span>
             <strong>Markdown</strong>
             <small>문서로 정리하고 자유롭게 편집</small>
-          </span>
-          <Download size={17} />
-        </button>
-        <button onClick={() => onExport("csv")}>
-          <div>
-            <LayoutGrid size={22} />
-          </div>
-          <span>
-            <strong>CSV 스프레드시트</strong>
-            <small>Excel · Google Sheets에서 활용</small>
           </span>
           <Download size={17} />
         </button>
@@ -297,7 +297,7 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         </li>
         <li>
           <strong>제작을 위해 내보내세요</strong>
-          <p>Markdown 또는 CSV로 내려받거나 전체 내용을 복사하세요.</p>
+          <p>PDF 스토리보드 또는 Markdown으로 내려받거나 전체 내용을 복사하세요.</p>
         </li>
       </ol>
       <div className="help-demo">

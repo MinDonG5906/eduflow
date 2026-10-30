@@ -51,6 +51,18 @@ export async function listKnowledge(request: Request, directory?: string) {
   } catch (error) { return failure(error); }
 }
 
+export async function readKnowledgeLocation(request: Request, directory?: string) {
+  try {
+    localRead(request);
+    const params = new URL(request.url).searchParams;
+    const id = z.string().uuid().parse(params.get("id"));
+    const page = params.has("page") ? z.coerce.number().int().positive().safeParse(params.get("page")) : undefined;
+    if (page && !page.success) return Response.json({ error: "자료 페이지를 확인해 주세요." }, { status: 400, headers });
+    const location = withBase(base => base.location(id, page?.data), directory);
+    return location ? Response.json(location, { headers }) : Response.json({ error: "등록 자료 또는 해당 페이지를 찾을 수 없습니다. 자료가 삭제되었거나 이 PC에 저장되지 않았을 수 있습니다." }, { status: 404, headers });
+  } catch (error) { return failure(error); }
+}
+
 export async function addKnowledge(request: Request, directory?: string) {
   try {
     assertLocalAIRequest(request);
