@@ -132,7 +132,30 @@ function tableFromLines(lines: Line[], page: number): { table: LayoutTable; boxe
 }
 
 function regionText(regions: Region[]) {
-  const sorted = [...regions].sort((a, b) => Math.abs(a.box[1] - b.box[1]) < 2 ? a.box[0] - b.box[0] : a.box[1] - b.box[1]);
+  // PDFs often encode m³ as separate ordinary "m" and "3" glyphs. Recover
+  // numeric scripts from their size AND baseline shift, never from unit names.
+  // Align only the reading-order box; keep original geometry for cell assignment.
+  const superscript = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾";
+  const subscript = "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎";
+  const scriptCharacters = "0123456789+-=()";
+  const aligned = regions.map(region => {
+    if (!/^[0-9+−\-=()]+$/.test(region.text)) return region;
+    const height = region.box[3] - region.box[1];
+    const bases = regions.filter(base => {
+      const baseHeight = base.box[3] - base.box[1];
+      const gap = region.box[0] - base.box[2];
+      const shift = base.box[3] - region.box[3];
+      return /[\p{L}\p{N})\]]$/u.test(base.text) && height > 0 && height <= baseHeight * 0.85 &&
+        gap >= -baseHeight * 0.2 && gap <= baseHeight * 0.65 &&
+        Math.abs(shift) >= baseHeight * 0.18 && Math.abs(shift) <= baseHeight * 0.7;
+    }).sort((a, b) => Math.abs(region.box[0] - a.box[2]) - Math.abs(region.box[0] - b.box[2]));
+    const base = bases[0];
+    if (!base) return region;
+    const alphabet = base.box[3] > region.box[3] ? superscript : subscript;
+    return { text: [...region.text.replace(/−/g, "-")].map(char => alphabet[scriptCharacters.indexOf(char)]).join(""),
+      box: [region.box[0], base.box[1], region.box[2], base.box[3]] as Box };
+  });
+  const sorted = aligned.sort((a, b) => Math.abs(a.box[1] - b.box[1]) < 2 ? a.box[0] - b.box[0] : a.box[1] - b.box[1]);
   let result = "", previous: Region | undefined;
   for (const region of sorted) {
     if (previous) {
@@ -147,7 +170,7 @@ function regionText(regions: Region[]) {
 
 /** A reliable closed grid is required. Arbitrary diagrams, borderless tables,
  * scans, clipped/rotated/hidden text and unknown paint operations stay visual. */
-export async function analyzePdfTable(page: PDFPageProxy, originalPage: number): Promise<PageLayout | null> {
+export async function analyzePdfTable(page: PDFPageProxy, originalPage: number, options: { tableOnly?: boolean } = {}): Promise<PageLayout | null> {
   if (page.rotate !== 0 || page.isPureXfa || (await page.getAnnotations()).some(a => a.subtype !== "Link")) return null;
   const viewport = page.getViewport({ scale: 1 }), pageBox: Box = [0, 0, viewport.width, viewport.height];
   const ops = await page.getOperatorList();
@@ -214,13 +237,17 @@ export async function analyzePdfTable(page: PDFPageProxy, originalPage: number):
       if (!paintVisible) continue;
       if (geometry.curved) {
         // Tiny checkbox/checkmark/bullet artwork is retained as a figure crop.
-        if (box[2] - box[0] > 18 || box[3] - box[1] > 18) return null;
+        if (box[2] - box[0] > 18 || box[3] - box[1] > 18) {
+          if (!options.tableOnly) return null;
+          figures.push(box); continue;
+        }
         marks.push({ box, background: false }); continue;
       }
       if ([OPS.fill, OPS.eoFill].includes(args[0])) {
         if (geometry.rectangles.length !== 1) {
           if (box[2] - box[0] <= 18 && box[3] - box[1] <= 18) { marks.push({ box, background: false }); continue; }
-          return null;
+          if (!options.tableOnly) return null;
+          figures.push(box); continue;
         }
         const rect = intersect(geometry.rectangles[0], state.clip), w = rect[2] - rect[0], h = rect[3] - rect[1];
         if (w > 12 && h <= 4) lines.push({ a: rect[0], b: rect[2], at: (rect[1] + rect[3]) / 2, vertical: false });
@@ -234,6 +261,7 @@ export async function analyzePdfTable(page: PDFPageProxy, originalPage: number):
           } else if (Math.abs(a[1] - b[1]) < 0.2) {
             if (a[1] >= state.clip[1] && a[1] <= state.clip[3]) lines.push({ a: Math.max(Math.min(a[0], b[0]), state.clip[0]), b: Math.min(Math.max(a[0], b[0]), state.clip[2]), at: a[1], vertical: false });
           }
+          else if (options.tableOnly) figures.push(box);
           else return null;
         }
       } else return null;
@@ -251,7 +279,10 @@ export async function analyzePdfTable(page: PDFPageProxy, originalPage: number):
   const text: Region[] = [];
   for (const item of content.items.filter((item): item is TextItem => "str" in item)) {
     if (!item.str.trim()) continue;
-    if (item.dir !== "ltr" || /[\u0000-\u0008\u000b-\u001f\ufffd\ue000-\uf8ff]/u.test(item.str)) return null;
+    // Preserve the position of the known unmapped bullet glyph. RAG excludes
+    // affected rows until this symbol is reviewed; never infer a checkbox state.
+    const rawText = options.tableOnly && item.str === "\uf000" ? "[원본 기호 확인]" : item.str;
+    if (item.dir !== "ltr" || /[\u0000-\u0008\u000b-\u001f\ufffd\ue000-\uf8ff]/u.test(rawText)) return null;
     const m = Util.transform(viewport.transform, item.transform);
     if (item.str === "·" && hiddenDots.some(p => Math.abs(p[0] - m[4]) < 1 && Math.abs(p[1] - m[5]) < 1)) continue;
     if (Math.abs(m[1]) > 0.01 || Math.abs(m[2]) > 0.01) return null;
@@ -259,7 +290,7 @@ export async function analyzePdfTable(page: PDFPageProxy, originalPage: number):
     if (!within(box, pageBox)) return null;
     const clip = textClips.find(record => Math.abs(record.point[0] - m[4]) < 1 && Math.abs(record.point[1] - m[5]) < 1)?.clip;
     if (clip && !within(box, clip, 2)) return null;
-    text.push({ box, text: item.str });
+    text.push({ box, text: rawText });
   }
   if (text.reduce((n, t) => n + t.text.length, 0) < 40) return null;
   const cellRegions: Region[][] = grid.boxes.map(() => []), outside: Region[] = [];
@@ -329,12 +360,23 @@ export async function analyzePdfTable(page: PDFPageProxy, originalPage: number):
       result.figures.push({ id, bounds: box.map(round) as Box, table: grid.table.id, row: cell.row, col: cell.col });
     } else {
       const overlap = intersect(box, grid.table.bounds);
-      if (overlap[2] - overlap[0] > 2 && overlap[3] - overlap[1] > 2) return null;
+      if (!options.tableOnly && overlap[2] - overlap[0] > 2 && overlap[3] - overlap[1] > 2) return null;
       const near: Box = [box[0] - 12, box[1] - 24, box[2] + 12, box[3] + 24];
       result.figures.push({ id, bounds: box.map(round) as Box, nearbyText: regionText(outside.filter(r => boxSize(intersect(r.box, near)) > 0)) });
     }
   }
-  if (result.figures.length > 30) return null;
+  if (!options.tableOnly && result.figures.length > 30) return null;
+  if (options.tableOnly) {
+    for (const cell of grid.table.cells) {
+      // Vector ticks and tiny checkbox artwork have no Unicode text. Preserve
+      // their presence and require a cell-level review instead of calling them empty.
+      const hasSymbol = cell.figures.some(id => {
+        const figure = result.figures.find(figure => figure.id === id)!;
+        return figure.bounds[2] - figure.bounds[0] <= 36 && figure.bounds[3] - figure.bounds[1] <= 36;
+      });
+      if (hasSymbol && !cell.text.includes("[원본 기호 확인]")) cell.text += `${cell.text ? " " : ""}[원본 기호 확인]`;
+    }
+  }
   result.text = regionText(outside.filter(region => !panelText.has(region)));
   return result;
 }

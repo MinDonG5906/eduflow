@@ -1,11 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defaults, generateDemo, sample, newScene, markdown } from "./storyboard";
 import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { createGenerateHandler } from "./server/generate-handler";
 import { readDraft, serializeDraft } from "./studio-state";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "./term-corrections";
+import { readAIConfig } from "./server/ai-config";
 
 const input: GenerationInput = { manuscript: sample, settings: defaults };
 function output(request = input) {
@@ -205,16 +209,45 @@ test("HTTP failure contract distinguishes timeout, cancellation, limits and prov
   assert.equal((await invalid.json()).retryable, true);
 });
 
-test("real knowledge-backed generation stops before paid admission when no related passage exists", async () => {
-  let calls = 0;
-  const ai = { ...adapter(async () => { calls++; return output(); }), mode: "ai" as const };
-  const post = createGenerateHandler(ai, { knowledge: () => [] });
-  const response = await post(new Request("http://localhost/api/generate", { method: "POST",
-    headers: { "Content-Type": "application/json", Host: "localhost", Origin: "http://localhost" },
-    body: JSON.stringify(input) }));
-  assert.equal(response.status, 422);
-  assert.equal((await response.json()).code, "KNOWLEDGE_NO_MATCH");
-  assert.equal(calls, 0);
+test("empty or unavailable RAG still generates from the original through paid protections", async () => {
+  const config = readAIConfig({ EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: "fake-fallback-test-key", EDUFLOW_AI_MODEL: "test-model",
+    EDUFLOW_AI_INPUT_USD_PER_MILLION: "1", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "1", EDUFLOW_AI_REQUEST_BUDGET_USD: "0.10" });
+  for (const status of ["no_match", "unavailable", "not_used"] as const) {
+    const directory = mkdtempSync(join(tmpdir(), "eduflow-fallback-"));
+    let calls = 0, counts = 0;
+    try {
+      const ai: GenerationAdapter = { mode: "ai", model: config.model, promptVersion: "test", billing: { kind: "metered", config },
+        countInputTokens: async () => { counts++; return 100; },
+        generate: async (original, context) => {
+          calls++;
+          assert.equal(original.manuscript, input.manuscript);
+          assert.deepEqual(context.task.supplementalSources, []);
+          assert.ok(context.task.groundingGuidance.includes("내용만으로 스토리보드를 완성"));
+          assert.ok(context.limits);
+          return output();
+        },
+      };
+      const post = createGenerateHandler(ai, { budgetDirectory: directory,
+        ...(status === "not_used" ? {} : { knowledge: () => { if (status === "unavailable") throw new Error("private-db-details"); return []; } }) });
+      const response = await post(new Request("http://localhost/api/generate", { method: "POST",
+        headers: { "Content-Type": "application/json", Host: "localhost", Origin: "http://localhost" }, body: JSON.stringify(input) }));
+      assert.equal(response.status, 200);
+      const board = parseGenerationResponse(await response.json(), input);
+      assert.equal(calls, 1); assert.equal(counts, 1);
+      assert.equal(board.generation.knowledge?.status, status);
+      assert.ok(board.scenes.every(scene => scene.evidence && !scene.references?.length && !scene.visuals?.length && scene.generation.knowledge?.status === status));
+      const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board })).board!;
+      assert.equal(restored.generation?.knowledge?.status, status);
+      assert.ok(markdown(restored).includes("원문 기반 생성"));
+      assert.ok(!JSON.stringify(board).includes("private-db-details"));
+      const blocked = createGenerateHandler({ ...ai, countInputTokens: async () => config.maxInputTokens + 1 }, { budgetDirectory: directory, knowledge: () => [] });
+      const blockedResponse = await blocked(new Request("http://localhost/api/generate", { method: "POST",
+        headers: { "Content-Type": "application/json", Host: "localhost", Origin: "http://localhost" }, body: JSON.stringify(input) }));
+      assert.equal(blockedResponse.status, 413);
+      assert.equal((await blockedResponse.json()).code, "TOKEN_LIMIT_EXCEEDED");
+      assert.equal(calls, 1);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  }
 });
 
 test("input-limit responses preserve measured token counts through client validation and distinguish PDF image size", async () => {

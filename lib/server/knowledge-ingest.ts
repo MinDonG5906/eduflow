@@ -5,6 +5,10 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { PDFDocument } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { analyzePdfTable } from "./pdf-layout";
+import { knowledgeTableSchema, makeKnowledgeStructure } from "../knowledge-structure";
+import { knowledgeFigureCandidates } from "./knowledge-figures";
 import { createWorker } from "tesseract.js";
 import type { KnowledgeImportPage } from "../knowledge";
 import { DocumentImportError } from "./document-import-error";
@@ -129,15 +133,35 @@ export async function analyzeKnowledgePdf(
     throw new DocumentImportError("200페이지가 넘는 PDF는 필요한 페이지 범위를 지정해 주세요.", 413);
   const selected = knowledgePageSelection(range, total);
   const parser = new PDFParse({ data: new Uint8Array(pdf), isEvalSupported: false });
+  const loading = getDocument({ data: new Uint8Array(pdf), isEvalSupported: false, verbosity: 0 });
   let ocr: Awaited<ReturnType<typeof createKoreanOcr>> | undefined;
   let ocrUnavailable = false;
   const pages: KnowledgeImportPage[] = [];
+  const candidates = new Map<number, Awaited<ReturnType<typeof knowledgeFigureCandidates>>>();
   try {
+    const layoutDocument = await loading.promise;
     const extracted = await parser.getText({ partial: selected, pageJoiner: "" });
     const tables = await parser.getTable({ partial: selected });
     const tablePages = new Map(tables.pages.filter((page) => page.tables.length).map((page) => [page.num, page.tables]));
     for (const page of extracted.pages) {
       signal.throwIfAborted();
+      const proxy = await layoutDocument.getPage(page.num);
+      candidates.set(page.num, await knowledgeFigureCandidates(proxy));
+      const layout = await analyzePdfTable(proxy, page.num, { tableOnly: true }).catch(() => null);
+      proxy.cleanup();
+      if (layout) {
+        const parsed = layout.tables.map(table => knowledgeTableSchema.safeParse(table));
+        if (parsed.every(table => table.success)) {
+          const outsideText = [layout.text, ...layout.panels.map(panel => panel.text)].filter(Boolean).join("\n\n");
+          const structure = makeKnowledgeStructure(page.num, selected.indexOf(page.num) + 1, outsideText, true,
+            parsed.map(table => table.data!));
+          const text = structure.blocks.map(block => block.text).join("\n\n");
+          if (!suspicious(text)) {
+            pages.push({ page: page.num, text, method: "text", confidence: null, reviewReason: "", needsReview: false, structure });
+            continue;
+          }
+        }
+      }
       const raw = clean(page.text);
       const readable = readablePdfText(raw);
       // A single column is a text box or ordered list, not a cell relation to
@@ -184,9 +208,13 @@ export async function analyzeKnowledgePdf(
         confidence: useOcr ? confidence : null, reviewReason: safe ? "" : reviewReason,
         needsReview: !safe });
     }
-  } finally { await ocr?.close(); await parser.destroy(); }
+  } finally { await ocr?.close(); await parser.destroy(); await loading.destroy(); }
   if (pages.length !== selected.length) throw new DocumentImportError("선택한 페이지를 모두 읽지 못했습니다.");
   if (pages.reduce((size, page) => size + page.text.length, 0) > 200000)
     throw new DocumentImportError("추출된 글이 200,000자를 넘습니다. 페이지 범위를 나눠 등록해 주세요.", 413);
+  pages.forEach((page, index) => {
+    page.structure ??= makeKnowledgeStructure(page.page, index + 1, page.text, !page.needsReview);
+    page.structure.figureCandidates = candidates.get(page.page) ?? [];
+  });
   return { pages, total };
 }

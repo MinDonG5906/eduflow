@@ -54,7 +54,7 @@ export function ProgressDialog({
         </div>
         <div className="progress-label">
           <span>
-            {ai ? "AI 응답을 기다린 뒤 필수 항목과 원문 근거를 확인합니다" : progress < 35
+            {ai ? "원문으로 장면을 생성하고, 지식베이스에서 찾은 관련 자료가 있으면 함께 활용합니다" : progress < 35
               ? "원고의 흐름을 살펴보고 있어요"
               : progress < 70
                 ? "장면별 내용을 구성하고 있어요"
