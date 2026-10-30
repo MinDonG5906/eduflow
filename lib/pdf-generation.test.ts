@@ -7,7 +7,7 @@ import { PDFDocument, degrees, rgb, StandardFonts } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { formatPdfPages, parsePdfPages, selectPdfPages, MAX_AI_PDF_BYTES } from "./pdf-source";
 import { documentSchema } from "./documents";
-import { defaults, sample, generateDemo, requestSchema, markdown, csv } from "./storyboard";
+import { defaults, sample, generateDemo, requestSchema, markdown } from "./storyboard";
 import { captureGeneration, readDraft, serializeDraft } from "./studio-state";
 import { generationTask, GenerationError } from "./generation-contract";
 import { importDocumentRequest } from "./server/document-import";
@@ -185,7 +185,6 @@ test("protected SDK sends only the selected PDF in counting, generation and repa
     const mixed = structuredClone(board);
     mixed.scenes[0].pdfSource = { name: "reselected.pdf", pages: [7] };
     assert.ok(markdown(mixed).includes("원본 PDF: reselected.pdf\n선택 페이지: 7"));
-    assert.ok(csv(mixed).includes('"reselected.pdf","7"'));
     assert.ok(board.scenes[0].reviewReason.includes("원본과 대조"));
     assert.equal(board.scenes[0].sourceId, "pdf-page:2");
     assert.equal(board.generation?.attempts, 2);

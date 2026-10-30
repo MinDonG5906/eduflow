@@ -14,7 +14,7 @@ import { analyzeKnowledgeVision, cropKnowledgeFigure, knowledgeVisionConfig } fr
 import { createKnowledgeStructureHandlers } from "./server/knowledge-structure-handler";
 import { OPENAI_MODEL } from "./server/openai-adapter";
 import { GenerationError } from "./generation-contract";
-import { boardSchema, defaults, generateDemo, markdown, csv, sample } from "./storyboard";
+import { boardSchema, defaults, generateDemo, markdown, sample } from "./storyboard";
 import { runGeneration } from "./server/generation-service";
 import { generationTask } from "./generation-contract";
 import { readKnowledgeLocation } from "./server/knowledge-handler";
@@ -259,7 +259,7 @@ test("only cited references contribute visuals, preserved through board storage 
   assert.equal(generated.scenes[0].visuals?.length, 0); assert.equal(generated.scenes[1].visuals?.length, 1);
   const restored = boardSchema.parse(JSON.parse(JSON.stringify(generated)));
   assert.equal(restored.scenes[1].visuals?.[0].page, 42);
-  assert.ok(markdown(restored).includes("시각자료 추천")); assert.ok(csv(restored).includes(visuals[0].figureId));
+  assert.ok(markdown(restored).includes("시각자료 추천")); assert.ok(markdown(restored).includes(visuals[0].figureId));
 });
 
 test("visual-only source selection recommends verified pictures without inventing narration citations", async () => {
@@ -295,7 +295,7 @@ test("visual-only source selection recommends verified pictures without inventin
   assert.deepEqual(restored.scenes[1].generation?.knowledge, generated.generation?.knowledge);
   assert.deepEqual(restored.generation?.knowledgeSources, generated.generation?.knowledgeSources);
   assert.ok(markdown(restored).includes("시각자료 지식베이스 근거"));
-  assert.ok(csv(restored).includes("knowledge:visual"));
+  assert.ok(markdown(restored).includes(`문서 ID: ${documentId}`));
   const regeneration = await runGeneration({ ...input, scene: restored.scenes[1] }, { mode: "ai", model: "mock", promptVersion: "test", generate: async () => ({ ...output, scenes: [{ ...output.scenes[1], sceneNo: 1, visualReferenceIds: [], referenceIds: [] }] }) }, { references });
   assert.equal(regeneration.scenes[0].id, restored.scenes[1].id);
   assert.deepEqual(regeneration.scenes[0].visuals, []);

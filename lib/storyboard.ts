@@ -60,6 +60,16 @@ export const sceneReferenceSchema = z.object({
   blockIds: z.array(z.string().max(120)).max(50).optional(),
   visuals: z.array(visualRecommendationSchema).max(10).optional(),
 });
+export const sceneImageSchema = z.object({
+  id: z.string(),
+  sourceType: z.enum(["upload", "pdf_page", "rag"]).default("upload"),
+  sourceText: z.string().max(300).default(""),
+  name: z.string().max(200).optional(),
+  mimeType: z.string().max(50).optional(),
+  pageNumber: z.number().int().positive().optional(),
+});
+export type SceneImage = z.infer<typeof sceneImageSchema>;
+
 export const sceneSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -78,6 +88,7 @@ export const sceneSchema = z.object({
   pdfSource: pdfSourceSchema.optional(),
   phase: scenePhaseSchema.optional(),
   references: z.array(sceneReferenceSchema).max(6).optional(),
+  image: sceneImageSchema.optional(),
   visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
   visuals: z.array(visualRecommendationSchema).max(20).optional(),
 });
@@ -277,55 +288,5 @@ export function markdown(board: Board) {
             .join("\n")}${s.visuals?.length ? `\n### 시각자료 추천\n${s.visuals.map(visual => `- ${visual.title} · 원본 ${visual.page}페이지\n  연결 원문: ${visual.quote}\n  연결 근거: ${visual.reason}\n  문서 ID: ${visual.documentId} / 그림 ID: ${visual.figureId} / 영역: ${visual.bounds.join(", ")}`).join("\n")}\n` : ""}${s.visualReferences?.length ? `\n### 시각자료 지식베이스 근거\n${s.visualReferences.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}${reference.revision ? ` · ${reference.revision}` : ""}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n")}\n` : ""}${s.references?.length ? `\n### 보강 자료 근거\n${s.references.map((reference) => `- ${reference.title} (${reference.published})${reference.url ? `: ${reference.url}` : ""}\n  ${reference.excerpt}`).join("\n")}\n` : ""}`,
       )
       .join("\n")
-  );
-}
-export function csv(board: Board) {
-  const cell = (v: unknown) => {
-    let s = Array.isArray(v) ? v.join(" / ") : String(v ?? "");
-    if (/^[\s]*[=+@-]/.test(s)) s = "'" + s;
-    return '"' + s.replace(/"/g, '""') + '"';
-  };
-  const keys = Object.keys(fieldLabels) as (keyof Scene)[];
-  const header = [
-    "콘텐츠 제목",
-    "핵심 요약",
-    "학습 목표",
-    "전체 예상 시간(초)",
-    "생성 조건",
-    "생성 방식",
-    "생성 기록",
-    "장면 번호",
-    "장면 생성 기록",
-    "구성 단계",
-    "보강 자료 근거",
-    "시각자료 추천",
-    "시각자료 지식베이스 근거",
-    ...Object.values(fieldLabels),
-    "원본 문서", "선택 페이지·슬라이드",
-  ];
-  return (
-    "\uFEFF" +
-    [
-      header,
-      ...board.scenes.map((s, i) => [
-        board.title,
-        board.summary,
-        board.objectives,
-        board.scenes.reduce((n, s) => n + s.duration, 0),
-        JSON.stringify(board.settings),
-        (s.generation?.mode ?? board.mode) === "demo" ? "원문 발췌 데모" : "AI 생성 초안",
-        board.generation ? JSON.stringify(board.generation) : "",
-        i + 1,
-        s.generation ? JSON.stringify(s.generation) : "",
-        s.phase ? { intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase] : "",
-        s.references ? JSON.stringify(s.references) : "",
-        s.visuals ? JSON.stringify(s.visuals) : "",
-        s.visualReferences ? JSON.stringify(s.visualReferences) : "",
-        ...keys.map((k) => (k === "review" ? (s.review ? "검토 필요" : "검토 완료") : s[k])),
-        s.pdfSource?.name ?? "", s.pdfSource?.pages ?? [],
-      ]),
-    ]
-      .map((row) => row.map(cell).join(","))
-      .join("\r\n")
   );
 }

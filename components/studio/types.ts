@@ -7,4 +7,4 @@ export type GeneratorStatus = {
   // Who receives the manuscript when generating; null in demo mode.
   vendor: "OpenAI" | "Anthropic" | null;
 } | null;
-export type ExportFormat = "md" | "csv" | "copy";
+export type ExportFormat = "md" | "copy" | "pdf";

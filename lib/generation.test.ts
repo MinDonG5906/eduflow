@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaults, generateDemo, sample, newScene, markdown, csv } from "./storyboard";
+import { defaults, generateDemo, sample, newScene, markdown } from "./storyboard";
 import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { createGenerateHandler } from "./server/generate-handler";
@@ -298,7 +298,7 @@ test("AI mode and generation records survive storage and exports while old/manua
   const draft = { ...input, board };
   assert.deepEqual(readDraft(serializeDraft(draft)), draft);
   assert.ok(markdown(board).includes("AI 생성 초안"));
-  assert.ok(csv(board).includes("fake-model-for-contract-test"));
+  assert.ok(markdown(board).includes("fake-model-for-contract-test"));
   const old = generateDemo(sample, defaults);
   old.scenes[0].narration = "";
   old.scenes.push(newScene());
@@ -345,7 +345,6 @@ test("AI copy is corrected after generation without changing source citations, s
   const restored = readDraft(serializeDraft({ ...req, board })).board!;
   assert.deepEqual(restored, board);
   assert.ok(markdown(restored).includes("자동 용어 교정: ‘껴임’ → ‘끼임’"));
-  assert.ok(csv(restored).includes("자동 용어 교정: ‘껴임’ → ‘끼임’"));
 });
 
 test("correction runs once after partial repair and also covers a regenerated scene", async () => {
