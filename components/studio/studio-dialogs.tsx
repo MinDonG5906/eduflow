@@ -235,6 +235,16 @@ function ExportOptions({
         />
       </label>
       <div className="export-options">
+        <button onClick={() => onExport("pdf")}>
+          <div>
+            <FileText size={22} />
+          </div>
+          <span>
+            <strong>PDF 스토리보드</strong>
+            <small>영상 제작자용 A4 가로 인쇄 및 문서</small>
+          </span>
+          <Download size={17} />
+        </button>
         <button onClick={() => onExport("md")}>
           <div>
             <FileText size={22} />

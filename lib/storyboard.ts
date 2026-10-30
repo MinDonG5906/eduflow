@@ -51,6 +51,16 @@ export const sceneReferenceSchema = z.object({
   revision: z.string().max(100).optional(),
   page: z.number().int().positive().optional(),
 });
+export const sceneImageSchema = z.object({
+  id: z.string(),
+  sourceType: z.enum(["upload", "pdf_page", "rag"]).default("upload"),
+  sourceText: z.string().max(300).default(""),
+  name: z.string().max(200).optional(),
+  mimeType: z.string().max(50).optional(),
+  pageNumber: z.number().int().positive().optional(),
+});
+export type SceneImage = z.infer<typeof sceneImageSchema>;
+
 export const sceneSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -69,6 +79,7 @@ export const sceneSchema = z.object({
   pdfSource: pdfSourceSchema.optional(),
   phase: scenePhaseSchema.optional(),
   references: z.array(sceneReferenceSchema).max(6).optional(),
+  image: sceneImageSchema.optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
