@@ -5,6 +5,6 @@ export type GeneratorStatus = {
   available: boolean;
   label: string;
   // Who receives the manuscript when generating; null in demo mode.
-  vendor: "OpenAI" | "Anthropic" | null;
+  vendor: "OpenAI" | "Anthropic" | "Google" | null;
 } | null;
 export type ExportFormat = "md" | "copy" | "pdf";
