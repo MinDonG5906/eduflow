@@ -24,7 +24,6 @@ import {
   defaults,
   sample,
   markdown,
-  csv,
   requestSchema,
   type Board,
   type Scene,
@@ -346,13 +345,13 @@ export default function Studio() {
         setModal(null);
         return;
       }
-      const content = format === "csv" ? csv(board) : markdown(board);
+      const content = markdown(board);
       if (format === "copy") {
         await navigator.clipboard.writeText(content);
         notify("전체 스토리보드를 복사했어요.");
         return;
       }
-      downloadText(content, format === "csv" ? "text/csv;charset=utf-8" : "text/markdown;charset=utf-8", exportFilename(filename, format));
+      downloadText(content, "text/markdown;charset=utf-8", exportFilename(filename, format));
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
     } catch (e) {
       setModal(null);

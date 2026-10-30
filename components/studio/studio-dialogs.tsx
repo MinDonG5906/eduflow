@@ -1,4 +1,4 @@
-import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, LayoutGrid, Sparkles, X } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -255,16 +255,6 @@ function ExportOptions({
           </span>
           <Download size={17} />
         </button>
-        <button onClick={() => onExport("csv")}>
-          <div>
-            <LayoutGrid size={22} />
-          </div>
-          <span>
-            <strong>CSV 스프레드시트</strong>
-            <small>Excel · Google Sheets에서 활용</small>
-          </span>
-          <Download size={17} />
-        </button>
         <button onClick={() => onExport("copy")}>
           <div>
             <Copy size={22} />
@@ -307,7 +297,7 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         </li>
         <li>
           <strong>제작을 위해 내보내세요</strong>
-          <p>Markdown 또는 CSV로 내려받거나 전체 내용을 복사하세요.</p>
+          <p>PDF 스토리보드 또는 Markdown으로 내려받거나 전체 내용을 복사하세요.</p>
         </li>
       </ol>
       <div className="help-demo">
