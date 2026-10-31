@@ -38,7 +38,9 @@ export type PaidGenerationLimits = {
   maxProviderCalls: 1;
 };
 
-export function readAIConfig(env: Record<string, string | undefined> = process.env): AIConfig {
+// teamCaps: false only for the operator's free-tier Gemini team key, which the team exempted
+// from the shared $1/$5 caps; its own Gemini budget still guards a key whose project has billing.
+export function readAIConfig(env: Record<string, string | undefined> = process.env, { teamCaps = true } = {}): AIConfig {
   if (env.EDUFLOW_AI_ENABLED !== "true") throw new GenerationError("AI_DISABLED");
   if (env.NEXT_PUBLIC_EDUFLOW_AI_API_KEY || env.NEXT_PUBLIC_AI_API_KEY)
     throw new GenerationError("AI_NOT_CONFIGURED");
@@ -60,8 +62,10 @@ export function readAIConfig(env: Record<string, string | undefined> = process.e
     throw new GenerationError("AI_NOT_CONFIGURED");
   const config = {
     ...personal,
-    dayBudget: Math.min(personal.dayBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.dayUSD)),
-    monthBudget: Math.min(personal.monthBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.monthUSD)),
+    ...(teamCaps ? {
+      dayBudget: Math.min(personal.dayBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.dayUSD)),
+      monthBudget: Math.min(personal.monthBudget, usdMicros(TEAM_AI_BUDGET_LIMITS.monthUSD)),
+    } : {}),
   };
   const numerator = BigInt(config.maxInputTokens) * BigInt(config.inputRate) +
     BigInt(config.maxOutputTokens) * BigInt(config.outputRate);

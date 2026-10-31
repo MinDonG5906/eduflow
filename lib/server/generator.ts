@@ -47,7 +47,10 @@ export function anthropicConfig(state: ConnectionState, env: Env = process.env):
 
 // The team key in the server's .env.local is the operator's decision to pay (or use the
 // free tier) for everyone on this PC, so it unlocks AI like a key saved on the screen.
-// Budgets and token caps stay under the same team limits as the other providers.
+// Token caps, the hourly limit and one-at-a-time stay as for the other providers; the
+// dollar caps are Gemini's own (below) instead of the shared $1/$5 (team decision 2026-10-31).
+export const GEMINI_DEFAULT_BUDGET = Object.freeze({ dayUSD: "100", monthUSD: "1000" });
+
 export function geminiConfig(env: Env = process.env): AIConfig {
   const model = geminiModel(env);
   const key = env.EDUFLOW_GEMINI_API_KEY?.trim();
@@ -59,7 +62,11 @@ export function geminiConfig(env: Env = process.env): AIConfig {
     EDUFLOW_AI_REQUEST_BUDGET_USD: pricing.requestBudgetUSD,
     EDUFLOW_AI_MAX_INPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_INPUT_TOKENS, 16000),
     EDUFLOW_AI_MAX_OUTPUT_TOKENS: cappedTokenLimit(env.EDUFLOW_AI_MAX_OUTPUT_TOKENS, 8000),
-  });
+    // The free tier costs nothing, so the team exempted Gemini from the shared caps. These
+    // only stop runaway charges if billing is ever turned on for the key's Google project.
+    EDUFLOW_AI_DAY_BUDGET_USD: env.EDUFLOW_GEMINI_DAY_BUDGET_USD?.trim() || GEMINI_DEFAULT_BUDGET.dayUSD,
+    EDUFLOW_AI_MONTH_BUDGET_USD: env.EDUFLOW_GEMINI_MONTH_BUDGET_USD?.trim() || GEMINI_DEFAULT_BUDGET.monthUSD,
+  }, { teamCaps: false });
 }
 
 export function adapterFor(state: ConnectionState, env: Env = process.env): GenerationAdapter {

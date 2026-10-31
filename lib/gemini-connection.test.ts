@@ -48,13 +48,16 @@ test("a team Gemini key in .env.local is used from the first start and never rea
   assert.equal((await (await missing.GET(new Request("http://127.0.0.1:3000/api/connection"))).json()).gemini.teamKey, false);
 });
 
-test("Gemini uses pinned prices under the team caps, and an unknown model or missing key is refused", () => {
+test("Gemini uses pinned prices outside the shared team caps, and an unknown model or missing key is refused", () => {
   for (const model of Object.keys(GEMINI_MODELS)) {
-    const config = geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: model, EDUFLOW_AI_DAY_BUDGET_USD: "50", EDUFLOW_AI_MONTH_BUDGET_USD: "100" });
+    // The shared $1/$5 personal settings do not apply to the free-tier team key.
+    const config = geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: model, EDUFLOW_AI_DAY_BUDGET_USD: "1.00", EDUFLOW_AI_MONTH_BUDGET_USD: "5.00" });
     assert.equal(config.model, model);
-    assert.equal(config.dayBudget, 1_000_000);
+    assert.equal(config.dayBudget, 100_000_000);
+    assert.equal(config.monthBudget, 1_000_000_000);
     assert.ok(config.reservationCost <= config.requestBudget, model);
   }
+  assert.equal(geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_DAY_BUDGET_USD: "20" }).dayBudget, 20_000_000);
   const capped = geminiConfig({ ...teamEnv, EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "12000" });
   assert.equal(capped.maxInputTokens, 16000);
   assert.equal(capped.maxOutputTokens, 8000);
