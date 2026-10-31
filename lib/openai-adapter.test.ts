@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GenerationError, generationTask } from "./generation-contract";
-import { defaults, generateDemo, sample, markdown } from "./storyboard";
+import { GenerationError, PROMPT_TEMPLATE, generationTask } from "./generation-contract";
+import { defaults, generateDemo, manuscriptSource, sample, markdown } from "./storyboard";
+import { PROVIDER_INSTRUCTION_SUFFIX } from "./server/provider-prompt";
 import { readAIConfig } from "./server/ai-config";
 import { createOpenAIAdapter, OPENAI_MODEL } from "./server/openai-adapter";
 import { protectPaidGeneration } from "./server/ai-protection";
@@ -47,6 +48,29 @@ test("OpenAI uses fixed standard model, strict JSON, bounded output, no storage/
   assert.equal(generate.body.service_tier, "default"); assert.deepEqual(generate.body.tools, []);
   assert.equal(JSON.stringify(generate.body).includes(config.apiKey), false);
   assert.equal(config.attemptCost, 48000); assert.equal(config.reservationCost, 96000);
+});
+
+test("OpenAI gets the shared prompt rules and its draft gets the same server checks as the other connections", async () => {
+  const request = { manuscript: sample, settings: { ...defaults, audience: "외국인 근로자" as const, minutes: 2 } };
+  const { sentences } = manuscriptSource(sample);
+  const draft = output(request);
+  draft.scenes[0] = { ...draft.scenes[0], evidence: `${sentences[0]} ${sentences[1]}`, sourceId: "sentence:1-1, sentence:2-2" };
+  let sent: Record<string, any> = {};
+  const adapter = createOpenAIAdapter(config, { fetch: async (url, init) => {
+    if (String(url).endsWith("/input_tokens")) return reply({ object: "response.input_tokens", input_tokens: 1 });
+    sent = JSON.parse(String(init?.body));
+    return reply(completed(draft));
+  } });
+  const { limits } = context();
+  const board = await runGeneration(request, { ...adapter, generate: (_, ctx) => adapter.generate(request, { ...ctx, limits }) });
+  for (const block of [PROMPT_TEMPLATE.instruction, PROMPT_TEMPLATE.narrationRewrite, PROMPT_TEMPLATE.duration])
+    assert.ok(sent.instructions.includes(block));
+  assert.ok(sent.instructions.endsWith(PROVIDER_INSTRUCTION_SUFFIX));
+  const task = JSON.parse(typeof sent.input === "string" ? sent.input : sent.input[0].content.at(-1).text).task;
+  assert.equal(task.audienceGuidance, PROMPT_TEMPLATE.audienceGuidance.foreignWorker);
+  assert.equal(task.targetDurationSeconds, 120);
+  assert.equal(board.scenes[0].sourceId, "sentence:1-2");
+  assert.ok(board.generation?.warnings.some((warning) => warning.startsWith("외국인 근로자용 나레이션")));
 });
 
 test("wrong model or understated price cannot weaken OpenAI budget checks", () => {
