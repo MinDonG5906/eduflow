@@ -9,7 +9,7 @@ import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
 import { addKnowledge, deleteKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
 import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowledgePage } from "./server/knowledge-handler";
-import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
+import { analyzeKnowledgePdf, readPdfTables } from "./server/knowledge-ingest";
 import { createHash } from "node:crypto";
 
 test("persistent knowledge index retrieves original passages with source version and PDF page", () => {
@@ -37,6 +37,19 @@ test("persistent knowledge index retrieves original passages with source version
     assert.ok(reopened.search("추락방호망과 안전난간").length);
     reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("a table the PDF reader cannot parse drops only that page's tables, not the whole upload", async () => {
+  const calls: number[][] = [];
+  const parser = { getTable: async ({ partial }: { partial?: number[] }) => {
+    calls.push(partial ?? []);
+    // The library throws for the whole document when any selected page has such a table.
+    if ((partial ?? []).includes(2)) throw new TypeError("Cannot read properties of undefined (reading 'from')");
+    return { pages: (partial ?? []).map((num) => ({ num, tables: [[["위험요인", "대책"]]] })), mergedTables: [], total: 3 };
+  } } as unknown as Pick<PDFParse, "getTable">;
+  const pages = await readPdfTables(parser, [1, 2, 3]);
+  assert.deepEqual(pages.map((page) => page.num), [1, 3]);
+  assert.deepEqual(calls, [[1, 2, 3], [1], [2], [3]]);
 });
 
 test("chunking never merges two original PDF pages", () => {

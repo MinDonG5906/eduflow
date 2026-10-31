@@ -1,6 +1,6 @@
 import {
   CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, SERVER_TIMEOUT_MS,
-  generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse,
+  generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse, promptSourceId,
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
 import { DURATION_TOLERANCE, durationOffTarget, fieldLabels, manuscriptSource, type Board } from "../storyboard";
@@ -232,7 +232,9 @@ export async function runGeneration(
           } } : {}),
         };
         const sentences = manuscriptSource(input.manuscript).sentences;
-        const availableReferences = new Map(task.supplementalSources.map((reference) => [reference.id, reference]));
+        // The prompt's short ids (S1, …) and the full ids both resolve to the retrieved source.
+        const availableReferences = new Map(task.supplementalSources.flatMap((reference, index) =>
+          [[reference.id, reference], [promptSourceId(index), reference]] as const));
         const relabeledScenes: number[] = [];
         const scenes = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
           const normalizedScene = adapter.mode === "ai"
@@ -257,10 +259,10 @@ export async function runGeneration(
           const unknownIds = [...(referenceIds ?? []), ...(visualReferenceIds ?? [])].filter((id) => !availableReferences.has(id));
           if (unknownIds.length)
             warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강·시각자료 출처가 있어 제외했습니다.`);
-          const references = [...new Set(referenceIds ?? [])]
-            .map((id) => availableReferences.get(id)).filter((item) => item !== undefined);
-          const visualReferences = [...new Set(visualReferenceIds ?? [])]
-            .map(id => availableReferences.get(id)).filter((item): item is RetrievedReference => item !== undefined && Boolean(item.visuals?.length));
+          const references = [...new Set((referenceIds ?? [])
+            .map((id) => availableReferences.get(id)).filter((item) => item !== undefined))];
+          const visualReferences = [...new Set((visualReferenceIds ?? [])
+            .map(id => availableReferences.get(id)).filter((item): item is RetrievedReference => item !== undefined && Boolean(item.visuals?.length)))];
           const visuals = [...new Map([...references, ...visualReferences].flatMap(reference => reference.visuals ?? [])
             .map(visual => [`${visual.documentId}:${visual.page}:${visual.figureId}`, visual])).values()].slice(0, 20);
           return {

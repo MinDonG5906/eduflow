@@ -16,6 +16,7 @@ import { OPENAI_MODEL } from "./server/openai-adapter";
 import { GenerationError } from "./generation-contract";
 import { boardSchema, defaults, generateDemo, markdown, sample } from "./storyboard";
 import { runGeneration } from "./server/generation-service";
+import { promptTask } from "./server/provider-prompt";
 import { generationTask } from "./generation-contract";
 import { readKnowledgeLocation } from "./server/knowledge-handler";
 import { knowledgeLocationUrl } from "./knowledge";
@@ -300,6 +301,26 @@ test("visual-only source selection recommends verified pictures without inventin
   assert.equal(regeneration.scenes[0].id, restored.scenes[1].id);
   assert.deepEqual(regeneration.scenes[0].visuals, []);
   assert.deepEqual(regeneration.scenes[0].visualReferences, []);
+});
+
+test("the model cites sources by short prompt ids while the board keeps the full ids", async () => {
+  const documentId = crypto.randomUUID();
+  const references = ["knowledge:long:1", "knowledge:long:2"].map((id, index) =>
+    ({ id, documentId, ...meta, url: "", excerpt: `보강 구절 ${index + 1}입니다.`, page: 3, visuals: [] }));
+  const demo = generateDemo(sample, defaults);
+  const input = { manuscript: sample, settings: defaults };
+  let promptIds: string[] = [];
+  const generated = await runGeneration(input, { mode: "ai", model: "mock", promptVersion: "test", generate: async (_, context) => {
+    promptIds = promptTask(context.task).supplementalSources.map((source) => source.id);
+    return { title: demo.title, summary: demo.summary, objectives: demo.objectives, scenes: demo.scenes.map((scene, index) => ({
+      sceneNo: index + 1, title: scene.title, purpose: scene.purpose, visual: scene.visual, assets: scene.assets,
+      narration: scene.narration, subtitle: scene.subtitle, duration: scene.duration, evidence: scene.evidence, sourceId: scene.sourceId,
+      referenceIds: index === 1 ? ["S2", "knowledge:long:2", "S9"] : [], visualReferenceIds: [],
+    })) };
+  } }, { references });
+  assert.deepEqual(promptIds, ["S1", "S2"]);
+  assert.deepEqual(generated.scenes[1].references?.map((reference) => reference.id), ["knowledge:long:2"], "S2 and its full id are one source");
+  assert.ok(generated.generation?.warnings.some((warning) => warning.startsWith("2번 장면") && warning.includes("확인되지 않은")), "S9 was never sent");
 });
 
 test("knowledge locations preserve original versus stored PDF page and remain inspectable after exclusion", async () => {

@@ -165,7 +165,7 @@ test("Gemini runs through shared budgets with optional RAG and keeps source deta
       const body = JSON.parse(String(init?.body));
       const prompt = JSON.parse(body.contents[0].parts[0].text);
       assert.equal(prompt.task.manuscript, sample);
-      assert.deepEqual(prompt.task.supplementalSources, references);
+      assert.deepEqual(prompt.task.supplementalSources, references.map((reference, index) => ({ ...reference, id: `S${index + 1}` })));
       assert.ok(prompt.task.groundingGuidance);
       return reply(JSON.stringify(output()));
     } });

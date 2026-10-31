@@ -1,4 +1,5 @@
 import "server-only";
+import { promptSourceId } from "../generation-contract";
 import type { GenerationContext } from "./generation-service";
 import { pdfPageLocations } from "../pdf-source";
 import type { VisualRecommendation } from "../knowledge-structure";
@@ -15,7 +16,8 @@ export function promptKnowledgeSources<T extends { visuals?: VisualRecommendatio
 
 export function promptTask<T extends Pick<GenerationContext["task"], "supplementalSources" | "selectedScene">>(task: T) {
   const scene = task.selectedScene;
-  return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources),
+  return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources)
+    .map((source, index) => ({ ...source, id: promptSourceId(index) })),
     ...(scene ? { selectedScene: { ...scene,
       ...(scene.references ? { references: promptKnowledgeSources(scene.references) } : {}),
       ...(scene.visualReferences ? { visualReferences: promptKnowledgeSources(scene.visualReferences) } : {}),
