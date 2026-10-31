@@ -5,7 +5,8 @@ import type { AIConfig } from "./ai-config";
 import type { GenerationAdapter, GenerationContext } from "./generation-service";
 import type { PdfAttachment } from "./pdf-input";
 import { preparePdfContent, type PdfContent } from "./pdf-content";
-import { citedPdfPage, selectPdfPages } from "../pdf-source";
+import { citedPdfPage, pdfPageLocations, selectPdfPages } from "../pdf-source";
+import { promptTask } from "./provider-prompt";
 
 export const OPENAI_MODEL = "gpt-5.4-mini-2026-03-17";
 
@@ -17,8 +18,9 @@ export function assertOpenAIConfig(config: AIConfig) {
 
 function payload(context: GenerationContext, document?: PdfContent) {
   const { instruction, responseSchema, ...task } = context.task;
-  const taskText = JSON.stringify({ task,
+  const taskText = JSON.stringify({ task: promptTask(task),
     ...(document ? { document: { textPages: document.textPages, visualPages: document.visualPages,
+      visualPageLocations: pdfPageLocations(document.visualPages),
       layoutPages: document.layoutPages.map(page => ({ ...page,
         width: Math.round(page.width), height: Math.round(page.height),
         figures: page.figures.map(figure => ({ ...figure, bounds: figure.bounds.map(Math.round) })),
@@ -100,7 +102,7 @@ export function createOpenAIAdapter(config: AIConfig, options: { fetch?: typeof 
     } }, document);
   }
   return {
-    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v10-optional-knowledge",
+    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v11-pdf-citations",
     async countInputTokens(_, context) {
       try {
         const result = await client.responses.inputTokens.count(await completePayload(context), { signal: context.signal });

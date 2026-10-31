@@ -25,50 +25,28 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EvidenceSource } from "@/components/evidence-source";
 import { KnowledgeSource } from "@/components/knowledge-source";
-import { knowledgeUsageLabel } from "@/lib/knowledge";
 import type { PdfSource } from "@/lib/pdf-source";
 import { fieldLabels, type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
 import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-image-storage";
 import { VisualRecommendations } from "./visual-recommendations";
+import { SceneSection } from "./scene-section";
+import { sourceLocationLabel } from "@/lib/source-location";
 
-// Purpose sits beside the preview; the rest are stacked below it.
+// Production fields stay editable; source material is grouped below them.
 const textFields = [
   "visual",
   "assets",
   "narration",
   "subtitle",
-  "evidence",
-  "reviewReason",
 ] as const;
 const fieldIcons = {
   visual: MonitorPlay,
   assets: Layers3,
   narration: MessageSquareText,
   subtitle: FileText,
-  evidence: Quote,
-  reviewReason: AlertCircle,
 } as const;
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
-
-function ScenePreview({ scene, index }: { scene: Scene; index: number }) {
-  return (
-    <div className="scene-preview" aria-label="장면 제목과 자막 배치 미리보기">
-      <div className="preview-topline">
-        <span>EDUFLOW / SCENE {String(index + 1).padStart(2, "0")}</span>
-        <MonitorPlay size={14} />
-      </div>
-      <div className="preview-copy">
-        <span className="preview-rule" />
-        <strong>{scene.title || "장면 제목을 입력하세요"}</strong>
-        <p>{scene.subtitle || "장면의 핵심 자막이 여기에 표시됩니다."}</p>
-      </div>
-      <div className="preview-bottomline">
-        <span>제목·자막 배치 예시</span><span>16:9 · {scene.duration}초</span>
-      </div>
-    </div>
-  );
-}
 
 function SceneReferenceImage({
   scene,
@@ -155,71 +133,20 @@ function SceneReferenceImage({
     });
   };
 
-  return (
-    <div className="scene-image-section" style={{ margin: "20px 0 24px" }}>
-      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "700", marginBottom: "10px", color: "var(--ink)" }}>
-        <ImageIcon size={16} /> 참고 이미지 (PDF 화면 영역)
-        {scene.image && <small style={{ fontSize: "10px", color: "var(--body)", fontWeight: "normal", marginLeft: "auto" }}>PDF 내보내기 시 좌측 40% 화면에 반영</small>}
+  return <SceneSection title="참고 이미지" icon={ImageIcon}
+    description="첨부한 이미지는 PDF 스토리보드의 화면 영역에 사용됩니다."
+    action={<><Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+      {scene.image ? <Upload size={14} /> : <ImagePlus size={14} />}{scene.image ? "이미지 교체" : "이미지 추가"}
+    </Button>{scene.image && <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="참고 이미지 삭제"><Trash2 size={14} />삭제</Button>}</>}>
+    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/jpg" hidden onChange={handleFileChange} />
+    {scene.image ? <div className="scene-image-content">
+      {previewUrl ? <img className="scene-attached-image" src={previewUrl} alt={scene.image.name || "참고 이미지"} />
+        : <p className="scene-section-empty">이 브라우저에서 이미지를 찾을 수 없습니다. 이미지를 다시 첨부해 주세요.</p>}
+      <label className="scene-image-source">이미지 출처
+        <Input value={scene.image.sourceText} onChange={handleSourceChange} placeholder="문서명, 페이지 또는 URL" />
       </label>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/jpg"
-        style={{ display: "none" }}
-        onChange={handleFileChange}
-      />
-      {scene.image && previewUrl ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "14px", border: "1px solid var(--hairline)", borderRadius: "10px", background: "var(--surface)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--ink)" }}>
-              {scene.image.name || "등록된 참고 이미지"}
-            </span>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <Upload size={13} style={{ marginRight: "4px" }} /> 교체
-              </Button>
-              <Button variant="ghost" size="sm" onClick={handleDelete} style={{ color: "var(--destructive, #d9383a)" }}>
-                <Trash2 size={13} style={{ marginRight: "4px" }} /> 삭제
-              </Button>
-            </div>
-          </div>
-          <div style={{ width: "100%", maxHeight: "220px", aspectRatio: "16/9", background: "#f1f3f5", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            <img src={previewUrl} alt="참고 이미지 미리보기" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-            <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--body)" }}>이미지 출처 (문서명, 페이지, URL 등)</label>
-            <Input
-              value={scene.image.sourceText}
-              onChange={handleSourceChange}
-              placeholder="예: 원본 3페이지, 안전매뉴얼 p.12, https://example.com 등"
-              style={{ fontSize: "12px" }}
-            />
-          </div>
-        </div>
-      ) : (
-        <div
-          style={{
-            border: "1.5px dashed var(--hairline-strong)",
-            borderRadius: "10px",
-            padding: "22px 16px",
-            textAlign: "center",
-            background: "var(--surface)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} style={{ fontWeight: "600" }}>
-            <ImagePlus size={15} style={{ marginRight: "6px" }} /> 참고 이미지 추가
-          </Button>
-          <span style={{ fontSize: "11px", color: "var(--body)" }}>
-            PNG·JPG 파일을 첨부하면 PDF 내보내기 시 해당 장면의 화면 영역에 반영됩니다.
-          </span>
-        </div>
-      )}
-    </div>
-  );
+    </div> : <p className="scene-section-empty">제작에 사용할 PNG·JPG 이미지를 첨부하세요.</p>}
+  </SceneSection>;
 }
 
 export function SceneEditor({
@@ -298,19 +225,21 @@ export function SceneEditor({
         value={scene.title}
         onChange={(e) => onChange("title", e.target.value)}
       />
-      <div className="scene-hero">
-        <ScenePreview scene={scene} index={index} />
-        <div className="scene-purpose">
-          <label>
+      <div className="scene-basics">
+        <div className="scene-field">
+          <label htmlFor="scene-purpose">
             <GraduationCap size={15} /> 장면 목적{" "}
             {scene.edited.includes("purpose") && <small>수정됨</small>}
           </label>
           <Textarea
+            id="scene-purpose"
             aria-label="장면 목적"
             value={scene.purpose}
             onChange={(e) => onChange("purpose", e.target.value)}
           />
-          <label className="duration-label" htmlFor="duration">
+        </div>
+        <div className="scene-field">
+          <label htmlFor="duration">
             <Clock3 size={14} /> 예상 시간
           </label>
           <div className="duration-input">
@@ -328,9 +257,6 @@ export function SceneEditor({
         </div>
       </div>
 
-      {/* 참고 이미지 섹션: 장면 목적 및 예상 시간 아래, 화면 설명 위에 배치 */}
-      <SceneReferenceImage scene={scene} onChange={onChange} />
-
       <div className="scene-fields">
         {textFields.map((key) => {
           const Icon = fieldIcons[key];
@@ -341,7 +267,6 @@ export function SceneEditor({
                 {fieldLabels[key]}
                 {scene.edited.includes(key) && <small>수정됨</small>}
               </label>
-              {key === "evidence" && <><EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} /><div className="scene-knowledge-location"><KnowledgeSource key={scene.id} references={knowledgeReferences} />{!knowledgeReferences.length && <small>이 장면에 선택된 지식베이스 근거가 없습니다.</small>}</div></>}
               <Textarea
                 id={`field-${key}`}
                 value={scene[key]}
@@ -352,18 +277,29 @@ export function SceneEditor({
           );
         })}
       </div>
-      {scene.generation?.mode === "ai" && <p className="scene-knowledge-status">{scene.generation.knowledge ? `${knowledgeUsageLabel(scene.generation.knowledge)} 이 장면: 보강 근거 ${scene.references?.length ?? 0}개 · 시각자료 ${scene.visuals?.length ?? 0}개` : "이 장면에는 지식베이스 검색 기록이 없습니다."}</p>}
+      <SceneReferenceImage scene={scene} onChange={onChange} />
+      <SceneSection title="원문 근거" icon={Quote}
+        action={<EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
+        description={<><span className="scene-source-location">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name)}</span>
+          {scene.pdfSource && <span className="scene-source-name">{scene.pdfSource.name}</span>}</>}>
+        <Textarea aria-label="원문 근거" value={scene.evidence} onChange={event => onChange("evidence", event.target.value)} rows={3} />
+        {scene.edited.includes("evidence") && <small className="scene-edited-note">직접 수정한 근거입니다.</small>}
+      </SceneSection>
+      {Boolean(scene.references?.length) && <SceneSection title="보강 자료 근거" icon={BookOpen}
+        description="나레이션과 자막에 참고한 지식베이스 자료입니다.">
+        <div className="scene-source-list">{scene.references!.map(reference => <article className="scene-source-card" key={reference.id}>
+          <header className="scene-source-card-heading"><div><h4>{reference.title}</h4>
+            <p className="scene-source-meta">{reference.page ? `${reference.page}페이지 · ` : ""}{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "제공 자료"}{reference.published ? ` · ${reference.published}` : ""}</p></div>
+            <KnowledgeSource references={[reference]} context={reference.title} />
+          </header>
+          <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
+        </article>)}</div>
+      </SceneSection>}
       <VisualRecommendations key={scene.id} visuals={scene.visuals ?? []} references={knowledgeReferences} />
-      {Boolean(scene.references?.length) && <div className="scene-references">
-        <h3><BookOpen size={15} /> 보강 자료 근거</h3>
-        <p>나레이션·자막에 활용한 외부 자료입니다. 원문 근거와 구분해 검토해 주세요.</p>
-        {scene.references!.map((reference) => <div className="scene-reference" key={reference.id}>
-          <strong>{reference.url ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a> : reference.title}</strong>
-          <small>{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "사용자 제공 자료"} · {reference.published}{reference.revision ? ` · ${reference.revision}` : ""}{reference.page ? ` · ${reference.page}페이지` : ""}</small>
-          <p>{reference.excerpt}</p>
-          <KnowledgeSource references={[reference]} />
-        </div>)}
-      </div>}
+      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
+        description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
+        <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
+      </SceneSection>
       <div className="scene-editor-footer">
         <Button
           variant="outline"

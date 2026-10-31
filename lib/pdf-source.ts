@@ -9,6 +9,11 @@ export const pdfSourceSchema = z.object({
 });
 export type PdfSource = z.infer<typeof pdfSourceSchema>;
 
+/** Attachment order can differ from both printed folios and original file order. */
+export function pdfPageLocations(pages: number[]) {
+  return pages.map((page, index) => ({ attachmentPage: index + 1, originalPage: page, sourceId: `pdf-page:${page}` }));
+}
+
 export function citedPdfPage(source?: PdfSource, scene?: { sourceId: string; pdfSource?: PdfSource }): number | null {
   const match = /^pdf-page:(\d+)$/.exec(scene?.sourceId ?? "");
   const page = match ? Number(match[1]) : 0;

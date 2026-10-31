@@ -5,6 +5,7 @@ import { manuscriptSource } from "../storyboard";
 import type { PdfAttachment } from "./pdf-input";
 import { indexPdfSource } from "./pdf-source-index";
 import { searchKnowledge } from "./knowledge-base";
+import { citedPdfPage } from "../pdf-source";
 
 export type KnowledgeSearchContext = { pdf?: PdfAttachment; signal: AbortSignal };
 export type KnowledgeRetriever = (input: GenerationInput, context: KnowledgeSearchContext) => RetrievedReference[] | Promise<RetrievedReference[]>;
@@ -48,8 +49,7 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
   if (input.pdfSource && context.pdf) {
     try {
       const index = await indexPdfSource(context.pdf.data, input.pdfSource.pages, context.signal);
-      const citedPage = input.sceneSourceScope === "citation" && input.scene
-        ? /^pdf-page:(\d+)$/.exec(input.scene.sourceId)?.[1] : undefined;
+      const citedPage = input.sceneSourceScope === "citation" ? citedPdfPage(input.pdfSource, input.scene) : null;
       pageTexts = index.pages.filter(page => !citedPage || page.page === Number(citedPage))
         .map(page => page.text.trim()).filter(Boolean);
     } catch {
@@ -62,6 +62,7 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
     (!input.pdfSource && input.manuscript.trim() ? manuscriptSource(input.manuscript).title : "");
   return {
     query: [input.manuscript, input.sourceRequest ?? "", ...input.settings.keywords,
+      ...(input.scene ? [input.scene.title, input.scene.purpose, input.scene.visual, input.scene.assets, input.scene.narration] : []),
       ...(pageTexts.length ? pageTexts.map(text => text.slice(0, perPage)) : [input.pdfSource?.name ?? ""])]
       .join(" ").normalize("NFC"),
     topic: topic.normalize("NFC"),

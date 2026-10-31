@@ -3,8 +3,25 @@ import test from "node:test";
 import { PDFDocument, StandardFonts, degrees } from "pdf-lib";
 import { GenerationError } from "./generation-contract";
 import { defaults } from "./storyboard";
-import { findSourceMatches, matchBoxes, sourceIndexSchema, sourceLocationLabel, sourcePassages } from "./source-location";
+import { findSourceMatches, matchBoxes, sourceIndexSchema, sourceLocationLabel, sourcePageToDisplay, sourcePassages } from "./source-location";
+import { citedPdfPage } from "./pdf-source";
 import { indexPdfSource, pdfSourceIndexRequest } from "./server/pdf-source-index";
+
+test("an invalid saved PDF citation never opens the first selected page; manual browsing and actual matches still work", () => {
+  const source = { name: "scan.pdf", pages: [22, 23, 24, 25] };
+  const pages = source.pages.map(page => ({ page, text: "", runs: [] }));
+  const scene = { sourceId: "pdf-page:18", pdfSource: source };
+  const hint = citedPdfPage(source, scene);
+  assert.equal(hint, null);
+  assert.deepEqual(pages.flatMap(page => findSourceMatches(page.text, "작업 전 측정과 보호구 준비")), []);
+  assert.equal(sourcePageToDisplay(pages, null, undefined, hint), undefined);
+  assert.equal(sourcePageToDisplay(pages, 25, undefined, hint), 25);
+  assert.equal(sourcePageToDisplay(pages, null, 24, hint), 24);
+  assert.equal(sourcePageToDisplay(pages, null, undefined, 23), 23);
+  assert.equal(sourcePageToDisplay(pages, 25, 24, 23), 25);
+  assert.equal(sourcePageToDisplay(pages, 18, undefined, hint), undefined);
+  assert.equal(sourcePageToDisplay([], 25, 24, 23), undefined);
+});
 
 test("source locations are readable and verbatim quotes survive Korean wrapping without guessing a paraphrase", () => {
   assert.equal(sourceLocationLabel("pdf-page:20", "safety.hwp"), "원본 20페이지");

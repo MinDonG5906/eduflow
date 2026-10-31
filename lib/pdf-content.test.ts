@@ -106,6 +106,8 @@ test("count and generate use identical hybrid inputs; scene scope selects only i
   const focused = JSON.parse(calls[0].input);
   assert.deepEqual(focused.task.pdfSource.pages, [2]);
   assert.deepEqual(focused.document.visualPages, []);
+  assert.deepEqual(focused.task.pdfCitationIds, ["pdf-page:2"]);
+  assert.deepEqual(calls[1].text.format.schema.properties.scenes.items.properties.sourceId.enum, ["", "pdf-page:2"]);
   assert.equal(focused.document.textPages.length, 1);
   assert.ok(!calls[0].input.includes("DIAGRAM:"));
   // The broader selection reuses neither a narrower cache entry nor its map.
@@ -115,6 +117,11 @@ test("count and generate use identical hybrid inputs; scene scope selects only i
   const mixed = JSON.parse(parts.find((part: any) => part.type === "input_text").text);
   assert.deepEqual(mixed.task.pdfSource.pages, source.pages);
   assert.deepEqual(mixed.document.visualPages, [9, 13, 17]);
+  assert.deepEqual(mixed.document.visualPageLocations, [
+    { attachmentPage: 1, originalPage: 9, sourceId: "pdf-page:9" },
+    { attachmentPage: 2, originalPage: 13, sourceId: "pdf-page:13" },
+    { attachmentPage: 3, originalPage: 17, sourceId: "pdf-page:17" },
+  ]);
   assert.deepEqual(mixed.document.textPages.map((page: { page: number }) => page.page), [2]);
   const attachment = parts.find((part: any) => part.type === "input_file");
   assert.equal((await PDFDocument.load(Buffer.from(attachment.file_data.split(",")[1], "base64"))).getPageCount(), 3);

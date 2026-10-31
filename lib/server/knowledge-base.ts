@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chunkKnowledge, knowledgeMetadataSchema, knowledgeSourceSchema, searchNeedles, type KnowledgeDocument, type KnowledgeImportPage, type KnowledgeLocation, type KnowledgeMetadata, type KnowledgeReviewPage, type KnowledgeSource, type RetrievedReference } from "../knowledge";
 
-import { makeKnowledgeStructure, preserveKnowledgeReview, recommendationsForBlocks, structureChunks, type KnowledgeStructure } from "../knowledge-structure";
+import { makeKnowledgeStructure, preserveKnowledgeReview, recommendationsForBlocks, tableRecommendationsForBlocks, structureChunks, type KnowledgeStructure } from "../knowledge-structure";
+import { visualRelevance, visualSearchTerms } from "../knowledge-visual-search";
 
 type DocumentRow = {
   id: string; title: string; origin: "official" | "internal"; url: string;
@@ -218,8 +219,12 @@ export class KnowledgeBase {
   }
 
   search(query: string, limit = 6, topic = ""): RetrievedReference[] {
+    limit = Math.max(0, Math.min(20, Math.floor(limit)));
+    if (!limit) return [];
+    // Reserve an independent channel so a document's two text hits cannot starve its visuals.
+    const visualSources = this.searchVisuals(query, Math.min(4, Math.ceil(limit / 2)), topic);
     const needles = searchNeedles(query);
-    if (!needles.length) return [];
+    if (!needles.length) return visualSources;
     const topicNeedles = searchNeedles(topic);
     const match = needles.map((word) => `"${word}"`).join(" OR ");
     const rows = this.db.prepare(`SELECT d.*, c.ordinal, c.page, c.text, c.block_ids
@@ -238,13 +243,7 @@ export class KnowledgeBase {
       return ids.flatMap((id, index) => {
         const block = structure.blocks.find(block => block.id === id);
         if (!block) return [];
-        // A retrieved reference identifies one statement/row. Another statement
-        // in the same 900-character search chunk cannot supply its picture.
-        const linked = recommendationsForBlocks(row.id, structure, [id])
-          .filter(visual => row.text.replace(/\s+/g, "").includes(visual.quote.replace(/\s+/g, "")) &&
-            needles.some(needle => visual.quote.toLocaleLowerCase("ko-KR").includes(needle)));
         return [
-          ...linked.map((visual, n) => ({ ...row, text: visual.quote, block_ids: JSON.stringify([id]), suffix: `:${index}:v${n}`, visualId: visual.id })),
           { ...row, text: block.text.length <= 900 ? block.text : row.text, block_ids: JSON.stringify([id]), suffix: `:${index}` },
         ];
       }).sort((a,b) => needles.filter(n => b.text.toLocaleLowerCase("ko-KR").includes(n)).length - needles.filter(n => a.text.toLocaleLowerCase("ko-KR").includes(n)).length);
@@ -263,17 +262,52 @@ export class KnowledgeBase {
       if (count >= 2) continue;
       perDocument.set(row.id, count + 1);
       selectedBlocks.add(blockKey);
-      const structure = structures.get(row.id)?.find(page => page.page === row.page);
       const blockIds: string[] = JSON.parse(row.block_ids);
-      const visuals = structure && row.visualId ? recommendationsForBlocks(row.id, structure, blockIds)
-        .filter(visual => visual.id === row.visualId) : [];
-      selected.push({ id: `knowledge:${row.id}:${row.ordinal}${row.suffix ?? ""}`, documentId: row.id, blockIds, visuals,
+      selected.push({ id: `knowledge:${row.id}:${row.ordinal}${row.suffix ?? ""}`, documentId: row.id, blockIds, visuals: [],
         title: row.title, url: row.url, excerpt: row.text,
         published: row.published || "발행일 미기재", revision: row.revision,
         origin: row.origin, ...(row.page ? { page: row.page } : {}) });
       if (selected.length >= limit) break;
     }
-    return selected;
+    return [...selected.slice(0, limit - visualSources.length), ...visualSources];
+  }
+
+  searchVisuals(query: string, limit = 4, topic = ""): RetrievedReference[] {
+    if (limit <= 0) return [];
+    const terms = visualSearchTerms(query), topicTerms = visualSearchTerms(topic);
+    if (!terms.length) return [];
+    const rows = this.db.prepare(`SELECT d.*, s.data FROM knowledge_structures s
+      JOIN documents d ON d.id=s.document_id JOIN knowledge_files f ON f.document_id=d.id
+      WHERE d.active=1 AND NOT EXISTS (SELECT 1 FROM knowledge_review_pages r
+        WHERE r.document_id=d.id AND r.page=s.page AND r.status='excluded')`).all() as (DocumentRow & { data: string })[];
+    const candidates: { score: number; key: string; reference: RetrievedReference }[] = [];
+    for (const row of rows) {
+      const structure = JSON.parse(row.data) as KnowledgeStructure;
+      const ids = structure.blocks.map(block => block.id);
+      const visuals = [...ids.flatMap(id => recommendationsForBlocks(row.id, structure, [id])), ...tableRecommendationsForBlocks(row.id, structure, ids)];
+      for (const visual of visuals) {
+        const score = visualRelevance(visual, structure, terms);
+        if (!score) continue;
+        if (topicTerms.length && !visualRelevance(visual, structure, topicTerms) &&
+          !topicTerms.some(term => row.title.normalize("NFC").toLocaleLowerCase("ko-KR").includes(term))) continue;
+        const key = `${row.id}:${structure.page}:${visual.kind ?? "figure"}:${visual.figureId}`;
+        candidates.push({ score, key, reference: {
+          id: `knowledge:visual:${row.id}:${createHash("sha256").update(visual.id).digest("hex").slice(0, 24)}`, documentId: row.id, blockIds: [visual.blockId], visuals: [visual],
+          title: row.title, url: row.url, excerpt: visual.quote, page: structure.page,
+          published: row.published || "발행일 미기재", revision: row.revision, origin: row.origin,
+        } });
+      }
+    }
+    candidates.sort((a,b) => b.score - a.score || a.key.localeCompare(b.key));
+    const byAsset = new Map<string, typeof candidates[number]>();
+    for (const candidate of candidates) if (!byAsset.has(candidate.key)) byAsset.set(candidate.key, candidate);
+    const unique = [...byAsset.values()];
+    // Keep the best of each kind when both are relevant, then fill by relevance.
+    const firstFigure = unique.find(item => item.reference.visuals![0].kind !== "table");
+    const firstTable = unique.find(item => item.reference.visuals![0].kind === "table");
+    const preferred = limit > 1 ? [firstFigure, firstTable].filter(item => item !== undefined) : [];
+    const ordered = [...preferred, ...unique.filter(item => !preferred.includes(item))];
+    return ordered.slice(0, limit).map(item => item.reference);
   }
 
   location(id: string, page?: number): KnowledgeLocation | null {

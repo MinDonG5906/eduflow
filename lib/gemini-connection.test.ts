@@ -141,6 +141,7 @@ test("Gemini counting and generation preserve PDF original pages and citation sc
   assert.deepEqual(selected.getPage(0).getSize(), { width: 200, height: 400 });
   const prompt = JSON.parse(generateParts[1].text);
   assert.deepEqual(prompt.document.visualPages, [25]);
+  assert.deepEqual(prompt.document.visualPageLocations, [{ attachmentPage: 1, originalPage: 25, sourceId: "pdf-page:25" }]);
   assert.deepEqual(prompt.task.pdfSource.pages, [25]);
   assert.equal(prompt.task.sceneSourceScope, "citation");
 
