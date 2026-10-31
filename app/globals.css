@@ -817,3 +817,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .kb-dialog-actions > button { flex: 1; }
   .kb-alert { flex-wrap: wrap; }
 }
+.generation-bar > .generation-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; max-width: 480px; }
+.generation-connection { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.generation-connection p { flex: 1 1 220px; margin: 0; line-height: 1.6; }
+@media (max-width: 600px) { .generation-bar > .generation-actions { align-items: stretch; max-width: none; width: 100%; } }
