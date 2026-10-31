@@ -1,0 +1,32 @@
+name: Verify committed Windows package
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run committed executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $start = [System.Diagnostics.ProcessStartInfo]::new((Resolve-Path Windows-App/EduFlow.exe).Path)
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.EnvironmentVariables['EDUFLOW_NO_BROWSER'] = '1'
+          $process = [System.Diagnostics.Process]::Start($start)
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest http://127.0.0.1:3000/ -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200 -and $response.Content -match 'EduFlow') { $ready = $true; break }
+              } catch { }
+              if ($process.HasExited) { break }
+            }
+            if (-not $ready) { throw 'Committed executable failed to serve the application' }
+          } finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
