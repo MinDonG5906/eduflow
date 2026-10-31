@@ -592,20 +592,27 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .compare-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .generation-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .compare-button { min-height: 44px; padding-inline: 16px; font-size: 13px; flex-shrink: 0; }
-.compare-dialog { display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - 2rem); }
+/* The shared 520px dialog cap is overridden here, like .source-dialog, so versions sit side by side. */
+[data-slot="dialog-content"].compare-dialog { display: flex; flex-direction: column; gap: 10px; width: min(1400px, calc(100vw - 24px)); max-width: min(1400px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: hidden; padding: 18px 20px; }
 .compare-scroll { overflow: auto; min-height: 0; border: 1px solid var(--hairline); border-radius: 10px; }
-.compare-grid { display: grid; }
-.compare-head,.compare-scene { padding: 12px 14px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); min-width: 0; }
-.compare-head { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; background: var(--canvas-soft); }
-.compare-head h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }
-.compare-audience { font-size: 11px; color: var(--body); }
-.compare-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; width: 100%; font-size: 11px; }
-.compare-metrics dt { color: var(--body); }
-.compare-metrics dd { font-weight: 600; font-variant-numeric: tabular-nums; }
-.compare-objectives { padding-left: 16px; list-style: disc; font-size: 11px; color: var(--body); line-height: 1.6; }
-.compare-scene { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.7; }
-.compare-scene strong { font-size: 12px; font-weight: 600; }
-.compare-subtitle { align-self: flex-start; padding: 2px 8px; border-radius: 4px; background: var(--surface); font-size: 11px; }
+.compare-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.compare-table th,.compare-table td { padding: 5px 12px; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+.compare-table thead th { position: sticky; top: 0; z-index: 1; background: var(--canvas-soft); min-width: 220px; }
+.compare-table thead th > * + * { margin-top: 3px; }
+.compare-table thead th:first-child,.compare-table tbody th { min-width: 0; width: 1%; white-space: nowrap; color: var(--body); font-weight: 500; }
+.compare-table thead small { display: block; color: var(--body); font-size: 11px; font-weight: 400; }
+.compare-table thead details { font-size: 11px; font-weight: 400; }
+.compare-table summary { cursor: pointer; color: var(--body); }
+.compare-table td { font-weight: 600; font-variant-numeric: tabular-nums; }
+.compare-audience { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; font-weight: 600; }
+.compare-divider th,.compare-divider td { background: var(--canvas-soft); color: var(--body); font-weight: 400; }
+.compare-divider button { margin-left: 8px; }
+.compare-scene th { text-align: center; }
+.compare-scene td { font-weight: 400; line-height: 1.6; }
+.compare-scene p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.compare-table.full .compare-scene p { display: block; overflow: visible; }
+.compare-objectives { margin-top: 4px; padding-left: 16px; list-style: disc; font-size: 11px; font-weight: 400; color: var(--body); line-height: 1.6; }
+.compare-subtitle { display: inline; margin-right: 6px; padding: 1px 6px; border-radius: 4px; background: var(--surface); font-weight: 600; }
 @media (max-width: 767px) {
   .connection-select { font-size: 16px; height: 40px; }
 }

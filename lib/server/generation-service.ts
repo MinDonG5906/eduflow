@@ -4,6 +4,7 @@ import {
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
 import { DURATION_TOLERANCE, durationOffTarget, fieldLabels, manuscriptSource, type Board } from "../storyboard";
+import { EASY_SENTENCE_MAX_CHARS, longSentenceScenes } from "../audience-rules";
 import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection } from "../term-corrections";
 import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
@@ -278,6 +279,11 @@ export async function runGeneration(
         });
         if (relabeledScenes.length)
           warnings.push(`${relabeledScenes.join(", ")}번 장면의 구성 단계(도입·본문·마무리)를 장면 위치에 맞게 바꿨습니다. 내용이 위치에 맞는지 확인해 주세요.`);
+        if (adapter.mode === "ai" && !input.scene && input.settings.audience === "외국인 근로자") {
+          const longScenes = longSentenceScenes(scenes);
+          if (longScenes.length)
+            warnings.push(`외국인 근로자용 나레이션에 공백 제외 ${EASY_SENTENCE_MAX_CHARS}자를 넘는 문장이 있어요(${longScenes.join(", ")}번 장면). 짧게 나눠 주세요.`);
+        }
         const duration = scenes.reduce((sum, scene) => sum + scene.duration, 0);
         if (!input.scene && durationOffTarget(duration, input.settings.minutes))
           warnings.push(`전체 예상 시간이 목표 길이의 ±${DURATION_TOLERANCE * 100}%를 벗어났습니다. 장면별 시간을 확인해 주세요.`);

@@ -1,3 +1,4 @@
+import { EASY_SENTENCE_MAX_CHARS, letters, narrationSentences, verbatimNarrationPercent } from "./audience-rules";
 import type { GenerationErrorCode } from "./generation-contract";
 import { audienceOptions, type Board, type Settings } from "./storyboard";
 
@@ -22,16 +23,16 @@ export function comparisonSettings(base: Settings, audiences: readonly Audience[
   return [...new Set(audiences)].slice(0, MAX_COMPARED_AUDIENCES).map((audience) => ({ ...base, audience }));
 }
 
-const letters = (value: string) => value.replace(/[^\p{L}\p{N}]/gu, "");
 const average = (values: number[]) => values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
 
 /** Plain numbers that make the audience adaptation visible side by side, without another AI call. */
-export function versionMetrics(board: Board) {
-  const sentences = board.scenes.flatMap((scene) =>
-    scene.narration.split(/(?<=[.!?。])\s+|\n+/).map(letters).filter(Boolean));
+export function versionMetrics(board: Board, manuscript = "") {
+  const sentences = board.scenes.flatMap((scene) => narrationSentences(scene.narration));
   return {
     totalSeconds: board.scenes.reduce((sum, scene) => sum + scene.duration, 0),
     sentenceChars: average(sentences.map((sentence) => [...sentence].length)),
+    longSentences: sentences.filter((sentence) => [...sentence].length > EASY_SENTENCE_MAX_CHARS).length,
+    verbatimPercent: verbatimNarrationPercent(board.scenes, manuscript),
     subtitleChars: average(board.scenes.map((scene) => [...letters(scene.subtitle)].length)),
     warnings: board.generation?.warnings.length ?? 0,
   };

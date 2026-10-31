@@ -85,7 +85,7 @@ export default function Studio() {
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [compareSelectOpen, setCompareSelectOpen] = useState(false);
-  const [comparison, setComparison] = useState<ComparisonVersion[] | null>(null);
+  const [comparison, setComparison] = useState<{ manuscript: string; versions: ComparisonVersion[] } | null>(null);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [progressTitle, setProgressTitle] = useState<string | undefined>();
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -298,6 +298,7 @@ export default function Studio() {
     const run = new AbortController();
     requestRef.current = run;
     const versions: ComparisonVersion[] = [];
+    const runManuscript = manuscript;
     try {
       for (const [index, job] of jobs.entries()) {
         const audience = job.input.settings.audience as Audience;
@@ -331,7 +332,7 @@ export default function Studio() {
       notify("대상별 비교를 취소했어요. 기존 작업은 유지됩니다.");
       return;
     }
-    setComparison(merged);
+    setComparison({ manuscript: runManuscript, versions: merged });
     setComparisonOpen(true);
     if (run.signal.aborted) notify("비교를 중간에 멈췄어요. 만들어진 버전까지 보여 드려요.");
   }
@@ -628,10 +629,11 @@ export default function Studio() {
         <ComparisonDialog
           open={comparisonOpen}
           onOpenChange={setComparisonOpen}
-          versions={comparison}
+          versions={comparison.versions}
+          manuscript={comparison.manuscript}
           busy={busy}
           onApply={applyVersion}
-          onRetry={(audience) => void compareAudiences([audience], comparison)}
+          onRetry={(audience) => void compareAudiences([audience], comparison.versions)}
         />
       )}
       <StudioDialog

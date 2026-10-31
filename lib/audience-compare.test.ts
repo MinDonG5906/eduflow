@@ -20,7 +20,9 @@ test("version metrics count narration sentences and subtitles in letters only", 
     subtitle: index ? "턱끈 조이기" : "발판 확인, 꼭!",
   }));
   // Sentences: 작업전에발판을확인하세요 (12), 안전모를씁니다 (7), 턱끈을조입니다 (7) → 8.67 → 9
-  assert.deepEqual(versionMetrics(board), { totalSeconds: 50, sentenceChars: 9, subtitleChars: 5, warnings: 0 });
+  assert.deepEqual(versionMetrics(board), { totalSeconds: 50, sentenceChars: 9, longSentences: 0, verbatimPercent: 0, subtitleChars: 5, warnings: 0 });
+  // With the manuscript, the first sentence counts as read word for word.
+  assert.equal(versionMetrics(board, "작업 전에 발판을 확인하세요. 다른 문장입니다.").verbatimPercent, 33);
 });
 
 test("a comparison run stops on limits and connection problems but not on a single bad draft", () => {
