@@ -29,5 +29,6 @@ export const sceneImageResultSchema = z.object({
   basedOn: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const sceneImageStatusSchema = z.object({ available: z.boolean(), reason: z.string(), model: z.string(),
+  vendor: z.enum(["OpenAI", "Google"]).nullable().default(null),
   perImageCeilingUSD: z.number().positive(), reservationUSD: z.number().positive() });
 export type SceneImageStatus = z.infer<typeof sceneImageStatusSchema>;

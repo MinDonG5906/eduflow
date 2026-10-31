@@ -1,12 +1,14 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import OpenAI from "openai";
 import { GoogleGenAI, ApiError } from "@google/genai";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { GenerationError } from "../generation-contract";
 import { imageStyles, type SceneImageInput, sceneImageRequestSchema, sceneImageBasis } from "../scene-image";
 import { assertLocalAIRequest, readAIConfig } from "./ai-config";
 import { LocalAIBudget } from "./ai-budget";
-import { privateDirectory, readConnectionState } from "./connection-store";
+import { imageGenerationVendor, privateDirectory, readConnectionState } from "./connection-store";
+import { generateOpenAIImage, OPENAI_SCENE_IMAGE_MODEL, openAIImageConfig, openAIImageReference } from "./openai-scene-image";
 
 // Google standard pricing verified 2026-10-31:
 // https://ai.google.dev/gemini-api/docs/pricing#gemini-nano-banana-2.1
@@ -19,6 +21,7 @@ const capped = (value: string | undefined, limit: number) => value === undefined
   : /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? String(Math.min(Number(value), limit)) : value;
 export function sceneImageConfig(directory: string, env: Env = process.env) {
   if (!readConnectionState(directory, env).imageEnabled) throw new GenerationError("AI_DISABLED");
+  if (imageGenerationVendor(readConnectionState(directory, env), env) === "OpenAI") return openAIImageConfig(directory, env);
   return readAIConfig({ ...env, EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: env.EDUFLOW_GEMINI_API_KEY,
     EDUFLOW_AI_MODEL: SCENE_IMAGE_MODEL, EDUFLOW_AI_INPUT_USD_PER_MILLION: "1.50", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "30.00",
     EDUFLOW_AI_REQUEST_BUDGET_USD: env.EDUFLOW_IMAGE_REQUEST_BUDGET_USD || "0.30",
@@ -56,18 +59,22 @@ export function createSceneImageHandlers(options: { directory?: string; env?: En
     async GET(request: Request) {
       const url = new URL(request.url);
       if (url.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return Response.json({}, { status: 403, headers });
-      let available = false, reason = "모델 연결에서 콘티 이미지 생성을 켜 주세요.";
+      let vendor: "OpenAI" | "Google" | null = null;
+      try { vendor = imageGenerationVendor(readConnectionState(directory(), env()), env()); } catch { /* report unavailable */ }
+      let model = vendor === "OpenAI" ? OPENAI_SCENE_IMAGE_MODEL : SCENE_IMAGE_MODEL;
+      let available = false, reason = `${vendor ?? "이미지"} 연결이 준비됐습니다. 모델 연결에서 콘티 이미지 생성을 켜 주세요.`;
       // Costs are public; credentials and private file paths never reach this response.
-      let perImageCeilingUSD = 0.13488, reservationUSD = 0.26976;
+      let perImageCeilingUSD = vendor === "OpenAI" ? 0.09472 : 0.13488, reservationUSD = perImageCeilingUSD * 2;
       try {
         const config = sceneImageConfig(directory(), env());
         available = true; reason = "";
+        model = config.model;
         perImageCeilingUSD = config.attemptCost / 1_000_000; reservationUSD = config.reservationCost / 1_000_000;
       } catch (error) {
-        if (!env().EDUFLOW_GEMINI_API_KEY?.trim()) reason = "Gemini 팀 키 연결이 필요합니다. 모델 연결에서 안내를 확인하세요.";
+        if (!vendor) reason = "이미지 생성에 사용할 OpenAI 키 또는 Gemini 팀 키를 연결해 주세요.";
         else if (!(error instanceof GenerationError && error.code === "AI_DISABLED")) reason = "이미지 모델의 연결 또는 비용 한도 설정을 확인해 주세요.";
       }
-      return Response.json({ available, reason, model: SCENE_IMAGE_MODEL, perImageCeilingUSD, reservationUSD }, { headers });
+      return Response.json({ available, reason, vendor, model, perImageCeilingUSD, reservationUSD }, { headers });
     },
     async POST(request: Request) {
       let budget: LocalAIBudget | undefined, reservation: string | undefined, started = false;
@@ -104,28 +111,40 @@ export function createSceneImageHandlers(options: { directory?: string; env?: En
         const input = parsed.data;
         const prompt = sceneImagePrompt(input);
         const config = sceneImageConfig(directory(), env());
-        const client = new GoogleGenAI({ apiKey: config.apiKey,
-          httpOptions: { timeout: options.timeoutMs ?? TIMEOUT_MS, retryOptions: { attempts: 1 }, ...(options.fetch ? { fetch: options.fetch } : {}) } });
-        const contents = [{ role: "user", parts: [{ text: prompt }, ...(reference ? [{ inlineData: { mimeType: "image/png", data: reference.toString("base64") } }] : [])] }];
         budget = new LocalAIBudget(directory());
         reservation = budget.reserve(config);
-        const count = await client.models.countTokens({ model: config.model, contents, config: { abortSignal: signal } });
+        let data: string | undefined;
+        if (config.model === OPENAI_SCENE_IMAGE_MODEL) {
+          const thumbnail = reference ? await openAIImageReference(reference) : undefined;
+          // Without an Images count endpoint, UTF-8 bytes conservatively bound text
+          // tokens; reserve additional input tokens for one <=512px thumbnail.
+          if (Buffer.byteLength(prompt, "utf8") + (thumbnail ? 2048 : 0) > config.maxInputTokens) throw new GenerationError("TOKEN_LIMIT_EXCEEDED");
+          signal.throwIfAborted();
+          budget.startAttempt(reservation); started = true;
+          data = await generateOpenAIImage(config, prompt, thumbnail, signal, { fetch: options.fetch, timeoutMs: options.timeoutMs ?? TIMEOUT_MS });
+        } else {
+          const client = new GoogleGenAI({ apiKey: config.apiKey,
+            httpOptions: { timeout: options.timeoutMs ?? TIMEOUT_MS, retryOptions: { attempts: 1 }, ...(options.fetch ? { fetch: options.fetch } : {}) } });
+          const contents = [{ role: "user", parts: [{ text: prompt }, ...(reference ? [{ inlineData: { mimeType: "image/png", data: reference.toString("base64") } }] : [])] }];
+          const count = await client.models.countTokens({ model: config.model, contents, config: { abortSignal: signal } });
+          signal.throwIfAborted();
+          if (!Number.isSafeInteger(count.totalTokens) || count.totalTokens! < 1) throw new GenerationError("PROVIDER_UNAVAILABLE");
+          if (count.totalTokens! > config.maxInputTokens) throw new GenerationError("TOKEN_LIMIT_EXCEEDED");
+          budget.startAttempt(reservation); started = true;
+          const response = await client.models.generateContent({ model: config.model, contents, config: {
+            responseModalities: ["IMAGE"], candidateCount: 1, maxOutputTokens: config.maxOutputTokens,
+            imageConfig: { aspectRatio: "16:9", imageSize: "1K" }, abortSignal: signal,
+          } });
+          signal.throwIfAborted();
+          const candidate = response.candidates?.[0];
+          if (response.promptFeedback?.blockReason || ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT"].includes(candidate?.finishReason ?? "")) throw new GenerationError("AI_REFUSED");
+          if (candidate?.finishReason === "MAX_TOKENS") throw new GenerationError("OUTPUT_TRUNCATED");
+          if (candidate?.finishReason !== "STOP") throw new GenerationError("INVALID_OUTPUT");
+          const images = candidate.content?.parts?.filter(part => !part.thought && part.inlineData) ?? [];
+          if (images.length !== 1 || !["image/png", "image/jpeg", "image/webp"].includes(images[0].inlineData?.mimeType ?? "")) throw new GenerationError("INVALID_OUTPUT");
+          data = images[0].inlineData?.data;
+        }
         signal.throwIfAborted();
-        if (!Number.isSafeInteger(count.totalTokens) || count.totalTokens! < 1) throw new GenerationError("PROVIDER_UNAVAILABLE");
-        if (count.totalTokens! > config.maxInputTokens) throw new GenerationError("TOKEN_LIMIT_EXCEEDED");
-        budget.startAttempt(reservation); started = true;
-        const response = await client.models.generateContent({ model: config.model, contents, config: {
-          responseModalities: ["IMAGE"], candidateCount: 1, maxOutputTokens: config.maxOutputTokens,
-          imageConfig: { aspectRatio: "16:9", imageSize: "1K" }, abortSignal: signal,
-        } });
-        signal.throwIfAborted();
-        const candidate = response.candidates?.[0];
-        if (response.promptFeedback?.blockReason || ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT"].includes(candidate?.finishReason ?? "")) throw new GenerationError("AI_REFUSED");
-        if (candidate?.finishReason === "MAX_TOKENS") throw new GenerationError("OUTPUT_TRUNCATED");
-        if (candidate?.finishReason !== "STOP") throw new GenerationError("INVALID_OUTPUT");
-        const images = candidate.content?.parts?.filter(part => !part.thought && part.inlineData) ?? [];
-        if (images.length !== 1 || !["image/png", "image/jpeg", "image/webp"].includes(images[0].inlineData?.mimeType ?? "")) throw new GenerationError("INVALID_OUTPUT");
-        const data = images[0].inlineData?.data;
         if (!data || data.length > 12000000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) throw new GenerationError("INVALID_OUTPUT");
         const png = await normalizeImage(Buffer.from(data, "base64"));
         signal.throwIfAborted();
@@ -135,6 +154,10 @@ export function createSceneImageHandlers(options: { directory?: string; env?: En
         let failure = error instanceof GenerationError ? error : new GenerationError("PROVIDER_UNAVAILABLE");
         if (error instanceof SyntaxError) failure = new GenerationError("INVALID_REQUEST");
         if (error instanceof ApiError) failure = new GenerationError(error.status === 401 || error.status === 403 ? "AI_AUTH_FAILED" : error.status === 429 ? "RATE_LIMITED" : "PROVIDER_UNAVAILABLE");
+        if (error instanceof OpenAI.APIError) failure = new GenerationError(
+          error.status === 401 || error.code === "insufficient_quota" ? "AI_AUTH_FAILED"
+            : error.status === 403 || error.status === 404 ? "IMAGE_MODEL_UNAVAILABLE"
+            : error.status === 429 ? "RATE_LIMITED" : "PROVIDER_UNAVAILABLE");
         if (signal.aborted) failure = new GenerationError(request.signal.aborted ? "CANCELLED" : "TIMEOUT");
         return Response.json({ error: failure.message, code: failure.code }, { status: failure.status, headers });
       } finally {

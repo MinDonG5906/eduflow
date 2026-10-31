@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { execFileSync } from "node:child_process";
 import { createCanvas } from "@napi-rs/canvas";
 import { PDFParse } from "pdf-parse";
 import { defaults, generateDemo, sample, type Scene } from "./storyboard";
@@ -16,6 +17,7 @@ import { readConnectionState, updateConnectionState } from "./server/connection-
 import { exportStoryboardPdf } from "./server/pdf-export";
 import { readDraft, serializeDraft } from "./studio-state";
 import { promptTask } from "./server/provider-prompt";
+import { OPENAI_SCENE_IMAGE_MODEL } from "./server/openai-scene-image";
 
 const KEY = "fake-gemini-image-key-for-tests-only";
 const env = { EDUFLOW_GEMINI_API_KEY: KEY, EDUFLOW_AI_REQUESTS_PER_HOUR: "100" };
@@ -212,4 +214,81 @@ test("personal lower token limits remain in force for image calls", t => {
   assert.equal(config.maxInputTokens, 2000);
   assert.equal(config.maxOutputTokens, 2048);
   assert.ok(config.attemptCost < sceneImageConfig(directory, env).attemptCost);
+});
+
+test("scene image and visual recommendation siblings never share the same React key", () => {
+  const output = execFileSync(process.execPath, ["--import", "tsx", "-e", `
+    global.React = require('react');
+    const { SceneEditor } = require('./components/studio/scene-editor.tsx');
+    const { generateDemo, sample, defaults } = require('./lib/storyboard.ts');
+    const scene = generateDemo(sample, defaults).scenes[0];
+    const element = SceneEditor({scene,index:0,sceneCount:3,manuscript:sample,sourceFile:null,settings:defaults,
+      imageSettings:{style:'sketch',direction:''},onImageSettingsChange:()=>{},onOpenConnection:()=>{},
+      onChange:()=>{},onMove:()=>{},onDelete:()=>{},onRegenerate:()=>{},canRegenerate:true});
+    const keys = element.props.children.filter(child => React.isValidElement(child) && child.key !== null).map(child => child.key);
+    console.log(JSON.stringify(keys));
+  `], { cwd: process.cwd(), encoding: "utf8" });
+  const keys: string[] = JSON.parse(output);
+  assert.equal(new Set(keys).size, keys.length, "one scene ID cannot key both image and recommendation panels");
+});
+
+test("an existing OpenAI connection enables images without a Gemini key and sends one bounded generation", async t => {
+  const directory = temporary(t, false);
+  const openaiEnv = { EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: "fake-openai-image-key", EDUFLOW_AI_REQUESTS_PER_HOUR: "100" };
+  const connections = createConnectionHandlers({ directory, env: openaiEnv });
+  const calls: { url: string; body: any }[] = [];
+  const handler = createSceneImageHandlers({ directory, env: openaiEnv, fetch: async (url, init) => {
+    calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+    return json({ created: 1, data: [{ b64_json: png().toString("base64") }] });
+  } });
+  const before = await (await handler.GET(post({}))).json();
+  assert.equal(before.available, false); assert.equal(before.vendor, "OpenAI");
+  assert.equal((await connections.POST(post({ action: "setImageEnabled", enabled: true, consent: true }))).status, 200);
+  const status = await (await handler.GET(post({}))).json();
+  assert.equal(status.available, true); assert.equal(status.vendor, "OpenAI");
+  assert.equal(status.model, OPENAI_SCENE_IMAGE_MODEL);
+  const response = await handler.POST(post(input()));
+  assert.equal(response.status, 200, await response.clone().text());
+  const result = sceneImageResultSchema.parse(await response.json());
+  assert.equal(result.model, OPENAI_SCENE_IMAGE_MODEL);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.openai.com/v1/images/generations");
+  assert.equal(calls[0].body.n, 1); assert.equal(calls[0].body.quality, "low");
+  assert.equal(calls[0].body.size, "1536x864");
+  assert.ok(calls[0].body.prompt.includes(input().scene.evidence));
+  assert.ok(!JSON.stringify(result).includes(openaiEnv.EDUFLOW_AI_API_KEY));
+  assert.equal(usage(directory).active, 0);
+});
+
+test("OpenAI reference edits send a thumbnail and account/model failures do not retry", async t => {
+  const directory = temporary(t);
+  const openaiEnv = { EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: "fake-openai-image-key", EDUFLOW_AI_REQUESTS_PER_HOUR: "100" };
+  let calls = 0, fail = false;
+  const handler = createSceneImageHandlers({ directory, env: openaiEnv, fetch: async (url, init) => {
+    // The SDK probes multipart support using a local data URL; it is not an API call.
+    if (String(url).startsWith("data:")) return new Response("");
+    calls++;
+    assert.equal(String(url), "https://api.openai.com/v1/images/edits");
+    if (fail) return json({ error: { message: "private provider details", type: "permission_error", code: "model_not_found" } }, 403);
+    const form = await new Request(String(url), init).formData();
+    assert.equal(form.get("model"), OPENAI_SCENE_IMAGE_MODEL);
+    assert.equal(form.get("quality"), "low");
+    const file = form.get("image");
+    assert.ok(file instanceof Blob); assert.equal(file.type, "image/png");
+    return json({ created: 1, data: [{ b64_json: png().toString("base64") }] });
+  } });
+  function request() {
+    const form = new FormData(); form.set("input", JSON.stringify(input()));
+    form.set("reference", new Blob([new Uint8Array(png())], { type: "image/png" }), "reference.png");
+    return new Request("http://127.0.0.1:3000/api/scene-image", { method: "POST", headers: { origin: "http://127.0.0.1:3000" }, body: form });
+  }
+  const response = await handler.POST(request());
+  assert.equal(response.status, 200, await response.clone().text());
+  fail = true;
+  const failed = await handler.POST(request());
+  assert.equal(failed.status, 503);
+  const error = await failed.json();
+  assert.equal(error.code, "IMAGE_MODEL_UNAVAILABLE");
+  assert.ok(!JSON.stringify(error).includes("private provider details"));
+  assert.equal(calls, 2);
 });

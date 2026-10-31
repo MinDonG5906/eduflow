@@ -6,6 +6,7 @@ import { assertLocalAIRequest } from "./ai-config";
 import {
   CLAUDE_MODELS, PROVIDERS, privateDirectory, publicConnection, readConnectionState,
   updateConnectionState,
+  imageGenerationVendor,
 } from "./connection-store";
 
 const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
@@ -55,7 +56,7 @@ export function createConnectionHandlers(options: { directory?: string; env?: Re
         const update = (change: Parameters<typeof updateConnectionState>[0]) => updateConnectionState(change, directory(), env());
         switch (body.action) {
           case "setImageEnabled":
-            if (body.enabled && !env().EDUFLOW_GEMINI_API_KEY?.trim()) throw new GenerationError("AI_NOT_CONFIGURED");
+            if (body.enabled && !imageGenerationVendor(readConnectionState(directory(), env()), env())) throw new GenerationError("AI_NOT_CONFIGURED");
             update((state) => ({ ...state, imageEnabled: body.enabled }));
             break;
           case "select":

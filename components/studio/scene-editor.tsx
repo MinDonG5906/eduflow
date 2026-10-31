@@ -178,7 +178,7 @@ export function SceneEditor({
           );
         })}
       </div>
-      <SceneImagePanel key={scene.id} scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onOpenConnection={onOpenConnection} />
+      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onOpenConnection={onOpenConnection} />
       <SceneSection title="원문 근거" icon={Quote}
         action={<EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
         description={<><span className="scene-source-location">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name)}</span>
@@ -196,7 +196,7 @@ export function SceneEditor({
           <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
         </article>)}</div>
       </SceneSection>}
-      <VisualRecommendations key={scene.id} visuals={scene.visuals ?? []} references={knowledgeReferences} />
+      <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
       <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
         description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
         <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />

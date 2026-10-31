@@ -51,7 +51,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       fetch("/api/scene-image", { cache: "no-store", signal }).then(async response => {
         if (!response.ok) throw new Error();
         const status = sceneImageStatusSchema.parse(await response.json());
-        if (!signal.aborted) setStatus(status);
+        if (!signal.aborted) { setStatus(status); setError(""); }
       }).catch(() => { if (!signal.aborted) { setStatus(null); setError("이미지 연결 상태를 확인하지 못했습니다. 모델 연결을 확인해 주세요."); } });
     };
     load(); window.addEventListener(CONNECTION_CHANGED, load);
@@ -111,6 +111,16 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     action={<Button size="sm" variant="outline" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />이미지 첨부</Button>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>
+      <div className="scene-image-actions">
+        <Button disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "콘티 생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "콘티 이미지 생성"}</Button>
+        {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
+        {scene.image && <>
+          <Button variant="outline" disabled={busy || !preview} onClick={async () => { const blob = await loadSceneImage(scene.image!.id).catch(() => undefined); if (blob) downloadBlob(blob, scene.image!.name || "storyboard-image.png"); }}><Download size={14} />이미지 저장</Button>
+          <Button variant="ghost" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} />이미지 제거</Button>
+        </>}
+      </div>
+      {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
+        : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
       <div className={`scene-image-frame ${preview ? "has-image" : ""}`}>
         {preview ? <img src={preview} alt={`${scene.title} ${scene.image?.sourceType === "generated" ? "AI 생성 콘티" : "참고 이미지"}`} />
           : <div><ImageIcon size={30} /><p>{scene.image ? "이 브라우저에서 이미지를 찾지 못했습니다. 다시 첨부하거나 생성하세요." : "이 장면의 화면을 이미지로 확인하세요."}</p></div>}
@@ -128,16 +138,6 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
         </label>
         {scene.image && <label className="connection-check"><input type="checkbox" checked={useReference} disabled={busy} onChange={event => setUseReference(event.target.checked)} />현재 이미지를 구도·인물 참고로 사용</label>}
       </div>
-      <div className="scene-image-actions">
-        <Button disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "콘티 생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "콘티 이미지 생성"}</Button>
-        {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
-        {scene.image && <>
-          <Button variant="outline" disabled={busy || !preview} onClick={async () => { const blob = await loadSceneImage(scene.image!.id).catch(() => undefined); if (blob) downloadBlob(blob, scene.image!.name || "storyboard-image.png"); }}><Download size={14} />이미지 저장</Button>
-          <Button variant="ghost" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} />이미지 제거</Button>
-        </>}
-      </div>
-      {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 Google로 전송됩니다.</p>
-        : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
       {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="scene-image-cost">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
       {scene.image?.sourceType !== "generated" && scene.image && <label className="scene-image-source">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
       <details className="scene-image-evidence"><summary>이미지에 참고할 원문·RAG 근거</summary><blockquote>{scene.evidence || "원문 근거를 먼저 확인하세요."}</blockquote>

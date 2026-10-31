@@ -62,6 +62,7 @@ export const generationResponseSchema = boardSchema.extend({
 });
 
 export const errorDefinitions = {
+  IMAGE_MODEL_UNAVAILABLE: { status: 503, retryable: false, error: "이 OpenAI 키에서 이미지 모델을 사용할 수 없습니다. OpenAI 프로젝트의 이미지 모델 권한·조직 인증·결제 설정을 확인해 주세요. 기존 이미지는 유지됩니다." },
   PDF_NOT_ATTACHED: { status: 400, retryable: false, error: "선택한 PDF를 다시 불러오고 페이지를 선택해 주세요. 기존 작업은 유지됩니다." },
   PDF_TOO_LARGE: { status: 413, retryable: false, error: "선택한 PDF는 50MB 미만이어야 합니다. 보낼 페이지 수를 줄여 주세요." },
   PDF_RENDER_TOO_LARGE: { status: 413, retryable: false, error: "선택한 페이지를 PDF 호환본으로 준비하는 처리 용량(50MB)을 넘었습니다. 보낼 페이지 수를 줄여 주세요. 기존 작업은 유지됩니다." },
