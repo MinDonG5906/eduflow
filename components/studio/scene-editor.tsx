@@ -6,10 +6,7 @@ import {
   Check,
   CheckCircle2,
   Clock3,
-  FileText,
   GraduationCap,
-  Layers3,
-  MessageSquareText,
   MonitorPlay,
   PencilLine,
   Quote,
@@ -22,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EvidenceSource } from "@/components/evidence-source";
 import { KnowledgeSource } from "@/components/knowledge-source";
 import type { PdfSource } from "@/lib/pdf-source";
-import { fieldLabels, type Scene } from "@/lib/storyboard";
+import { type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
 import type { Settings } from "@/lib/storyboard";
 import type { ImageSettings } from "@/lib/scene-image";
@@ -31,18 +28,6 @@ import { VisualRecommendations } from "./visual-recommendations";
 import { SceneSection } from "./scene-section";
 import { sourceLocationLabel } from "@/lib/source-location";
 
-// Production fields stay editable; source material is grouped below them.
-const textFields = [
-  "visual",
-  "assets",
-  "narration",
-] as const;
-const fieldIcons = {
-  visual: MonitorPlay,
-  assets: Layers3,
-  narration: MessageSquareText,
-  subtitle: FileText,
-} as const;
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
 
 export function SceneEditor({
@@ -119,65 +104,26 @@ export function SceneEditor({
           </button>
         </div>
       </div>
-      <Input
-        className="scene-title-input"
-        aria-label="장면 제목"
-        value={scene.title}
-        onChange={(e) => onChange("title", e.target.value)}
-      />
-      <div className="scene-basics">
-        <div className="scene-field">
-          <label htmlFor="scene-purpose">
-            <GraduationCap size={15} /> 장면 목적{" "}
-            {scene.edited.includes("purpose") && <small>수정됨</small>}
-          </label>
-          <Textarea
-            id="scene-purpose"
-            aria-label="장면 목적"
-            value={scene.purpose}
-            onChange={(e) => onChange("purpose", e.target.value)}
-          />
-        </div>
-        <div className="scene-field">
-          <label htmlFor="duration">
-            <Clock3 size={14} /> 예상 시간
-          </label>
-          <div className="duration-input">
-            <Input
-              id="duration"
-              type="number"
-              min={1}
-              max={600}
-              step={1}
-              value={scene.duration}
-              onChange={(e) => onChange("duration", normalizeDuration(e.target.value))}
-            />
-            <span>초</span>
+      <div className="scene-title-row">
+        <Input className="scene-title-input" aria-label="장면 제목" value={scene.title} onChange={event => onChange("title", event.target.value)} />
+        <label className="scene-duration-compact"><Clock3 size={14} aria-hidden="true" /><span className="sr-only">예상 시간</span>
+          <Input aria-label="예상 시간" type="number" min={1} max={600} step={1} value={scene.duration} onChange={event => onChange("duration", normalizeDuration(event.target.value))} /><span>초</span>
+        </label>
+      </div>
+      <details className="scene-direction-details">
+        <summary>장면 목적·화면 설명</summary>
+        <div className="scene-direction-fields">
+          <div className="scene-field">
+            <label htmlFor="scene-purpose"><GraduationCap size={15} />장면 목적{scene.edited.includes("purpose") && <small>수정됨</small>}</label>
+            <Textarea id="scene-purpose" aria-label="장면 목적" value={scene.purpose} rows={2} onChange={event => onChange("purpose", event.target.value)} />
+          </div>
+          <div className="scene-field">
+            <label htmlFor="field-visual"><MonitorPlay size={15} />화면 설명{scene.edited.includes("visual") && <small>수정됨</small>}</label>
+            <Textarea id="field-visual" aria-label="화면 설명" value={scene.visual} rows={3} onChange={event => onChange("visual", event.target.value)} />
           </div>
         </div>
-      </div>
-
-      <div className="scene-fields">
-        {textFields.map((key) => {
-          const Icon = fieldIcons[key];
-          return (
-            <div key={key} className={`scene-field field-${key}`}>
-              <label htmlFor={`field-${key}`}>
-                <Icon size={15} />{" "}
-                {fieldLabels[key]}
-                {scene.edited.includes(key) && <small>수정됨</small>}
-              </label>
-              <Textarea
-                id={`field-${key}`}
-                value={scene[key]}
-                onChange={(e) => onChange(key, e.target.value)}
-                rows={key === "narration" ? 4 : 2}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onSubtitleChange={subtitle => onChange("subtitle", subtitle)} onOpenConnection={onOpenConnection} />
+      </details>
+      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} />
       <SceneSection title="원문 근거" icon={Quote}
         action={<EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
         description={<><span className="scene-source-location">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name)}</span>

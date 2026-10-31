@@ -14,10 +14,10 @@ import { SceneSection } from "./scene-section";
 import { SceneComposition } from "./scene-composition";
 import { exportSceneComposition } from "@/lib/scene-composition-export";
 
-export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onSubtitleChange, onOpenConnection }: {
+export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onTextChange, onOpenConnection }: {
   scene: Scene; settings: Settings; imageSettings: ImageSettings; onSettingsChange: (settings: ImageSettings) => void;
   onChange: (image: Scene["image"]) => void; onPlacementsChange: (placements: Scene["visualPlacements"]) => void; onOpenConnection: () => void;
-  onSubtitleChange: (subtitle: string) => void;
+  onTextChange: (field: "subtitle" | "narration" | "assets", value: string) => void;
   onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const [status, setStatus] = useState<SceneImageStatus | null>(null);
@@ -125,8 +125,8 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     {scene.image && <label className="studio-toggle image-reference-toggle"><span>현재 이미지 참고</span><input type="checkbox" role="switch" checked={useReference} disabled={busy} onChange={event => setUseReference(event.target.checked)} /></label>}
     {scene.image?.sourceType !== "generated" && scene.image && <label className="image-direction-field">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
   </div>;
-  return <SceneSection title="스토리보드 이미지" icon={ImageIcon} className="storyboard-image-section"
-    action={<InfoDialog title="스토리보드 이미지 안내" description="이미지 생성 비용, 편집 방법과 참고 근거를 확인하세요.">
+  return <SceneSection title="스토리보드" icon={ImageIcon} className="storyboard-image-section"
+    action={<InfoDialog title="스토리보드 안내" description="이미지 생성 비용, 편집 방법과 참고 근거를 확인하세요.">
       <section><h4>생성 비용·전송 정보</h4>
         {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도입니다.</p>
           <p>호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
@@ -144,7 +144,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     </InfoDialog>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>
-      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} onSubtitleChange={onSubtitleChange} generationSettings={generationSettings} />
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} onTextChange={onTextChange} generationSettings={generationSettings} />
       {!status?.available && <div className="image-connection-status" role="status"><span>{status?.reason || "이미지 연결 상태 확인 중…"}</span><Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></div>}
       {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="image-notice">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
       {message && <p role="status" className="image-notice">{message}</p>}

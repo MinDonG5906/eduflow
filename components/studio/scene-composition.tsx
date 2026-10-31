@@ -1,18 +1,18 @@
 import { useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { useCompositionAssets } from "@/hooks/use-composition-assets";
-import { Image as ImageIcon, Layers3, Captions } from "lucide-react";
+import { Image as ImageIcon, Layers3, Captions, MessageSquareText } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { Scene, VisualPlacement } from "@/lib/storyboard";
 import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, compositionVisuals, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
 
-export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onSubtitleChange, generationSettings }: {
-  onSubtitleChange: (subtitle: string) => void; generationSettings: ReactNode;
+export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onTextChange, generationSettings }: {
+  onTextChange: (field: "subtitle" | "narration" | "assets", value: string) => void; generationSettings: ReactNode;
   scene: Scene; preview?: string; busy: boolean; onChange: (placements: VisualPlacement[]) => void; onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const id = useId();
   const [tab, setTab] = useState("image");
-  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "subtitle", label: "자막", icon: Captions }];
+  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "subtitle", label: "자막", icon: Captions }, { id: "narration", label: "나레이션", icon: MessageSquareText }];
   const [firstCaption, ...followingCaptions] = scene.subtitle.replace(/\r/g, "").split("\n");
   const secondCaption = followingCaptions.join("\n");
   const visuals = compositionVisuals(scene), placements = sceneVisualPlacements(scene);
@@ -79,7 +79,11 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
       </div>
       <div className="composition-inspector-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`} tabIndex={0}>
         {tab === "image" && generationSettings}
-        {tab === "visuals" && (visuals.length > 0 ? <div className="composition-controls">
+        {tab === "visuals" && <div className="composition-visual-settings">
+          <label className="composition-text-field">시각자료 제안{scene.edited.includes("assets") && <small>수정됨</small>}
+            <Textarea aria-label="시각자료 제안" value={scene.assets} rows={3} disabled={busy} placeholder="이 장면에 사용할 사진·표·그래픽을 적어 주세요." onChange={event => onTextChange("assets", event.target.value)} />
+          </label>
+          {visuals.length > 0 ? <div className="composition-controls">
           <div className="composition-control-row">
             <label>추천 시각자료<select aria-label="배치할 추천 시각자료" value={selected} disabled={busy} onChange={event => setSelected(event.target.value)}>
               {visuals.map((visual, i) => <option key={visual.id} value={visual.id}>{i + 1} · {visual.kind === "table" ? "표" : "그림"} · {visual.title}</option>)}
@@ -93,7 +97,9 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
             </select></label>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(defaultVisualPlacements(scene))}>추천 배치</Button>
           </div>
-        </div> : <div className="composition-no-assets"><Layers3 size={24} /><strong>연결된 추천 자료가 없습니다</strong><span>장면에 추천된 사진·표가 생기면 여기에 표시됩니다.</span></div>)}
+        </div> : <div className="composition-no-assets"><Layers3 size={24} /><strong>연결된 추천 자료가 없습니다</strong><span>장면에 추천된 사진·표가 생기면 여기에 표시됩니다.</span></div>}
+        </div>}
+        {tab === "narration" && <label className="composition-text-field">나레이션{scene.edited.includes("narration") && <small>수정됨</small>}<Textarea aria-label="나레이션" value={scene.narration} rows={6} disabled={busy} placeholder="이 장면에서 전달할 나레이션을 작성하세요." onChange={event => onTextChange("narration", event.target.value)} /></label>}
         {tab === "subtitle" && <div className="composition-subtitle-controls">
           <div className="composition-control-row">
             <label>자막 위치<select aria-label="스토리보드 자막 위치" value={scene.subtitleSettings?.position ?? "auto"} disabled={busy || scene.subtitleSettings?.enabled === false} onChange={event => onSubtitleSettingsChange({ enabled: scene.subtitleSettings?.enabled !== false, position: event.target.value as "auto" | "top" | "bottom" })}>
@@ -101,8 +107,8 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
             </select></label>
             <label className="studio-toggle"><span>자막 표시</span><input type="checkbox" role="switch" aria-label="스토리보드 자막 표시" checked={scene.subtitleSettings?.enabled !== false} disabled={busy} onChange={event => onSubtitleSettingsChange({ enabled: event.target.checked, position: scene.subtitleSettings?.position ?? "auto" })} /></label>
           </div>
-          <label>자막 1<Textarea aria-label="자막 1" rows={1} value={firstCaption} disabled={busy} placeholder="장면의 핵심 내용" onChange={event => onSubtitleChange(`${event.target.value.replace(/\n/g, " ")}\n${secondCaption}`)} /></label>
-          <label>자막 2<Textarea aria-label="자막 2" rows={1} value={secondCaption} disabled={busy} placeholder="이어지는 설명이나 행동 안내" onChange={event => onSubtitleChange(`${firstCaption}\n${event.target.value}`)} /></label>
+          <label>자막 1<Textarea aria-label="자막 1" rows={1} value={firstCaption} disabled={busy} placeholder="장면의 핵심 내용" onChange={event => onTextChange("subtitle", `${event.target.value.replace(/\n/g, " ")}\n${secondCaption}`)} /></label>
+          <label>자막 2<Textarea aria-label="자막 2" rows={1} value={secondCaption} disabled={busy} placeholder="이어지는 설명이나 행동 안내" onChange={event => onTextChange("subtitle", `${firstCaption}\n${event.target.value}`)} /></label>
           {subtitle?.truncated && <p role="status" className="image-notice">자막이 길어 미리보기에서 일부를 줄였습니다. PDF 자막 항목에는 전체 문장이 유지됩니다.</p>}
         </div>}
       </div>
