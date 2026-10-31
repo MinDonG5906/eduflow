@@ -341,7 +341,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .setting-scope { color: var(--body); font-size: 11px; font-weight: 400; }
 .scene-image-settings > label:has(.setting-scope) { position: relative; }
 .scene-image-settings .setting-scope { position: absolute; right: 0; top: 0; }
-.scene-image-settings select, .composition-controls select, .composition-geometry input, .composition-subtitle-controls select { min-height: 40px; width: 100%; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 8px 10px; background: var(--canvas); color: var(--ink); min-width: 0; }
+.scene-image-settings select, .composition-controls select, .composition-subtitle-controls select { min-height: 40px; width: 100%; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 8px 10px; background: var(--canvas); color: var(--ink); min-width: 0; }
 .scene-image-settings textarea { min-height: 72px; field-sizing: fixed; }
 .scene-image-actionbar { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; background: var(--canvas); border: 1px solid var(--hairline-strong); border-radius: 10px; box-shadow: 0 4px 20px rgb(0 0 0 / 7%); }
 .image-file-actions, .image-generate-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -400,10 +400,9 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .composition-resize-handle:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
 .composition-resize-handle:disabled { cursor: wait; }
 .composition-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-.composition-toolbar label, .composition-geometry label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
+.composition-toolbar label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
 .composition-controls { display: grid; gap: 16px; }
 .composition-controls summary { cursor: pointer; font-size: 12px; color: var(--body); }
-.composition-geometry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 0; }
 .composition-source-number { display: inline-block; color: #72581d; background: #fff4cc; border: 1px solid #e8d598; border-radius: 4px; padding: 3px 6px; font-size: 11px; margin-bottom: 6px; }
 .scene-review-section textarea { border-color: var(--warning-border); background: var(--warning-bg); }
 @media (max-width: 600px) {
@@ -903,7 +902,6 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .composition-control-row { flex-wrap: wrap; gap: 8px; }
   .composition-control-row > label:not(.studio-toggle) { flex-basis: 100%; }
   .composition-control-row > .studio-toggle { width: 100%; }
-  .composition-geometry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .scene-image-actionbar { bottom: 8px; gap: 8px; flex-wrap: wrap; padding: 10px; }
   .image-file-actions { flex: 1; }
   .image-generate-actions { flex: 1; justify-content: flex-end; }

@@ -24,10 +24,6 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
   const shown = { ...scene, visualPlacements: draft ?? placements };
   const sources = useCompositionAssets(shown);
   const subtitle = compositionSubtitle(shown);
-  const update = (patch: Partial<VisualPlacement>) => {
-    if (active) onChange(placements.map(item => item.visualId !== selected ? item : patch.width !== undefined || patch.height !== undefined
-      ? resizeVisualPlacement(item, patch.width ?? item.width, patch.height ?? item.height) : clampVisualPlacement({ ...item, ...patch })));
-  };
   const startDrag = (event: PointerEvent<HTMLButtonElement>, id: string, mode: "move" | "resize") => {
     if (event.button !== 0) return;
     setSelected(id); event.currentTarget.setPointerCapture(event.pointerId);
@@ -97,9 +93,6 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
             </select></label>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(defaultVisualPlacements(scene))}>추천 배치</Button>
           </div>
-          {active && <div className="composition-geometry">
-            {([['x', '가로 위치'], ['y', '세로 위치'], ['width', '너비'], ['height', '높이']] as const).map(([key, label]) => <label key={key}>{label} (%)<input type="number" aria-label={`자료 ${label}`} min={key === "x" || key === "y" ? 0 : 10} max={100} step={1} value={Math.round(active[key] * 10) / 10} disabled={busy} onChange={event => update({ [key]: event.target.valueAsNumber })} /></label>)}
-          </div>}
         </div> : <div className="composition-no-assets"><Layers3 size={24} /><strong>연결된 추천 자료가 없습니다</strong><span>장면에 추천된 사진·표가 생기면 여기에 표시됩니다.</span></div>)}
         {tab === "subtitle" && <div className="composition-subtitle-controls">
           <div className="composition-control-row">
