@@ -11,7 +11,7 @@ import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-im
 import type { Scene, Settings } from "@/lib/storyboard";
 import { SceneSection } from "./scene-section";
 import { SceneComposition } from "./scene-composition";
-import { compositionStickers } from "@/lib/scene-composition";
+import { clampImageScale, compositionStickers } from "@/lib/scene-composition";
 import { exportSceneComposition } from "@/lib/scene-composition-export";
 
 export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onOpenConnection }: {
@@ -87,6 +87,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       await saveSceneImage(id, blob); saved = id;
       if (!unchanged()) throw new Error("장면 내용이 변경되어 기존 이미지를 유지했습니다.");
       latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성 콘티 · 원문과 대조 필요", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
+        ...(scene.image?.scalePercent !== undefined ? { scalePercent: scene.image.scalePercent } : {}),
         generated: { model: result.model, prompt: result.prompt, createdAt: result.createdAt, basedOn: result.basedOn } });
       saved = undefined;
       setMessage("콘티 이미지를 저장했습니다. 원문과 대조한 뒤 사용하세요.");
@@ -130,7 +131,8 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       </div>
       {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
         : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
-      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} />
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange}
+        onImageScaleChange={scalePercent => { if (scene.image) onChange({ ...scene.image, scalePercent: clampImageScale(scalePercent) }); }} />
       <div className="scene-image-settings">
         <label>공통 그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
           {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

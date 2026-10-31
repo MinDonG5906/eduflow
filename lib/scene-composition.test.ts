@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFParse } from "pdf-parse";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import { defaults, generateDemo, sample, sceneSchema, visualPlacementSchema } from "./storyboard";
 import type { VisualRecommendation } from "./knowledge-structure";
-import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionStickers, defaultVisualPlacements, sceneVisualPlacements } from "./scene-composition";
+import { clampImageScale, clampVisualPlacement, compositionBackgroundRect, compositionLayouts, compositionOverlaySvg, compositionStickers, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements } from "./scene-composition";
 import { sceneImageInput } from "./scene-image";
 import { sceneImagePrompt } from "./server/scene-image";
 import { readDraft, serializeDraft } from "./studio-state";
@@ -85,4 +86,41 @@ test("PDF includes the same numbered placeholders and source legend even without
     assert.match(text, /추천시각자료1·그림/); assert.match(text, /추천시각자료2·표/);
     assert.match(text, /안전모착용그림\(7페이지\)/); assert.match(text, /점검항목표\(7페이지\)/);
   } finally { await parser.destroy(); }
+});
+
+test("corner resizing preserves the anchored corner and clamps size to the frame", () => {
+  const placement = { visualId: "asset", x: 35, y: 20, width: 40, height: 50 };
+  assert.deepEqual(resizeVisualPlacement(placement, 90, 100), { ...placement, width: 65, height: 80 });
+  assert.deepEqual(resizeVisualPlacement(placement, -5, 1), { ...placement, width: 10, height: 10 });
+  assert.deepEqual(resizeVisualPlacement(placement, NaN, Infinity), placement);
+});
+
+test("background size survives drafts and remains proportional in preview, PNG and PDF coordinates", () => {
+  const value = board();
+  value.scenes[0].image = { id: "background", sourceType: "upload", sourceText: "source", scalePercent: 60 };
+  const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board: value })).board!;
+  assert.equal(restored.scenes[0].image?.scalePercent, 60);
+  assert.deepEqual(replaceScene(restored, restored.scenes[0].id, { ...restored.scenes[0], image: undefined }).scenes[0].image?.scalePercent, 60);
+  for (const [width, height] of [[1600, 900], [900, 1600]]) {
+    const png = compositionBackgroundRect(width, height, 1600, 900, 60);
+    const pdf = compositionBackgroundRect(width, height, 280, 157.5, 60);
+    for (const key of ['x', 'y', 'width', 'height'] as const) assert.ok(Math.abs(png[key] / 1600 - pdf[key] / 280) < 1e-9);
+    assert.ok(Math.abs(png.width / png.height - width / height) < 1e-9);
+    assert.ok(png.x >= 0 && png.y >= 0 && png.x + png.width <= 1600 && png.y + png.height <= 900);
+  }
+  assert.equal(clampImageScale(0), 20); assert.equal(clampImageScale(900), 100);
+  assert.equal(clampImageScale(NaN), 100);
+});
+
+test("PDF actually embeds the resized background instead of filling the frame again", async () => {
+  const value = board(); value.scenes = [value.scenes[0]];
+  value.scenes[0].image = { id: "background", sourceType: "upload", sourceText: "example", scalePercent: 50 };
+  const canvas = createCanvas(1600, 900); canvas.getContext('2d').fillRect(0, 0, 1600, 900);
+  const bytes = await exportStoryboardPdf({ board: value, sceneImages: new Map([[value.scenes[0].id, canvas.toBuffer('image/png')]]) });
+  const pdf = await PDFDocument.load(bytes);
+  const contents = pdf.getPages()[0].node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray().map(ref => pdf.context.lookup(ref)) : [contents];
+  const operators = streams.filter((stream): stream is PDFRawStream => stream instanceof PDFRawStream)
+    .map(stream => Buffer.from(decodePDFRawStream(stream).decode()).toString('utf8')).join('\n');
+  assert.match(operators, /140 0 0 78\.75 0 0 cm/, 'half-size background must retain its actual dimensions in the PDF');
 });

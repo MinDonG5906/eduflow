@@ -370,6 +370,18 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .composition-sticker-target.selected { border-color: #947222; }
 .composition-sticker-target:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
 .composition-sticker-target:disabled { cursor: wait; }
+.composition-background-outline { position: absolute; border: 1px dashed #777; pointer-events: none; }
+.scene-section .composition-resize-handle { position: absolute; z-index: 3; width: 22px; height: 22px; min-height: 22px; padding: 0; transform: translate(-100%, -100%); border: 2px solid white; border-radius: 3px; background: #a98024; box-shadow: 0 0 0 1px #72581d; cursor: nwse-resize; touch-action: none; }
+.scene-section .composition-sticker-target { min-height: 0; }
+.composition-resize-handle::after { content: ""; display: block; width: 10px; height: 10px; margin: 4px; background: repeating-linear-gradient(135deg, transparent 0 3px, white 3px 4px); }
+.composition-resize-handle.background { background: #555; box-shadow: 0 0 0 1px #333; }
+.composition-resize-handle:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
+.composition-resize-handle:disabled { cursor: wait; }
+.composition-image-size { display: grid; gap: 8px; font-size: 12px; }
+.composition-image-size > label { display: flex; align-items: center; gap: 12px; }
+.composition-image-size > div { display: flex; align-items: center; gap: 12px; }
+.composition-image-size input { flex: 1; min-width: 0; accent-color: #555; }
+.composition-image-size p { color: var(--body); line-height: 1.6; font-size: 11px; }
 .composition-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .composition-toolbar label, .composition-controls > label:not(.connection-check), .composition-geometry label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
 .composition-toolbar select, .composition-controls select, .composition-geometry input { min-height: 36px; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }

@@ -7,7 +7,7 @@ import type { Board } from "../storyboard";
 import { citedPdfPage, sourceUnit, type PdfSource } from "../pdf-source";
 import { officeFontCandidates } from "./office-fonts";
 import { renderPdfPages } from "./pdf-render";
-import { compositionStickers } from "../scene-composition";
+import { compositionBackgroundRect, compositionStickers } from "../scene-composition";
 
 // A4 Landscape dimensions in points (297mm x 210mm)
 const PAGE_WIDTH = 841.89;
@@ -276,7 +276,7 @@ export async function exportStoryboardPdf({
       page.drawText("화면 / 참고 이미지",{x:MARGIN_X,y:bodyTop-10,size:10,font:fonts.bold,color:ink});
       const frameTop=bodyTop-24, frameHeight=leftWidth*9/16, frameY=frameTop-frameHeight;
       page.drawRectangle({x:MARGIN_X,y:frameY,width:leftWidth,height:frameHeight,color:soft,borderColor:lineColor,borderWidth:0.6});
-      if(image){const padding=stickers.length?0:8;const scale=Math.min((leftWidth-padding)/image.width,(frameHeight-padding)/image.height);const w=image.width*scale,h=image.height*scale;page.drawImage(image,{x:MARGIN_X+(leftWidth-w)/2,y:frameY+(frameHeight-h)/2,width:w,height:h});}
+      if(image){const rect=compositionBackgroundRect(image.width,image.height,leftWidth,frameHeight,embeddedSceneImages.has(scene.id)?scene.image?.scalePercent:100);page.drawImage(image,{x:MARGIN_X+rect.x,y:frameY+rect.y,width:rect.width,height:rect.height});}
       else if (!stickers.length) {page.drawText(imageRenderError?"참고 이미지 표시 실패":"참고 이미지 미등록",{x:MARGIN_X+16,y:frameY+frameHeight/2,size:10,font:fonts.regular,color:body});}
       for (const sticker of stickers) {
         const x = MARGIN_X + sticker.x / 100 * leftWidth, y = frameY + (100 - sticker.y - sticker.height) / 100 * frameHeight;

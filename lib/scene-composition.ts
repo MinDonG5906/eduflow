@@ -36,6 +36,17 @@ export function clampVisualPlacement(placement: VisualPlacement): VisualPlacemen
   const height = Math.min(100, Math.max(10, finite(placement.height, 40)));
   return { ...placement, width, height, x: Math.min(100 - width, Math.max(0, finite(placement.x, 0))), y: Math.min(100 - height, Math.max(0, finite(placement.y, 0))) };
 }
+// Resize from the lower-right corner without moving the opposite corner.
+export function resizeVisualPlacement(placement: VisualPlacement, width: number, height: number): VisualPlacement {
+  return { ...placement, width: Math.min(100 - placement.x, Math.max(10, Number.isFinite(width) ? width : placement.width)), height: Math.min(100 - placement.y, Math.max(10, Number.isFinite(height) ? height : placement.height)) };
+}
+export const clampImageScale = (scale = 100) => Number.isFinite(scale) ? Math.min(100, Math.max(20, scale)) : 100;
+// Shared by PNG and PDF; CSS uses the same centered percentage box with contain.
+export function compositionBackgroundRect(imageWidth: number, imageHeight: number, frameWidth: number, frameHeight: number, scalePercent = 100) {
+  const scale = Math.min(frameWidth / imageWidth, frameHeight / imageHeight) * clampImageScale(scalePercent) / 100;
+  const width = imageWidth * scale, height = imageHeight * scale;
+  return { x: (frameWidth - width) / 2, y: (frameHeight - height) / 2, width, height };
+}
 export function compositionStickers(scene: CompositionScene) {
   const visuals = compositionVisuals(scene);
   return sceneVisualPlacements(scene).flatMap(placement => {

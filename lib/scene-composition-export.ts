@@ -1,5 +1,5 @@
 import type { Scene } from "./storyboard";
-import { compositionOverlaySvg } from "./scene-composition";
+import { compositionBackgroundRect, compositionOverlaySvg } from "./scene-composition";
 
 const imageFromUrl = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
   const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url;
@@ -12,8 +12,8 @@ export async function exportSceneComposition(scene: Scene, background?: Blob): P
   if (background) {
     const url = URL.createObjectURL(background);
     try {
-      const image = await imageFromUrl(url), scale = Math.min(1600 / image.width, 900 / image.height);
-      context.drawImage(image, (1600 - image.width * scale) / 2, (900 - image.height * scale) / 2, image.width * scale, image.height * scale);
+      const image = await imageFromUrl(url), rect = compositionBackgroundRect(image.width, image.height, 1600, 900, scene.image?.scalePercent);
+      context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
     } finally { URL.revokeObjectURL(url); }
   }
   const overlay = await imageFromUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compositionOverlaySvg(scene))}`);
