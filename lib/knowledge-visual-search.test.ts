@@ -126,3 +126,24 @@ test("table card markup preserves merged cells and empty answers", () => {
   assert.match(markup, /600m³, 200m³\/min, 30분/);
   assert.match(markup, /<caption class="sr-only">추천 표의 추출 내용<\/caption>/);
 });
+
+
+test("unused text slots admit additional relevant visuals without increasing the combined limit", t => {
+  const { base, document, structure } = fixture(t);
+  const expanded = structuredClone(structure);
+  for (let i = 1; i <= 4; i++) {
+    const figure = { ...expanded.figures[0], id: `ventilation-alternative-${i}`, title: `환기팬 용량 계산 도해 ${i}` };
+    expanded.figures.push(figure);
+    expanded.links.push({ ...expanded.links[0], id: `link-alternative-${i}`, figureId: figure.id });
+  }
+  assert.ok(base.saveStructure(document.id, expanded, JSON.stringify(structure)));
+  const results = base.search(query);
+  const visuals = results.flatMap(reference => reference.visuals ?? []);
+  assert.equal(results.length, 6);
+  assert.ok(results.some(reference => !reference.visuals?.length), "text evidence is retained");
+  assert.ok(visuals.length >= 4, "available slots are not discarded after three visuals");
+  assert.ok(visuals.some(visual => visual.kind === "table"));
+  assert.ok(visuals.some(visual => visual.kind !== "table"));
+  assert.deepEqual(base.search(query), results, "the same stored data and query give stable candidates");
+  for (const limit of [0, 1, 2, 3, 6]) assert.ok(base.search(query, limit).length <= limit);
+});

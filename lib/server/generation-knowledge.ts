@@ -61,8 +61,10 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
   const topic = input.sourceRequest?.trim() || input.settings.keywords.join(" ") ||
     (!input.pdfSource && input.manuscript.trim() ? manuscriptSource(input.manuscript).title : "");
   return {
-    query: [input.manuscript, input.sourceRequest ?? "", ...input.settings.keywords,
-      ...(input.scene ? [input.scene.title, input.scene.purpose, input.scene.visual, input.scene.assets, input.scene.narration] : []),
+    // Put the current scene and explicit request ahead of a long manuscript:
+    // visual search has a bounded term budget.
+    query: [...(input.scene ? [input.scene.title, input.scene.purpose, input.scene.visual, input.scene.assets, input.scene.narration] : []),
+      input.sourceRequest ?? "", ...input.settings.keywords, input.manuscript,
       ...(pageTexts.length ? pageTexts.map(text => text.slice(0, perPage)) : [input.pdfSource?.name ?? ""])]
       .join(" ").normalize("NFC"),
     topic: topic.normalize("NFC"),

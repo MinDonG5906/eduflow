@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { defaults, newScene } from "./storyboard";
 import { searchNeedles } from "./knowledge";
+import { visualSearchTerms } from "./knowledge-visual-search";
 import { selectPdfPages } from "./pdf-source";
 import { generationKnowledgeQuery, retrieveGenerationKnowledge } from "./server/generation-knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
@@ -109,4 +110,14 @@ test("slow RAG falls back within its deadline while user cancellation never fall
     controller.abort(); throw new Error("cancelled-search");
   });
   await assert.rejects(pending, (error: any) => error.code === "CANCELLED");
+});
+
+
+test("scene-specific visual terms survive a long manuscript's search budget", async () => {
+  const longManuscript = Array.from({length: 150}, (_, i) => `주제${String.fromCharCode(0xac00 + i)}설명`).join(" ");
+  const scene = { ...newScene(), title: "환기팬 용량 계산", visual: "환기팬 설치 위치를 보여준다." };
+  const result = await generationKnowledgeQuery({ manuscript: longManuscript, settings: defaults, scene }, context());
+  assert.ok(visualSearchTerms(result.query).includes("환기팬"));
+  assert.ok(result.query.indexOf(scene.title) < result.query.indexOf(longManuscript));
+  assert.ok(result.query.includes(longManuscript), "the source remains available to text retrieval");
 });
