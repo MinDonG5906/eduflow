@@ -62,13 +62,21 @@ export const sceneReferenceSchema = z.object({
 });
 export const sceneImageSchema = z.object({
   id: z.string(),
-  sourceType: z.enum(["upload", "pdf_page", "rag"]).default("upload"),
+  sourceType: z.enum(["upload", "pdf_page", "rag", "generated"]).default("upload"),
   sourceText: z.string().max(300).default(""),
   name: z.string().max(200).optional(),
   mimeType: z.string().max(50).optional(),
   pageNumber: z.number().int().positive().optional(),
+  generated: z.object({ model: z.string().max(100), prompt: z.string().max(40000), createdAt: z.string().datetime(), basedOn: z.string().regex(/^[a-f0-9]{64}$/).optional() }).optional(),
 });
 export type SceneImage = z.infer<typeof sceneImageSchema>;
+
+// Percentage coordinates in a 16:9 composition, independent of AI pixels.
+export const visualPlacementSchema = z.object({
+  visualId: z.string().max(320), x: z.number().min(0).max(90), y: z.number().min(0).max(90),
+  width: z.number().min(10).max(100), height: z.number().min(10).max(100),
+}).refine(p => p.x + p.width <= 100 && p.y + p.height <= 100, "placement outside frame");
+export type VisualPlacement = z.infer<typeof visualPlacementSchema>;
 
 export const sceneSchema = z.object({
   id: z.string(),
@@ -91,6 +99,8 @@ export const sceneSchema = z.object({
   image: sceneImageSchema.optional(),
   visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
   visuals: z.array(visualRecommendationSchema).max(20).optional(),
+  visualPlacements: z.array(visualPlacementSchema).max(20).refine(items => new Set(items.map(item => item.visualId)).size === items.length, "duplicate visual placement").optional(),
+  subtitleSettings: z.object({ enabled: z.boolean(), position: z.enum(["auto", "top", "bottom"]) }).optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
@@ -107,6 +117,7 @@ export const boardSchema = z.object({
   mode: z.enum(["demo", "ai"]),
   generation: generationMetaSchema.optional(),
   pdfSource: pdfSourceSchema.optional(),
+  imageSettings: z.object({ style: z.enum(["sketch", "illustration", "realistic"]), direction: z.string().max(600) }).optional(),
 });
 export type Board = z.infer<typeof boardSchema>;
 export const requestSchema = z.object({
@@ -220,8 +231,8 @@ export function generateDemo(
         : `타이포그래피 카드, 핵심어 강조 애니메이션, 부드러운 장면 전환${settings.keywords.length ? `\n강조 키워드: ${settings.keywords.join(", ")}` : ""}`,
       narration: `${prefix} ${evidence}`,
       subtitle: english
-        ? "Understand the main idea of this source passage."
-        : `${snippet.slice(0, 36)} — 핵심을 함께 살펴봅니다.`,
+        ? "Understand the main idea of this passage.\nReview the key points in the source."
+        : `${snippet.slice(0, 36)}\n원문에서 핵심 내용을 확인하세요.`,
       duration:
         current?.duration ||
         Math.floor((settings.minutes * 60) / count) + (i < (settings.minutes * 60) % count ? 1 : 0),
@@ -279,7 +290,7 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 스토리보드 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>

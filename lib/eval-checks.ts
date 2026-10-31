@@ -73,10 +73,10 @@ export function checkBoard(raw: unknown, input: GenerationInput): EvalReport {
     ? { id: "citations", label: "원문 근거", level: "warn", detail: `${citationScenes.join(", ")}번 장면의 근거가 원문과 일치하지 않거나 비어 있습니다.`, scenes: citationScenes }
     : { id: "citations", label: "원문 근거", level: "pass", detail: board.pdfSource ? "선택 자료의 근거 식별자가 유효합니다. 내용은 원본과 대조해 주세요." : "모든 근거가 원문에 있습니다." });
 
-  const longSubtitles = board.scenes.flatMap((scene, index) => visibleLength(scene.subtitle) > MAX_SUBTITLE_CHARS ? [index + 1] : []);
+  const longSubtitles = board.scenes.flatMap((scene, index) => scene.subtitle.split(/\r?\n/).some(line => visibleLength(line) > MAX_SUBTITLE_CHARS) ? [index + 1] : []);
   checks.push(longSubtitles.length
-    ? { id: "subtitle-length", label: "자막 길이", level: "warn", detail: `${longSubtitles.join(", ")}번 장면 자막이 ${MAX_SUBTITLE_CHARS}자를 넘습니다.`, scenes: longSubtitles }
-    : { id: "subtitle-length", label: "자막 길이", level: "pass", detail: `모든 자막이 ${MAX_SUBTITLE_CHARS}자 이하입니다.` });
+    ? { id: "subtitle-length", label: "자막 길이", level: "warn", detail: `${longSubtitles.join(", ")}번 장면 자막의 한 줄이 ${MAX_SUBTITLE_CHARS}자를 넘습니다.`, scenes: longSubtitles }
+    : { id: "subtitle-length", label: "자막 길이", level: "pass", detail: `모든 자막이 한 줄당 ${MAX_SUBTITLE_CHARS}자 이하입니다.` });
 
   if (input.settings.language === "한국어") {
     const offPace = board.scenes.flatMap((scene, index) => {

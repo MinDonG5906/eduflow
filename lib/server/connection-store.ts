@@ -44,6 +44,7 @@ const stateSchema = z.object({
   openaiKey: apiKey.optional(),
   anthropicKey: apiKey.optional(),
   anthropicModel: z.enum(claudeModelIds).default("claude-opus-5-5"),
+  imageEnabled: z.boolean().default(false),
 });
 export type ConnectionState = z.infer<typeof stateSchema>;
 
@@ -113,10 +114,18 @@ export function updateConnectionState(
 
 const masked = (key?: string) => key ? `····${key.slice(-4)}` : null;
 
+export function imageGenerationVendor(state: ConnectionState, env: Record<string, string | undefined> = process.env): "OpenAI" | "Google" | null {
+  const openai = Boolean(state.openaiKey || (env.EDUFLOW_AI_ENABLED === "true" && env.EDUFLOW_AI_API_KEY?.trim()));
+  if (state.provider === "openai-api" && openai) return "OpenAI";
+  if (env.EDUFLOW_GEMINI_API_KEY?.trim()) return "Google";
+  return openai ? "OpenAI" : null;
+}
+
 /** Everything the browser may see. Keys and tokens never leave the server. */
 export function publicConnection(state: ConnectionState, env: Record<string, string | undefined> = process.env) {
   return {
     provider: state.provider,
+    sceneImages: { enabled: state.imageEnabled, teamKey: Boolean(env.EDUFLOW_GEMINI_API_KEY?.trim()), vendor: imageGenerationVendor(state, env) },
     openai: {
       saved: masked(state.openaiKey),
       fromEnv: !state.openaiKey && env.EDUFLOW_AI_ENABLED === "true" && Boolean(env.EDUFLOW_AI_API_KEY),
