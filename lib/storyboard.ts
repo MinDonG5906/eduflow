@@ -162,6 +162,11 @@ export function manuscriptSource(manuscript: string) {
   return { title, sentences };
 }
 
+// One target-length tolerance for the editor notice, the server warning and the eval tool.
+export const DURATION_TOLERANCE = 0.1;
+export const durationOffTarget = (totalSeconds: number, minutes: number) =>
+  Math.abs(totalSeconds - minutes * 60) > minutes * 60 * DURATION_TOLERANCE;
+
 export function targetSceneCount(settings: Settings) {
   return settings.count === "auto" ? Math.max(3, Math.min(12, settings.minutes * 2)) : settings.count;
 }

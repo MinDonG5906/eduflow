@@ -3,7 +3,7 @@ import {
   generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse,
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
-import { fieldLabels, manuscriptSource, type Board } from "../storyboard";
+import { DURATION_TOLERANCE, durationOffTarget, fieldLabels, manuscriptSource, type Board } from "../storyboard";
 import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection } from "../term-corrections";
 import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
@@ -51,7 +51,9 @@ export function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-const unexpectedScript = /[\u0900-\u097f]/;
+// Scripts that never belong in Korean copy but leak into model output mid-word
+// (2026-10-28 test: Arabic inside "\uc791\uc5c5"): Cyrillic, Hebrew, Arabic, Devanagari, Thai.
+const unexpectedScript = /[\u0400-\u04ff\u0590-\u06ff\u0900-\u097f\u0e00-\u0e7f]/;
 
 function inspectOutput(raw: unknown, expected: number, language: GenerationInput["settings"]["language"], mode: Board["mode"]) {
   const scenes = new Map<number, GeneratedScene>();
@@ -100,19 +102,52 @@ function cleanEvidence(value: string) {
   return value.replace(/\s*\[(?:sentence:\d+-\d+|pdf-page:\d+)\]\s*/g, " ").trim();
 }
 
-function normalizeExactManuscriptCitation(scene: GeneratedScene, sentences: string[]): GeneratedScene {
-  const evidence = cleanEvidence(scene.evidence);
-  if (scene.sourceId || !evidence) return { ...scene, evidence };
-  const possibleQuote = evidence.replace(/\s+\/\s+/g, " ").replace(/\s+/g, " ").trim();
-  for (let start = 0; start < sentences.length; start++) {
-    for (let end = start; end < sentences.length; end++) {
-      const quote = sentences.slice(start, end + 1).join(" ");
-      if (quote.replace(/\s+/g, " ").trim() === possibleQuote)
-        return { ...scene, evidence: quote, sourceId: `sentence:${start + 1}-${end + 1}` };
-      if (quote.length > possibleQuote.length) break;
+// A shorter quote could match unrelated sentences, so it is never relocated.
+const MIN_RELOCATED_QUOTE_CHARS = 10;
+
+// Model quotes are usually verbatim, but its sentence ids are not: they arrive as lists
+// ("sentence:1-1, sentence:2-2"), as ranges narrower than the quote, or empty (2026-10-28
+// test: 58 of 96 Korean scenes). The server locates the quote in the manuscript and keeps
+// the model's id only when that range already contains the quote.
+function alignManuscriptCitation(scene: GeneratedScene, sentences: string[]): GeneratedScene {
+  const cleaned = cleanEvidence(scene.evidence);
+  if (!cleaned) return { ...scene, evidence: cleaned };
+  const compact = (value: string) => value.replace(/\s/g, "");
+  const keys = sentences.map(compact);
+  const stray = new RegExp(unexpectedScript.source, "g");
+  const joinedSlashes = cleaned.replace(/\s+\/\s+/g, " ");
+  // Try the quote as written, then without " / " joins, then without leaked foreign script
+  // when the manuscript itself has none of it.
+  const candidates = [cleaned, joinedSlashes,
+    ...(keys.some((key) => unexpectedScript.test(key)) ? [] : [joinedSlashes.replace(stray, "")])];
+  const current = /^sentence:(\d+)-(\d+)$/.exec(scene.sourceId);
+  for (const evidence of [...new Set(candidates)]) {
+    const quote = compact(evidence);
+    if (current) {
+      const start = Number(current[1]), end = Number(current[2]);
+      if (start >= 1 && end >= start && end <= keys.length && keys.slice(start - 1, end).join("").includes(quote))
+        return { ...scene, evidence };
     }
+    if (quote.length < MIN_RELOCATED_QUOTE_CHARS) continue;
+    let best: [number, number] | null = null;
+    for (let start = 0; start < keys.length; start++) {
+      let joined = "";
+      for (let end = start; end < keys.length; end++) {
+        joined += keys[end];
+        if (joined.includes(quote)) {
+          if (!best || end - start < best[1] - best[0]) best = [start, end];
+          break;
+        }
+        // Past this point the quote no longer needs the first sentence of the range.
+        if (joined.length - keys[start].length >= quote.length) break;
+      }
+    }
+    if (!best) continue;
+    const [start, end] = best;
+    const exact = keys.slice(start, end + 1).join("") === quote;
+    return { ...scene, evidence: exact ? sentences.slice(start, end + 1).join(" ") : evidence, sourceId: `sentence:${start + 1}-${end + 1}` };
   }
-  return { ...scene, evidence };
+  return { ...scene, evidence: cleaned };
 }
 
 function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?: PdfSource): string | null {
@@ -197,10 +232,11 @@ export async function runGeneration(
         };
         const sentences = manuscriptSource(input.manuscript).sentences;
         const availableReferences = new Map(task.supplementalSources.map((reference) => [reference.id, reference]));
+        const relabeledScenes: number[] = [];
         const scenes = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
           const normalizedScene = adapter.mode === "ai"
             ? input.pdfSource ? { ...scene, evidence: cleanEvidence(scene.evidence) }
-              : normalizeExactManuscriptCitation(scene, sentences)
+              : alignManuscriptCitation(scene, sentences)
             : scene;
           const warning = citationWarning(normalizedScene, sentences, input.pdfSource);
           if (warning) warnings.push(`${scene.sceneNo}번 장면: ${warning}`);
@@ -213,8 +249,8 @@ export async function runGeneration(
           // Evidence and source IDs are never spelling-corrected: preserve citations.
           const { sceneNo, referenceIds, visualReferenceIds, phase, ...content } = correctedScene;
           const expectedPhase = input.scene?.phase ?? (sceneNo === 1 ? "intro" : sceneNo === expected ? "outro" : "body");
-          if (phase && phase !== expectedPhase)
-            warnings.push(`${sceneNo}번 장면: 도입·본문·마무리 위치를 확인해 주세요.`);
+          // The phase follows the scene position; a different model label is reported once below.
+          if (phase && phase !== expectedPhase) relabeledScenes.push(sceneNo);
           const unknownIds = [...(referenceIds ?? []), ...(visualReferenceIds ?? [])].filter((id) => !availableReferences.has(id));
           if (unknownIds.length)
             warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강·시각자료 출처가 있어 제외했습니다.`);
@@ -238,9 +274,11 @@ export async function runGeneration(
             generation: record,
           };
         });
+        if (relabeledScenes.length)
+          warnings.push(`${relabeledScenes.join(", ")}번 장면의 구성 단계(도입·본문·마무리)를 장면 위치에 맞게 바꿨습니다. 내용이 위치에 맞는지 확인해 주세요.`);
         const duration = scenes.reduce((sum, scene) => sum + scene.duration, 0);
-        if (!input.scene && Math.abs(duration - input.settings.minutes * 60) > input.settings.minutes * 60 * 0.15)
-          warnings.push("전체 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 확인해 주세요.");
+        if (!input.scene && durationOffTarget(duration, input.settings.minutes))
+          warnings.push(`전체 예상 시간이 목표 길이의 ±${DURATION_TOLERANCE * 100}%를 벗어났습니다. 장면별 시간을 확인해 주세요.`);
         const correctionNote = termCorrectionNotice(allCorrections);
         if (correctionNote) warnings.push(correctionNote);
         const board = {

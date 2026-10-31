@@ -52,6 +52,15 @@ test("citations are re-checked against the manuscript even when the server repor
   assert.equal(check(report, "citations").level, "warn");
 });
 
+test("only citation warnings mark scenes as citation problems", async () => {
+  const board = await runGeneration(input, adapter((generated) => {
+    generated.scenes[1].referenceIds = ["knowledge:missing"];
+    generated.scenes[2].phase = "outro";
+  }, "ai"));
+  assert.ok(board.generation?.warnings.some((warning) => warning.startsWith("2번 장면: 확인되지 않은")));
+  assert.equal(check(checkBoard(board, input), "citations").level, "pass");
+});
+
 test("duration drift beyond 10%, long subtitles and narration pace are flagged without failing", async () => {
   const board = await runGeneration(input, adapter((generated) => {
     generated.scenes[0].duration = 60;
