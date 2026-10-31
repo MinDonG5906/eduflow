@@ -20,6 +20,12 @@
 
 복구 전 소스 백업: `../recovery-backups/storyboard-frame-before-eduflow-20260929.tar.gz`.
 
+## Windows 실행 파일
+
+GitHub의 **Actions → Windows local app**에서 성공한 실행의 `EduFlow-Windows-x64` 아티팩트를 내려받고, ZIP 전체를 쓰기 가능한 폴더에 압축 해제한 뒤 `EduFlow.exe`를 실행하세요. Node.js를 별도로 설치할 필요가 없습니다. 브라우저에서 `http://127.0.0.1:3000/`이 열리며, 검은 창을 닫거나 Enter를 누르면 서버가 종료됩니다. 3000번 포트를 다른 프로그램이 사용 중이면 먼저 종료해야 합니다.
+
+서버의 모델 연결 정보와 지식 자료 등은 압축을 푼 폴더의 `app/.eduflow-private`에 저장됩니다. 새 버전으로 교체할 때 이 폴더를 보존하세요. 브라우저 작업은 같은 브라우저와 주소에 저장됩니다. 실행 파일은 서명되지 않았으며 PPT 및 HWP 변환에는 아래의 별도 변환 도구가 필요합니다.
+
 ## 실행
 
 Node.js 22.13 이상 권장.

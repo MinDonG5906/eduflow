@@ -1,0 +1,70 @@
+name: Windows local app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["feature/windows-local-launcher"]
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows-package.yml"
+      - "next.config.ts"
+      - "package*.json"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Assemble portable app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist/EduFlow/app | Out-Null
+          Copy-Item .next/standalone/* dist/EduFlow/app -Recurse -Force
+          New-Item -ItemType Directory -Force dist/EduFlow/app/.next | Out-Null
+          Copy-Item .next/static dist/EduFlow/app/.next/static -Recurse -Force
+          Copy-Item public dist/EduFlow/app/public -Recurse -Force
+          Copy-Item (Get-Command node).Source dist/EduFlow/node.exe
+          Copy-Item windows/README.txt dist/EduFlow/README.txt
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+          & $csc /nologo /target:exe /out:dist/EduFlow/EduFlow.exe windows/Launcher.cs
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
+      - name: Smoke test packaged server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $start = [System.Diagnostics.ProcessStartInfo]::new((Resolve-Path dist/EduFlow/EduFlow.exe).Path)
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.EnvironmentVariables['EDUFLOW_NO_BROWSER'] = '1'
+          $process = [System.Diagnostics.Process]::Start($start)
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 60; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest http://127.0.0.1:3000/ -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200 -and $response.Content -match 'EduFlow') { $ready = $true; break }
+              } catch { }
+              if ($process.HasExited) { break }
+            }
+            if (-not $ready) { throw 'Packaged server did not respond' }
+          } finally {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: EduFlow-Windows-x64
+          path: dist/EduFlow/
+          if-no-files-found: error
