@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowDown,
@@ -9,8 +8,6 @@ import {
   Clock3,
   FileText,
   GraduationCap,
-  Image as ImageIcon,
-  ImagePlus,
   Layers3,
   MessageSquareText,
   MonitorPlay,
@@ -18,7 +15,6 @@ import {
   Quote,
   RotateCcw,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +24,9 @@ import { KnowledgeSource } from "@/components/knowledge-source";
 import type { PdfSource } from "@/lib/pdf-source";
 import { fieldLabels, type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
-import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-image-storage";
+import type { Settings } from "@/lib/storyboard";
+import type { ImageSettings } from "@/lib/scene-image";
+import { SceneImagePanel } from "./scene-image-panel";
 import { VisualRecommendations } from "./visual-recommendations";
 import { SceneSection } from "./scene-section";
 import { sourceLocationLabel } from "@/lib/source-location";
@@ -48,107 +46,6 @@ const fieldIcons = {
 } as const;
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
 
-function SceneReferenceImage({
-  scene,
-  onChange,
-}: {
-  scene: Scene;
-  onChange: <K extends keyof Scene>(key: K, value: Scene[K]) => void;
-}) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let active = true;
-    let objectUrl: string | null = null;
-
-    if (scene.image?.id) {
-      loadSceneImage(scene.image.id)
-        .then((blob) => {
-          if (!active) return;
-          if (blob) {
-            objectUrl = URL.createObjectURL(blob);
-            setPreviewUrl(objectUrl);
-          } else {
-            setPreviewUrl(null);
-          }
-        })
-        .catch(() => {
-          if (active) setPreviewUrl(null);
-        });
-    } else {
-      setPreviewUrl(null);
-    }
-
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [scene.image?.id]);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const validTypes = ["image/png", "image/jpeg", "image/jpg"];
-    if (!validTypes.includes(file.type)) {
-      alert("PNG 또는 JPG 이미지만 첨부할 수 있습니다.");
-      return;
-    }
-
-    const imageId = `img-${scene.id}-${Date.now()}`;
-    try {
-      await saveSceneImage(imageId, file);
-      onChange("image", {
-        id: imageId,
-        sourceType: "upload",
-        sourceText: scene.image?.sourceText || file.name,
-        name: file.name,
-        mimeType: file.type,
-      });
-    } catch (err) {
-      console.error("Failed to save image:", err);
-      alert("이미지를 브라우저에 저장하지 못했습니다.");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const handleDelete = async () => {
-    if (scene.image?.id) {
-      try {
-        await deleteSceneImage(scene.image.id);
-      } catch (err) {
-        console.warn("Failed to delete image from indexedDB:", err);
-      }
-    }
-    onChange("image", undefined);
-  };
-
-  const handleSourceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!scene.image) return;
-    onChange("image", {
-      ...scene.image,
-      sourceText: e.target.value,
-    });
-  };
-
-  return <SceneSection title="참고 이미지" icon={ImageIcon}
-    description="첨부한 이미지는 PDF 스토리보드의 화면 영역에 사용됩니다."
-    action={<><Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-      {scene.image ? <Upload size={14} /> : <ImagePlus size={14} />}{scene.image ? "이미지 교체" : "이미지 추가"}
-    </Button>{scene.image && <Button variant="ghost" size="sm" onClick={handleDelete} aria-label="참고 이미지 삭제"><Trash2 size={14} />삭제</Button>}</>}>
-    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/jpg" hidden onChange={handleFileChange} />
-    {scene.image ? <div className="scene-image-content">
-      {previewUrl ? <img className="scene-attached-image" src={previewUrl} alt={scene.image.name || "참고 이미지"} />
-        : <p className="scene-section-empty">이 브라우저에서 이미지를 찾을 수 없습니다. 이미지를 다시 첨부해 주세요.</p>}
-      <label className="scene-image-source">이미지 출처
-        <Input value={scene.image.sourceText} onChange={handleSourceChange} placeholder="문서명, 페이지 또는 URL" />
-      </label>
-    </div> : <p className="scene-section-empty">제작에 사용할 PNG·JPG 이미지를 첨부하세요.</p>}
-  </SceneSection>;
-}
-
 export function SceneEditor({
   scene,
   index,
@@ -160,7 +57,7 @@ export function SceneEditor({
   onMove,
   onDelete,
   onRegenerate,
-  canRegenerate,
+  canRegenerate, settings, imageSettings, onImageSettingsChange, onOpenConnection,
 }: {
   scene: Scene;
   index: number;
@@ -173,6 +70,10 @@ export function SceneEditor({
   onDelete: () => void;
   onRegenerate: () => void;
   canRegenerate: boolean;
+  settings: Settings;
+  imageSettings: ImageSettings;
+  onImageSettingsChange: (settings: ImageSettings) => void;
+  onOpenConnection: () => void;
 }) {
   const knowledgeReferences = [...new Map([...(scene.references ?? []), ...(scene.visualReferences ?? [])]
     .map(reference => [reference.id, reference])).values()];
@@ -277,7 +178,7 @@ export function SceneEditor({
           );
         })}
       </div>
-      <SceneReferenceImage scene={scene} onChange={onChange} />
+      <SceneImagePanel key={scene.id} scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onOpenConnection={onOpenConnection} />
       <SceneSection title="원문 근거" icon={Quote}
         action={<EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
         description={<><span className="scene-source-location">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name)}</span>

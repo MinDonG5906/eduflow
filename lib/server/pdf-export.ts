@@ -225,6 +225,9 @@ export async function exportStoryboardPdf({
       } else {
         imageSourceText = "출처: 등록된 참고 이미지";
       }
+      if (scene.image?.sourceType === "generated") {
+        imageSourceText = `AI 생성 콘티 (원본 증거 아님)${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}\n${imageSourceText}`;
+      }
     }
     // B. Priority 2: PDF source document page screenshot
     else {

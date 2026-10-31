@@ -62,7 +62,7 @@ test("Gemini uses pinned prices under the team caps, and an unknown model or mis
   assert.throws(() => geminiConfig({ EDUFLOW_GENERATOR: "gemini" }), coded("AI_NOT_CONFIGURED"));
   assert.throws(() => geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: "gemini-4-argon" }), coded("AI_NOT_CONFIGURED"));
   assert.throws(() => geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: "toString" }), coded("AI_NOT_CONFIGURED"));
-  assert.equal(adapterFor({ version: 1, provider: "gemini-api", anthropicModel: "claude-opus-5-5" }, teamEnv).model, "gemini-3.8-flash");
+  assert.equal(adapterFor({ version: 1, provider: "gemini-api", anthropicModel: "claude-opus-5-5", imageEnabled: false }, teamEnv).model, "gemini-3.8-flash");
 });
 
 test("Gemini schema keeps only keywords Gemini accepts", () => {

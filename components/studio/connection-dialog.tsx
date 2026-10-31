@@ -57,6 +57,7 @@ export function ConnectionDialog({ open, onOpenChange }: {
   const [status, setStatus] = useState<PublicConnection | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [imageConsent, setImageConsent] = useState(false);
 
   async function send(body: Action | null) {
     setBusy(true);
@@ -146,6 +147,15 @@ export function ConnectionDialog({ open, onOpenChange }: {
             </p>
           ))}
 
+          <section className="connection-image-settings">
+            <h3>콘티 이미지 생성</h3>
+            <p className="connection-note">선택한 글 생성 모델과 별도로 Gemini 팀 키를 사용합니다. 생성은 유료이며 기존 하루 $1·월 $5 한도를 함께 사용합니다.</p>
+            {!status.sceneImages.teamKey ? <p className="connection-note">운영자가 서버에 Gemini 팀 키를 연결하면 사용할 수 있습니다.</p>
+              : status.sceneImages.enabled ? <><p className="connection-note" role="status">콘티 이미지 생성이 켜져 있습니다. 장면 편집에서 이미지를 생성하세요.</p>
+                <Button variant="outline" disabled={busy} onClick={() => change({ action: "setImageEnabled", enabled: false, consent: true })}>이미지 생성 끄기</Button></>
+              : <><label className="connection-check"><input type="checkbox" checked={imageConsent} disabled={busy} onChange={event => setImageConsent(event.target.checked)} />장면 내용·연결 근거·선택한 참고 이미지를 Google로 전송하고 유료로 생성하는 데 동의합니다.</label>
+                <Button disabled={busy || !imageConsent} onClick={async () => { if (await change({ action: "setImageEnabled", enabled: true, consent: true })) setImageConsent(false); }}>콘티 이미지 생성 켜기</Button></>}
+          </section>
           {error && <p className="connection-error" role="alert">{error}</p>}
         </>}
       </DialogContent>

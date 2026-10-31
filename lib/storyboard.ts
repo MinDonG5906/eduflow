@@ -62,11 +62,12 @@ export const sceneReferenceSchema = z.object({
 });
 export const sceneImageSchema = z.object({
   id: z.string(),
-  sourceType: z.enum(["upload", "pdf_page", "rag"]).default("upload"),
+  sourceType: z.enum(["upload", "pdf_page", "rag", "generated"]).default("upload"),
   sourceText: z.string().max(300).default(""),
   name: z.string().max(200).optional(),
   mimeType: z.string().max(50).optional(),
   pageNumber: z.number().int().positive().optional(),
+  generated: z.object({ model: z.string().max(100), prompt: z.string().max(40000), createdAt: z.string().datetime(), basedOn: z.string().regex(/^[a-f0-9]{64}$/).optional() }).optional(),
 });
 export type SceneImage = z.infer<typeof sceneImageSchema>;
 
@@ -107,6 +108,7 @@ export const boardSchema = z.object({
   mode: z.enum(["demo", "ai"]),
   generation: generationMetaSchema.optional(),
   pdfSource: pdfSourceSchema.optional(),
+  imageSettings: z.object({ style: z.enum(["sketch", "illustration", "realistic"]), direction: z.string().max(600) }).optional(),
 });
 export type Board = z.infer<typeof boardSchema>;
 export const requestSchema = z.object({
@@ -279,7 +281,7 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 콘티 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>

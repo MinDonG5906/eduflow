@@ -35,6 +35,7 @@ import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResp
 import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, savePdf } from "@/lib/pdf-storage";
 import { loadSceneImages } from "@/lib/scene-image-storage";
+import { defaultImageSettings } from "@/lib/scene-image";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
@@ -512,6 +513,10 @@ export default function Studio() {
                         setModal("regenerate");
                       }}
                       canRegenerate={canGenerate}
+                      settings={board.settings}
+                      imageSettings={board.imageSettings ?? defaultImageSettings}
+                      onImageSettingsChange={imageSettings => setBoard(current => current ? { ...current, imageSettings } : current)}
+                      onOpenConnection={() => setConnectionOpen(true)}
                     />
                   )}
                 </div>
