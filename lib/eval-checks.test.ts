@@ -56,6 +56,7 @@ test("duration drift beyond 10%, long subtitles and narration pace are flagged w
   const board = await runGeneration(input, adapter((generated) => {
     generated.scenes[0].duration = 60;
     for (const scene of generated.scenes) scene.subtitle = "짧은 자막";
+    generated.scenes[1].subtitle = "가".repeat(30) + "\n" + "나".repeat(30);
     generated.scenes[2].subtitle = "가".repeat(41);
     generated.scenes[4].narration = "짧음";
   }));

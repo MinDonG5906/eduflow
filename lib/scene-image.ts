@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sceneSchema, sceneReferenceSchema, settingsSchema, type Scene, type Board, type Settings } from "./storyboard";
 import { compositionStickers } from "./scene-composition";
 
-export const imageStyles = { sketch: "흑백 콘티", illustration: "컬러 일러스트", realistic: "사실적인 장면" } as const;
+export const imageStyles = { sketch: "흑백 스케치", illustration: "컬러 일러스트", realistic: "사실적인 장면" } as const;
 export type ImageSettings = NonNullable<Board["imageSettings"]>;
 export const defaultImageSettings: ImageSettings = { style: "sketch", direction: "" };
 const reference = sceneReferenceSchema.pick({ id: true, title: true, excerpt: true, page: true, documentId: true });

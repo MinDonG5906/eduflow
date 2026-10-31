@@ -1,11 +1,12 @@
 import "server-only";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import type { Scene } from "../storyboard";
-import { compositionAssetRect, compositionBackgroundRect, compositionOverlaySvg, compositionStickers, type CompositionAssets } from "../scene-composition";
+import { compositionAssetRect, compositionBackgroundRect, compositionOverlaySvg, compositionPlaceholderSvg, compositionStickers, type CompositionAssets } from "../scene-composition";
 
-export async function renderCompositionOverlay(scene: Scene, assets: CompositionAssets) {
+export async function renderCompositionOverlay(scene: Scene, assets: CompositionAssets, titleCard = false) {
   const canvas = createCanvas(1600, 900), context = canvas.getContext("2d");
   try {
+    if (titleCard) context.drawImage(await loadImage(Buffer.from(compositionPlaceholderSvg(scene))), 0, 0);
     context.drawImage(await loadImage(Buffer.from(compositionOverlaySvg(scene, assets, "sources"))), 0, 0);
     // Native SVG does not decode nested <image> data. Draw pixels at the same
     // source viewport explicitly, then restore subtitles above the pictures.

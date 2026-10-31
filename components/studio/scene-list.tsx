@@ -8,7 +8,7 @@ const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마�
 function SceneMiniArt({ scene, index }: { scene: Scene; index: number }) {
   const url = useSceneImageUrl(scene.image?.id);
   return <div className={`scene-mini-art ${url ? "has-image" : ""}`}>
-    {url ? <img src={url} style={{ objectFit: "contain" }} alt={`${index + 1}번 장면 콘티`} /> : <><span>{String(index + 1).padStart(2, "0")}</span><div className={`mini-landscape landscape-${index % 3}`}><FileText size={22} /></div></>}
+    {url ? <img src={url} style={{ objectFit: "contain" }} alt={`${index + 1}번 장면 스토리보드`} /> : <><span>{String(index + 1).padStart(2, "0")}</span><div className={`mini-landscape landscape-${index % 3}`}><FileText size={22} /></div></>}
   </div>;
 }
 

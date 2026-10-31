@@ -9,14 +9,15 @@ import { downloadBlob } from "@/lib/download";
 import { imageStyles, sceneImageInput, sceneImageResultSchema, sceneImageStatusSchema, sceneImageBasis, type ImageSettings, type SceneImageStatus } from "@/lib/scene-image";
 import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-image-storage";
 import type { Scene, Settings } from "@/lib/storyboard";
+import { InfoDialog } from "@/components/ui/info-dialog";
 import { SceneSection } from "./scene-section";
 import { SceneComposition } from "./scene-composition";
-import { compositionStickers, compositionSubtitle } from "@/lib/scene-composition";
 import { exportSceneComposition } from "@/lib/scene-composition-export";
 
-export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onOpenConnection }: {
+export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onSubtitleChange, onOpenConnection }: {
   scene: Scene; settings: Settings; imageSettings: ImageSettings; onSettingsChange: (settings: ImageSettings) => void;
   onChange: (image: Scene["image"]) => void; onPlacementsChange: (placements: Scene["visualPlacements"]) => void; onOpenConnection: () => void;
+  onSubtitleChange: (subtitle: string) => void;
   onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const [status, setStatus] = useState<SceneImageStatus | null>(null);
@@ -87,10 +88,10 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       const id = `generated-${crypto.randomUUID()}`;
       await saveSceneImage(id, blob); saved = id;
       if (!unchanged()) throw new Error("장면 내용이 변경되어 기존 이미지를 유지했습니다.");
-      latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성 콘티 · 원문과 대조 필요", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
+      latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성 스토리보드 · 원문과 대조 필요", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
         generated: { model: result.model, prompt: result.prompt, createdAt: result.createdAt, basedOn: result.basedOn } });
       saved = undefined;
-      setMessage("콘티 이미지를 저장했습니다. 원문과 대조한 뒤 사용하세요.");
+      setMessage("스토리보드 이미지를 저장했습니다. 원문과 대조한 뒤 사용하세요.");
     } catch (e) {
       if (!controller.signal.aborted) setError(signal.aborted ? "이미지 생성 시간이 초과되었습니다. 기존 이미지는 유지됩니다." : e instanceof Error ? e.message : "이미지를 저장하지 못했습니다. 기존 이미지는 유지됩니다.");
     } finally {
@@ -111,47 +112,61 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     finally { if (upload.current) upload.current.value = ""; }
   }
   const canGenerate = Boolean(status?.available && scene.visual.trim() && scene.evidence.trim() && !busy);
-  return <SceneSection title="콘티 이미지" icon={ImageIcon} description="추천 사진·표와 장면 자막을 콘티에 직접 배치합니다. 조정한 위치·크기는 이미지 저장과 PDF에도 반영됩니다."
-    action={<Button size="sm" variant="outline" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />이미지 첨부</Button>}>
-    <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
-    <div className="scene-image-workspace" aria-busy={busy}>
-      <div className="scene-image-actions">
-        <Button disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "콘티 생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "콘티 이미지 생성"}</Button>
-        {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
-        {(scene.image || compositionStickers(scene).length > 0 || compositionSubtitle(scene)) && <Button variant="outline" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
-          try {
-            const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
-            if (scene.image && !background) throw new Error("콘티 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
-            downloadBlob(await exportSceneComposition(scene, background), "storyboard-composition.png");
-          } catch { setError("콘티 이미지를 저장하지 못했습니다. 다시 시도해 주세요."); }
-        }}><Download size={14} />이미지 저장</Button>}
-        {scene.image && <>
-          <Button variant="ghost" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} />이미지 제거</Button>
-        </>}
-      </div>
-      {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
-        : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
-      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} />
-      <div className="scene-image-settings">
-        <label>공통 그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
-          {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select></label>
-        <label>공통 인물·배경 설정 <small>모든 장면에 적용</small>
-          <Textarea aria-label="공통 인물·배경 설정" value={imageSettings.direction} maxLength={600} rows={2} disabled={busy} placeholder="예: 파란 작업복과 흰 안전모, 같은 공장 배경" onChange={event => onSettingsChange({ ...imageSettings, direction: event.target.value })} />
-        </label>
-        <label>이 장면 수정 요청
-          <Textarea aria-label="이미지 수정 요청" value={direction} maxLength={500} rows={2} disabled={busy} placeholder="예: 작업자의 손동작을 가까이 보여줘" onChange={event => setDirection(event.target.value)} />
-        </label>
-        {scene.image && <label className="connection-check"><input type="checkbox" checked={useReference} disabled={busy} onChange={event => setUseReference(event.target.checked)} />현재 이미지를 구도·인물 참고로 사용</label>}
-      </div>
-      {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="scene-image-cost">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
-      {scene.image?.sourceType !== "generated" && scene.image && <label className="scene-image-source">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
-      <details className="scene-image-evidence"><summary>이미지에 참고할 원문·RAG 근거</summary><blockquote>{scene.evidence || "원문 근거를 먼저 확인하세요."}</blockquote>
+  const generationSettings = <div className="scene-image-settings">
+    <label>그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
+      {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+    </select></label>
+    <label>공통 인물·배경 <span className="setting-scope">모든 장면</span>
+      <Textarea aria-label="공통 인물·배경 설정" value={imageSettings.direction} maxLength={600} rows={2} disabled={busy} placeholder="예: 파란 작업복, 흰 안전모, 같은 공장 배경" onChange={event => onSettingsChange({ ...imageSettings, direction: event.target.value })} />
+    </label>
+    <label className="image-direction-field">장면별 요청
+      <Textarea aria-label="이미지 수정 요청" value={direction} maxLength={500} rows={2} disabled={busy} placeholder="예: 설명자는 오른쪽에, 자료는 왼쪽에 배치" onChange={event => setDirection(event.target.value)} />
+    </label>
+    {scene.image && <label className="studio-toggle image-reference-toggle"><span>현재 이미지 참고</span><input type="checkbox" role="switch" checked={useReference} disabled={busy} onChange={event => setUseReference(event.target.checked)} /></label>}
+    {scene.image?.sourceType !== "generated" && scene.image && <label className="image-direction-field">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
+  </div>;
+  return <SceneSection title="스토리보드 이미지" icon={ImageIcon} className="storyboard-image-section"
+    action={<InfoDialog title="스토리보드 이미지 안내" description="이미지 생성 비용, 편집 방법과 참고 근거를 확인하세요.">
+      <section><h4>생성 비용·전송 정보</h4>
+        {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도입니다.</p>
+          <p>호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
+          <p>사용 모델: {status.model}</p></> : <p>{status?.reason || "이미지 연결 상태를 확인하고 있습니다."}</p>}
+        <p>자료 이동·크기 조절, 자막 편집, 이미지·PDF 저장에는 추가 AI 비용이 없습니다.</p>
+      </section>
+      <section><h4>편집 방법</h4><p>추천 사진·표를 선택한 뒤 끌어서 이동하고 오른쪽 아래 모서리로 크기를 조절하세요. 방향키로도 이동할 수 있습니다. 수정한 배치는 저장 이미지·PDF에 반영됩니다.</p>
+        <p>자막은 장면당 두 문장을 줄바꿈으로 구분해 작성합니다. 새로 생성하는 장면에도 적용됩니다. 기존 자막은 그대로 유지됩니다.</p>
+        <p>이미지가 없으면 검정 배경에 장면 제목과 자막을 표시합니다. 생성한 배경은 원문과 대조가 필요한 AI 이미지입니다.</p>
+        <p>공통 그림체·인물·배경은 모든 장면의 다음 생성에 적용됩니다. 장면별 요청은 현재 장면에만 적용되며 현재 이미지 참고를 켜면 구도·인물 참고로 전송합니다.</p>
+      </section>
+      <details className="scene-image-evidence"><summary>참고할 원문·RAG 근거</summary><blockquote>{scene.evidence || "원문 근거를 먼저 확인하세요."}</blockquote>
         {[...(scene.references ?? []), ...(scene.visualReferences ?? [])].filter((ref, i, refs) => refs.findIndex(item => item.id === ref.id) === i).map(ref => <p key={ref.id}><strong>{ref.title}{ref.page ? ` · ${ref.page}페이지` : ""}</strong><br />{ref.excerpt}</p>)}
       </details>
-      {message && <p role="status" className="scene-image-cost">{message}</p>}
-      {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="scene-image-cost">장면 내용·자료 배치 또는 공통 설정이 바뀌었습니다. 배경 구도가 맞는지 확인하고 필요하면 다시 생성하세요.</p>}
+    </InfoDialog>}>
+    <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
+    <div className="scene-image-workspace" aria-busy={busy}>
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} onSubtitleChange={onSubtitleChange} generationSettings={generationSettings} />
+      {!status?.available && <div className="image-connection-status" role="status"><span>{status?.reason || "이미지 연결 상태 확인 중…"}</span><Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></div>}
+      {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="image-notice">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
+      {message && <p role="status" className="image-notice">{message}</p>}
+      {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="image-notice">설정이 변경되었습니다. 필요하면 배경을 다시 생성하세요.</p>}
       {error && <p role="alert" className="connection-error">{error}</p>}
+      <div className="scene-image-actionbar">
+        <div className="image-file-actions">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />첨부</Button>
+          <Button variant="outline" size="sm" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
+            try {
+              const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
+              if (scene.image && !background) throw new Error("스토리보드 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
+              downloadBlob(await exportSceneComposition(scene, background), "storyboard-composition.png");
+            } catch { setError("스토리보드 이미지를 저장하지 못했습니다. 다시 시도해 주세요."); }
+          }}><Download size={14} />이미지 저장</Button>
+          {scene.image && <Button variant="ghost" size="icon-sm" aria-label="배경 이미지 제거" title="배경 이미지 제거" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} /></Button>}
+        </div>
+        <div className="image-generate-actions">
+          {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
+          <Button className="image-generate-button" disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "이미지 생성"}</Button>
+        </div>
+      </div>
     </div>
   </SceneSection>;
 }

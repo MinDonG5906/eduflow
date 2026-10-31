@@ -187,7 +187,7 @@ test("generated provenance, common style and source evidence survive draft recov
   const board = generateDemo(sample, defaults);
   board.scenes[0].review = false;
   const generated: Scene["image"] = { id: "generated-test", sourceType: "generated", sourceText: "교육 장면", mimeType: "image/png",
-    generated: { model: SCENE_IMAGE_MODEL, prompt: "원문 근거에 기반한 콘티", createdAt: new Date().toISOString() } };
+    generated: { model: SCENE_IMAGE_MODEL, prompt: "원문 근거에 기반한 스토리보드", createdAt: new Date().toISOString() } };
   const edited = editScene(board, 0, "image", generated);
   assert.equal(edited.scenes[0].review, true);
   edited.imageSettings = { ...defaultImageSettings, direction: "흰 안전모와 파란 작업복" };
@@ -198,13 +198,13 @@ test("generated provenance, common style and source evidence survive draft recov
   const revised = replaceScene(restored, newText.id, { ...newText, visual: "변경한 화면 설명" });
   assert.deepEqual(revised.scenes[0].image, generated, "text regeneration preserves the saved image for comparison");
   const textPrompt = promptTask({ supplementalSources: [], selectedScene: restored.scenes[0] });
-  assert.ok(!JSON.stringify(textPrompt).includes("원문 근거에 기반한 콘티"), "old image prompts do not bloat new text generation");
+  assert.ok(!JSON.stringify(textPrompt).includes("원문 근거에 기반한 스토리보드"), "old image prompts do not bloat new text generation");
   const moved = moveScene(restored, 0, 1)!;
   assert.equal(moved.scenes[1].image?.id, generated.id);
   assert.equal(moved.scenes[1].evidence, board.scenes[0].evidence);
   const bytes = await exportStoryboardPdf({ board: moved, sceneImages: new Map([[board.scenes[0].id, png()]]) });
   const parser = new PDFParse({ data: bytes });
-  try { assert.match((await parser.getText()).text.replace(/\s/g, ""), /AI생성콘티\(원본증거아님\)/); }
+  try { assert.match((await parser.getText()).text.replace(/\s/g, ""), /AI생성스토리보드\(원본증거아님\)/); }
   finally { await parser.destroy(); }
 });
 

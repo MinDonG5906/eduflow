@@ -5,7 +5,7 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from "pdf-lib";
 import { defaults, generateDemo, sample, sceneSchema, visualPlacementSchema } from "./storyboard";
 import type { VisualRecommendation } from "./knowledge-structure";
-import { clampVisualPlacement, compositionBackgroundRect, compositionLayouts, compositionOverlaySvg, compositionSubtitle, compositionStickers, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements } from "./scene-composition";
+import { clampVisualPlacement, compositionBackgroundRect, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements } from "./scene-composition";
 import { sceneImageInput } from "./scene-image";
 import { sceneImagePrompt } from "./server/scene-image";
 import { readDraft, serializeDraft } from "./studio-state";
@@ -189,4 +189,18 @@ test("server export loader reads the same stored crop locally without AI calls",
   const canvas = createCanvas(decoded.width, decoded.height), ctx = canvas.getContext('2d'); ctx.drawImage(decoded, 0, 0);
   const pixel = ctx.getImageData(Math.floor(decoded.width/2), Math.floor(decoded.height/2), 1, 1).data;
   assert.ok(pixel[0] > 230 && pixel[1] < 20);
+});
+
+
+test("two caption lines persist in the composition and dark title cards escape user text", async () => {
+  const board = generateDemo(sample, defaults);
+  const scene = { ...board.scenes[0], title: '<제목 & 검토>', subtitle: "가".repeat(40) + "\n" + "나".repeat(40), visuals: [] };
+  assert.deepEqual(compositionSubtitle(scene)?.lines, scene.subtitle.split("\n"));
+  assert.match(compositionPlaceholderSvg(scene), /&lt;제목 &amp; 검토&gt;/);
+  const png = await renderCompositionOverlay(scene, {}, true);
+  const canvas = createCanvas(1600, 900), context = canvas.getContext("2d");
+  context.drawImage(await loadImage(png), 0, 0);
+  assert.deepEqual([...context.getImageData(1, 1, 1, 1).data], [17, 17, 19, 255]);
+  const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board: { ...board, scenes: [scene] } }));
+  assert.equal(restored?.board?.scenes[0].subtitle, scene.subtitle);
 });

@@ -334,24 +334,29 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .scene-visual-content .visual-table-scroll { margin: 0; max-height: 340px; }
 .scene-image-content { display: grid; gap: 12px; }
 .scene-attached-image { display: block; max-height: 220px; max-width: 100%; object-fit: contain; border: 1px solid var(--hairline); border-radius: 8px; }
-.scene-image-workspace { display: grid; gap: 14px; }
-.scene-image-frame { position: relative; aspect-ratio: 16 / 9; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); overflow: hidden; }
-.scene-image-frame:not(.has-image) { aspect-ratio: auto; min-height: 140px; height: 160px; }
-.scene-image-frame.has-image { max-height: 440px; }
-.scene-image-frame > img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
-.scene-image-frame > div { padding: 24px; text-align: center; color: var(--body); font-size: 12px; }
-.scene-image-frame svg { margin: 0 auto 12px; }
-.scene-image-badge { position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,.94); color: var(--ink); border: 1px solid var(--hairline); padding: 5px 8px; border-radius: 5px; font-size: 11px; }
-.scene-image-settings { display: grid; gap: 12px; }
-.scene-image-settings > label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; }
-.scene-image-settings small { color: var(--body); font-size: 11px; }
-.scene-image-settings select { min-height: 38px; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; background: var(--surface); max-width: 240px; }
-.scene-image-settings > .connection-check { display: flex; align-items: start; }
-.scene-image-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.scene-image-cost { font-size: 11px; line-height: 1.8; color: var(--body); overflow-wrap: anywhere; }
-.scene-image-evidence { font-size: 12px; color: var(--body); overflow-wrap: anywhere; }
+.scene-image-workspace { display: grid; gap: 12px; min-width: 0; }
+.scene-image-settings { display: grid; grid-template-columns: minmax(140px, .65fr) minmax(0, 1.35fr); gap: 14px; }
+.scene-image-settings > label, .composition-subtitle-controls > label { display: grid; align-content: start; gap: 7px; color: var(--ink); font-size: 12px; min-width: 0; }
+.scene-image-settings .image-direction-field, .scene-image-settings .image-reference-toggle { grid-column: 1 / -1; }
+.setting-scope { color: var(--body); font-size: 11px; font-weight: 400; }
+.scene-image-settings > label:has(.setting-scope) { position: relative; }
+.scene-image-settings .setting-scope { position: absolute; right: 0; top: 0; }
+.scene-image-settings select, .composition-controls select, .composition-geometry input, .composition-subtitle-controls select { min-height: 40px; width: 100%; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 8px 10px; background: var(--canvas); color: var(--ink); min-width: 0; }
+.scene-image-settings textarea { min-height: 72px; field-sizing: fixed; }
+.scene-image-actionbar { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; background: var(--canvas); border: 1px solid var(--hairline-strong); border-radius: 10px; box-shadow: 0 4px 20px rgb(0 0 0 / 7%); }
+.image-file-actions, .image-generate-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scene-image-actionbar .image-generate-button { min-height: 42px; padding-inline: 18px; }
+.image-connection-status { display: flex; gap: 10px; align-items: center; justify-content: space-between; font-size: 12px; color: var(--body); }
+.image-notice { font-size: 12px; line-height: 1.7; color: var(--body); padding: 10px 12px; border-radius: 8px; background: var(--canvas-soft); overflow-wrap: anywhere; }
+.scene-image-cost { font-size: 12px; line-height: 1.8; color: var(--body); overflow-wrap: anywhere; }
+.scene-image-evidence { font-size: 13px; color: var(--body); overflow-wrap: anywhere; }
 .scene-image-evidence summary { cursor: pointer; color: var(--ink); padding: 8px 0; }
 .scene-image-evidence blockquote, .scene-image-evidence p { margin-top: 10px; white-space: pre-wrap; }
+.scene-section-action .info-button { width: 32px; height: 32px; min-height: 32px; border-radius: 50%; color: var(--body); }
+.info-dialog [data-slot="dialog-title"] { padding-right: 24px; line-height: 1.5; }
+.info-dialog-body { display: grid; gap: 20px; font-size: 13px; line-height: 1.8; color: var(--body); overflow-wrap: anywhere; }
+.info-dialog-body h4 { color: var(--ink); font-weight: 600; margin-bottom: 6px; }
+.info-dialog-body p + p { margin-top: 8px; }
 .scene-mini-art.has-image { width: 76px; height: 48px; overflow: hidden; }
 .scene-mini-art > img { width: 100%; height: 100%; object-fit: cover; }
 .connection-image-settings { border-top: 1px solid var(--hairline); padding-top: 16px; display: grid; gap: 10px; }
@@ -360,11 +365,30 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 @keyframes image-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .image-spinner { animation: none; } }
 .scene-image-source { display: grid; gap: 6px; color: var(--body); font-size: 12px; }
-.scene-composition-workspace { display: grid; gap: 12px; }
-.scene-composition-frame { position: relative; width: min(100%, 782px); aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--hairline); border-radius: 8px; background: #f5f5f6; }
-.scene-composition-frame:not(.has-image):not(.has-stickers):not(.has-subtitle) { aspect-ratio: auto; height: 160px; }
+.scene-composition-workspace { display: grid; gap: 0; min-width: 0; }
+.composition-stage { background: #111113; border: 1px solid #29292d; border-radius: 12px 12px 0 0; padding: 12px; }
+.composition-stage-heading { display: flex; justify-content: space-between; align-items: center; color: #b5b5bd; font-size: 11px; padding: 0 4px 10px; }
+.scene-composition-frame { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: #111113; }
 .scene-composition-frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-.composition-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: var(--body); font-size: 12px; text-align: center; background-image: linear-gradient(#e7e7e9 1px, transparent 1px), linear-gradient(90deg, #e7e7e9 1px, transparent 1px); background-size: 24px 24px; }
+.composition-inspector { border: 1px solid var(--hairline-strong); border-top: 0; border-radius: 0 0 12px 12px; min-width: 0; }
+.composition-tabs { display: flex; border-bottom: 1px solid var(--hairline); padding: 0 12px; gap: 8px; }
+.composition-tabs > button { display: inline-flex; gap: 7px; align-items: center; justify-content: center; min-height: 46px; padding: 10px 12px; border-bottom: 2px solid transparent; color: var(--body); font-size: 12px; white-space: nowrap; }
+.composition-tabs > button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); font-weight: 600; }
+.composition-tabs > button:hover { background: var(--canvas-soft); }
+.composition-tabs > button:focus-visible, .composition-inspector-body:focus-visible { outline: 2px solid #2664c2; outline-offset: -3px; }
+.composition-tabs > button > span { font-size: 10px; padding: 1px 5px; background: var(--surface); border-radius: 4px; }
+.composition-inspector-body { padding: 18px; min-height: 260px; min-width: 0; }
+.composition-control-row { display: flex; align-items: end; gap: 16px; }
+.composition-control-row > label:not(.studio-toggle) { display: grid; gap: 7px; font-size: 12px; min-width: 0; flex: 1; }
+.studio-toggle { display: flex !important; flex-direction: row; align-items: center !important; justify-content: space-between; gap: 12px !important; font-size: 12px; min-height: 40px; white-space: nowrap; }
+.studio-toggle input { appearance: none; position: relative; flex: 0 0 34px; width: 34px; height: 20px; min-height: 20px; margin: 0; padding: 0; border: 1px solid #9b9da3; border-radius: 20px; background: #c6c7cc; cursor: pointer; transition: background .15s; }
+.studio-toggle input::after { content: ""; display: block; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: white; transition: transform .15s; }
+.studio-toggle input:checked { background: var(--ink); border-color: var(--ink); }
+.studio-toggle input:checked::after { transform: translateX(14px); }
+.studio-toggle input:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
+.studio-toggle input:disabled { opacity: .5; cursor: not-allowed; }
+.composition-no-assets { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 220px; text-align: center; font-size: 12px; color: var(--body); }
+.composition-no-assets strong { color: var(--ink); font-weight: 500; }
 .composition-sticker-target { position: absolute; padding: 0; border: 2px solid transparent; background: transparent; cursor: grab; touch-action: none; border-radius: 6px; }
 .composition-sticker-target:active { cursor: grabbing; }
 .composition-sticker-target.selected { border-color: #947222; }
@@ -376,11 +400,10 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .composition-resize-handle:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
 .composition-resize-handle:disabled { cursor: wait; }
 .composition-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-.composition-toolbar label, .composition-controls > label:not(.connection-check), .composition-geometry label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
-.composition-toolbar select, .composition-controls select, .composition-geometry input { min-height: 36px; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }
-.composition-controls { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--hairline); border-radius: 8px; }
+.composition-toolbar label, .composition-geometry label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
+.composition-controls { display: grid; gap: 16px; }
 .composition-controls summary { cursor: pointer; font-size: 12px; color: var(--body); }
-.composition-geometry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.composition-geometry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 0; }
 .composition-source-number { display: inline-block; color: #72581d; background: #fff4cc; border: 1px solid #e8d598; border-radius: 4px; padding: 3px 6px; font-size: 11px; margin-bottom: 6px; }
 .scene-review-section textarea { border-color: var(--warning-border); background: var(--warning-bg); }
 @media (max-width: 600px) {
@@ -869,6 +892,25 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .generation-connection p { flex: 1 1 220px; margin: 0; line-height: 1.6; }
 @media (max-width: 600px) { .generation-bar > .generation-actions { align-items: stretch; max-width: none; width: 100%; } }
 
-.composition-subtitle-controls { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--hairline); border-radius: 8px; }
-.composition-subtitle-controls > label:not(.connection-check) { display: grid; gap: 6px; font-size: 12px; }
-.composition-subtitle-controls select { min-height: 36px; width: 100%; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; background: var(--surface); }
+/* Storyboard controls share the same spacing, inputs and switch behavior. */
+.composition-subtitle-controls { display: grid; gap: 12px; }
+.composition-subtitle-controls textarea { field-sizing: content; min-height: 44px; max-height: 160px; }
+@media (max-width: 600px) {
+  .scene-image-settings { grid-template-columns: 1fr; }
+  .composition-inspector-body { padding: 14px; }
+  .composition-tabs { gap: 0; padding: 0 6px; }
+  .composition-tabs > button { flex: 1; gap: 5px; padding-inline: 5px; }
+  .composition-control-row { flex-wrap: wrap; gap: 8px; }
+  .composition-control-row > label:not(.studio-toggle) { flex-basis: 100%; }
+  .composition-control-row > .studio-toggle { width: 100%; }
+  .composition-geometry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scene-image-actionbar { bottom: 8px; gap: 8px; flex-wrap: wrap; padding: 10px; }
+  .image-file-actions { flex: 1; }
+  .image-generate-actions { flex: 1; justify-content: flex-end; }
+  .scene-image-actionbar .image-generate-button { padding-inline: 12px; }
+  .composition-stage { padding: 8px; }
+}
+@media (max-width: 380px) {
+  .image-generate-actions { flex-basis: 100%; }
+  .image-generate-actions .image-generate-button { flex: 1; }
+}

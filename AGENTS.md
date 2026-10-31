@@ -56,3 +56,8 @@ Never merge a personal task branch directly into `main`.
 - If a merge conflict occurs, explain which files and edits conflict. Do not choose a winner without user direction.
 - If a check fails, do not create or merge a pull request as if it passed. Explain the failure and fix it when requested.
 - Never force-push, delete a branch, or rewrite history unless the user explicitly requests it and the exact impact has been explained.
+
+
+## UI consistency requested by the user
+
+For every UI change, follow `docs/EDUFLOW_DESIGN.md`: preview → settings → action; keep primary actions reachable after editing; use consistent tabs, switches, input sizing and focus states. Put optional help and detailed cost explanations behind a small information button, but show actionable errors inline. Use ‘스토리보드’ in product copy. Verify narrow layouts and preserve existing user content.

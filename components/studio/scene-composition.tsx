@@ -1,12 +1,20 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { useCompositionAssets } from "@/hooks/use-composition-assets";
+import { Image as ImageIcon, Layers3, Captions } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { Scene, VisualPlacement } from "@/lib/storyboard";
-import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionSubtitle, compositionStickers, compositionVisuals, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
+import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, compositionVisuals, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
 
-export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange }: {
+export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onSubtitleChange, generationSettings }: {
+  onSubtitleChange: (subtitle: string) => void; generationSettings: ReactNode;
   scene: Scene; preview?: string; busy: boolean; onChange: (placements: VisualPlacement[]) => void; onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
+  const id = useId();
+  const [tab, setTab] = useState("image");
+  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "subtitle", label: "자막", icon: Captions }];
+  const [firstCaption, ...followingCaptions] = scene.subtitle.replace(/\r/g, "").split("\n");
+  const secondCaption = followingCaptions.join("\n");
   const visuals = compositionVisuals(scene), placements = sceneVisualPlacements(scene);
   const [selection, setSelected] = useState(visuals[0]?.id ?? "");
   const selected = visuals.some(item => item.id === selection) ? selection : visuals[0]?.id ?? "";
@@ -36,15 +44,11 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
   const finishDrag = () => { const moving = drag.current; if (moving) onChange(moving.current); drag.current = null; setDraft(null); };
   const cancelDrag = () => { drag.current = null; setDraft(null); };
   return <div className="scene-composition-workspace">
-    {visuals.length > 0 && <div className="composition-toolbar">
-      <label>자료 배치<select aria-label="자료 빠른 배치" value="" disabled={busy} onChange={event => onChange(defaultVisualPlacements(scene, event.target.value as CompositionLayout))}>
-        <option value="" disabled>배치 선택</option>{Object.entries(compositionLayouts).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-      </select></label>
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(defaultVisualPlacements(scene))}>추천 배치로</Button>
-    </div>}
+    <div className="composition-stage">
+      <div className="composition-stage-heading"><span>미리보기</span><span>{scene.image?.sourceType === "generated" ? "AI 이미지 · " : ""}16:9</span></div>
     <div className={`scene-composition-frame ${preview ? "has-image" : ""} ${compositionStickers(shown).length ? "has-stickers" : ""} ${subtitle ? "has-subtitle" : ""}`}>
-      {preview ? <img className="composition-background" src={preview} alt={`${scene.title} ${scene.image?.sourceType === "generated" ? "AI 생성 콘티" : "참고 이미지"}`} />
-        : <div className="composition-empty">{scene.image ? "이 브라우저에서 배경 이미지를 찾지 못했습니다. 다시 첨부하거나 생성하세요." : visuals.length ? "자료 위치를 먼저 정하고 콘티를 생성하세요." : "이 장면의 화면을 이미지로 확인하세요."}</div>}
+      {preview ? <img className="composition-background" src={preview} alt={`${scene.title} ${scene.image?.sourceType === "generated" ? "AI 생성 스토리보드" : "참고 이미지"}`} />
+        : <img className="composition-background" alt={`${scene.title} 제목 미리보기`} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compositionPlaceholderSvg(scene))}`} />}
       <img className="composition-overlay" aria-hidden="true" alt="" draggable={false} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compositionOverlaySvg(shown, sources.assets))}`} />
       {compositionStickers(shown).map(sticker => <button key={sticker.visualId} type="button" disabled={busy}
         className={`composition-sticker-target ${selected === sticker.visualId ? "selected" : ""}`}
@@ -67,29 +71,49 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
         }}
         onPointerDown={event => startDrag(event, sticker.visualId, "resize")} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={cancelDrag} />)}
     </div>
-    {scene.image?.sourceType === "generated" && <p className="scene-image-cost">배경은 AI 생성 콘티입니다. 추천 자료와 자막을 합성한 제작용 미리보기입니다.</p>}
-    {visuals.length > 0 ? <>
-      <p className="scene-image-cost">추천 사진·표를 끌어서 이동하고 오른쪽 아래 모서리로 크기를 조절하세요. 방향키도 사용할 수 있습니다. 번호는 아래 시각자료 추천과 연결되며, 저장 이미지·PDF에 같은 크기로 반영됩니다. 조정에는 생성 비용이 들지 않습니다.</p>
-      <div className="composition-controls">
-        <label>추천 시각자료<select aria-label="배치할 추천 시각자료" value={visuals.some(item => item.id === selected) ? selected : visuals[0].id} disabled={busy} onChange={event => setSelected(event.target.value)}>
-          {visuals.map((visual, i) => <option key={visual.id} value={visual.id}>{i + 1} · {visual.kind === "table" ? "표" : "그림"} · {visual.title}</option>)}
-        </select></label>
-        <label className="connection-check"><input type="checkbox" aria-label="선택 자료 콘티에 표시" checked={Boolean(active)} disabled={busy} onChange={event => onChange(event.target.checked
-          ? [...placements, defaultVisualPlacements(scene).find(item => item.visualId === selected)!] : placements.filter(item => item.visualId !== selected))} />콘티에 표시</label>
-        {active && <details><summary>선택 자료 위치·크기 조정</summary><div className="composition-geometry">
-          {([['x', '가로 위치'], ['y', '세로 위치'], ['width', '너비'], ['height', '높이']] as const).map(([key, label]) => <label key={key}>{label} (%)<input type="number" aria-label={`자료 ${label}`} min={key === "x" || key === "y" ? 0 : 10} max={100} step={1} value={Math.round(active[key] * 10) / 10} disabled={busy} onChange={event => update({ [key]: event.target.valueAsNumber })} /></label>)}
-        </div></details>}
-      </div>
-    </> : <p className="scene-image-cost">연결된 추천 사진·표가 생기면 콘티에 실제 자료를 표시합니다.</p>}
-    {sources.missing.length > 0 && <p role="status" className="scene-image-cost">일부 추천 사진의 원본을 불러오지 못했습니다. 해당 자료는 ‘원본 사진 확인 필요’로 표시됩니다. 아래 추천 자료의 보관 상태를 확인해 주세요.</p>}
-    <div className="composition-subtitle-controls">
-      <label className="connection-check"><input type="checkbox" aria-label="콘티 자막 표시" checked={scene.subtitleSettings?.enabled !== false} disabled={busy} onChange={event => onSubtitleSettingsChange({ enabled: event.target.checked, position: scene.subtitleSettings?.position ?? "auto" })} />콘티에 자막 표시</label>
-      <label>자막 위치<select aria-label="콘티 자막 위치" value={scene.subtitleSettings?.position ?? "auto"} disabled={busy} onChange={event => onSubtitleSettingsChange({ enabled: scene.subtitleSettings?.enabled !== false, position: event.target.value as "auto" | "top" | "bottom" })}>
-        <option value="auto">자동 · 자료와 덜 겹치는 위치</option><option value="bottom">화면 아래</option><option value="top">화면 위</option>
-      </select></label>
-      <p className="scene-image-cost">장면의 ‘자막’ 문장을 그대로 표시합니다. 문장을 수정하면 콘티와 저장 이미지·PDF에도 반영됩니다.</p>
-      {!scene.subtitle.trim() && <p className="scene-image-cost">장면의 자막을 입력하면 콘티에 표시됩니다.</p>}
-      {subtitle?.truncated && <p role="status" className="scene-image-cost">자막이 길어 콘티에서는 일부를 줄여 표시합니다. 장면 자막을 짧게 나누면 더 잘 보입니다. 전체 문장은 PDF 자막 항목에 유지됩니다.</p>}
     </div>
+    {scene.image && !preview && <p role="status" className="image-notice">배경 이미지를 불러오는 중입니다. 계속 표시되지 않으면 다시 첨부해 주세요.</p>}
+    <div className="composition-inspector">
+      <div className="composition-tabs" role="tablist" aria-label="스토리보드 편집 설정">
+        {tabs.map((item, index) => <button type="button" role="tab" key={item.id} id={`${id}-${item.id}`} aria-controls={`${id}-panel`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={event => {
+          const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
+          if (next === null) return; event.preventDefault(); setTab(tabs[next].id);
+          (event.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
+        }}><item.icon size={15} />{item.label}{item.id === "visuals" && visuals.length > 0 && <span>{visuals.length}</span>}</button>)}
+      </div>
+      <div className="composition-inspector-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`} tabIndex={0}>
+        {tab === "image" && generationSettings}
+        {tab === "visuals" && (visuals.length > 0 ? <div className="composition-controls">
+          <div className="composition-control-row">
+            <label>추천 시각자료<select aria-label="배치할 추천 시각자료" value={selected} disabled={busy} onChange={event => setSelected(event.target.value)}>
+              {visuals.map((visual, i) => <option key={visual.id} value={visual.id}>{i + 1} · {visual.kind === "table" ? "표" : "그림"} · {visual.title}</option>)}
+            </select></label>
+            <label className="studio-toggle"><span>자료 표시</span><input type="checkbox" role="switch" aria-label="선택 자료 스토리보드에 표시" checked={Boolean(active)} disabled={busy} onChange={event => onChange(event.target.checked
+              ? [...placements, defaultVisualPlacements(scene).find(item => item.visualId === selected)!] : placements.filter(item => item.visualId !== selected))} /></label>
+          </div>
+          <div className="composition-toolbar">
+            <label>전체 자료 배치<select aria-label="자료 빠른 배치" value="" disabled={busy} onChange={event => onChange(defaultVisualPlacements(scene, event.target.value as CompositionLayout))}>
+              <option value="" disabled>배치 선택</option>{Object.entries(compositionLayouts).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select></label>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(defaultVisualPlacements(scene))}>추천 배치</Button>
+          </div>
+          {active && <div className="composition-geometry">
+            {([['x', '가로 위치'], ['y', '세로 위치'], ['width', '너비'], ['height', '높이']] as const).map(([key, label]) => <label key={key}>{label} (%)<input type="number" aria-label={`자료 ${label}`} min={key === "x" || key === "y" ? 0 : 10} max={100} step={1} value={Math.round(active[key] * 10) / 10} disabled={busy} onChange={event => update({ [key]: event.target.valueAsNumber })} /></label>)}
+          </div>}
+        </div> : <div className="composition-no-assets"><Layers3 size={24} /><strong>연결된 추천 자료가 없습니다</strong><span>장면에 추천된 사진·표가 생기면 여기에 표시됩니다.</span></div>)}
+        {tab === "subtitle" && <div className="composition-subtitle-controls">
+          <div className="composition-control-row">
+            <label>자막 위치<select aria-label="스토리보드 자막 위치" value={scene.subtitleSettings?.position ?? "auto"} disabled={busy || scene.subtitleSettings?.enabled === false} onChange={event => onSubtitleSettingsChange({ enabled: scene.subtitleSettings?.enabled !== false, position: event.target.value as "auto" | "top" | "bottom" })}>
+              <option value="auto">자동 배치</option><option value="bottom">화면 아래</option><option value="top">화면 위</option>
+            </select></label>
+            <label className="studio-toggle"><span>자막 표시</span><input type="checkbox" role="switch" aria-label="스토리보드 자막 표시" checked={scene.subtitleSettings?.enabled !== false} disabled={busy} onChange={event => onSubtitleSettingsChange({ enabled: event.target.checked, position: scene.subtitleSettings?.position ?? "auto" })} /></label>
+          </div>
+          <label>자막 1<Textarea aria-label="자막 1" rows={1} value={firstCaption} disabled={busy} placeholder="장면의 핵심 내용" onChange={event => onSubtitleChange(`${event.target.value.replace(/\n/g, " ")}\n${secondCaption}`)} /></label>
+          <label>자막 2<Textarea aria-label="자막 2" rows={1} value={secondCaption} disabled={busy} placeholder="이어지는 설명이나 행동 안내" onChange={event => onSubtitleChange(`${firstCaption}\n${event.target.value}`)} /></label>
+          {subtitle?.truncated && <p role="status" className="image-notice">자막이 길어 미리보기에서 일부를 줄였습니다. PDF 자막 항목에는 전체 문장이 유지됩니다.</p>}
+        </div>}
+      </div>
+    </div>
+    {sources.missing.length > 0 && <p role="status" className="image-notice">추천 사진 일부를 불러오지 못했습니다. 아래 시각자료 추천에서 원본을 확인해 주세요.</p>}
   </div>;
 }

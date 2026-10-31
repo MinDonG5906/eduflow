@@ -75,10 +75,16 @@ export function wrapCompositionText(text: string, columns: number) {
   }
   return lines;
 }
+/** The empty storyboard is a usable title card, shared by preview and exports. */
+export function compositionPlaceholderSvg(scene: Pick<Scene, "title">) {
+  const lines = wrapCompositionText(scene.title || "스토리보드", 24).slice(0, 4);
+  const top = 450 - (lines.length - 1) * 42;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#111113"/>${lines.map((line, i) => `<text x="800" y="${top + i * 84}" text-anchor="middle" font-family="EduFlow Korean, Apple SD Gothic Neo, Malgun Gothic, Noto Sans CJK KR, Arial, sans-serif" font-size="64" font-weight="bold" fill="#fafafa">${escapeXml(line)}</text>`).join("")}</svg>`;
+}
 export function compositionSubtitle(scene: CompositionScene) {
   if (!scene.subtitle?.trim() || scene.subtitleSettings?.enabled === false) return null;
   let fontSize = 44, lines = wrapCompositionText(scene.subtitle, 1344 / fontSize);
-  while (lines.length > 3 && fontSize > 26) { fontSize -= 2; lines = wrapCompositionText(scene.subtitle, 1344 / fontSize); }
+  while (lines.length > 2 && fontSize > 26) { fontSize -= 2; lines = wrapCompositionText(scene.subtitle, 1344 / fontSize); }
   const truncated = lines.length > 8;
   if (truncated) lines = [...lines.slice(0, 7), `${lines[7]}…`];
   const height = (lines.length * fontSize * 1.35 + 36) / 9;

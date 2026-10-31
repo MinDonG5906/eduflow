@@ -141,8 +141,9 @@ test("exportStoryboardPdf handles landscape and portrait user-attached images wi
   assert.ok(text.includes("안전보건공단 2025 가이드북 p.15"), "Should include landscape image source");
   assert.ok(text.includes("대한응급의학회 포스터 세로형"), "Should include portrait image source");
 
-  // Scene 3 has no image, should show fallback
-  assert.ok(text.includes("참고 이미지 미등록"), "Should show fallback for scene 3");
+  // Missing backgrounds now use a rendered title card; keep the full title in PDF text.
+  assert.ok(text.includes(sampleBoard.scenes[2].title), "Should retain the title for the title-card scene");
+  assert.ok(!text.includes("참고 이미지 미등록"), "Should not show the obsolete missing-image placeholder");
 });
 
 test("scene reordering retains image attachment when generating PDF", async () => {

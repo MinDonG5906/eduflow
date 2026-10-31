@@ -231,8 +231,8 @@ export function generateDemo(
         : `타이포그래피 카드, 핵심어 강조 애니메이션, 부드러운 장면 전환${settings.keywords.length ? `\n강조 키워드: ${settings.keywords.join(", ")}` : ""}`,
       narration: `${prefix} ${evidence}`,
       subtitle: english
-        ? "Understand the main idea of this source passage."
-        : `${snippet.slice(0, 36)} — 핵심을 함께 살펴봅니다.`,
+        ? "Understand the main idea of this passage.\nReview the key points in the source."
+        : `${snippet.slice(0, 36)}\n원문에서 핵심 내용을 확인하세요.`,
       duration:
         current?.duration ||
         Math.floor((settings.minutes * 60) / count) + (i < (settings.minutes * 60) % count ? 1 : 0),
@@ -290,7 +290,7 @@ export function markdown(board: Board) {
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 콘티 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 스토리보드 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>

@@ -222,7 +222,6 @@ export async function exportStoryboardPdf({
     const scene = board.scenes[idx];
     const stickers = compositionStickers(scene);
     const assets = compositionAssets ?? await loadAssets(scene);
-    const overlay = await doc.embedPng(await renderCompositionOverlay(scene, assets));
     let image: PDFImage | undefined;
     let imageSourceText = "";
 
@@ -237,7 +236,7 @@ export async function exportStoryboardPdf({
         imageSourceText = "출처: 등록된 참고 이미지";
       }
       if (scene.image?.sourceType === "generated") {
-        imageSourceText = `AI 생성 콘티 (원본 증거 아님)${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}\n${imageSourceText}`;
+        imageSourceText = `AI 생성 스토리보드 (원본 증거 아님)${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}\n${imageSourceText}`;
       }
     }
     // B. Priority 2: PDF source document page screenshot
@@ -256,6 +255,8 @@ export async function exportStoryboardPdf({
     }
 
 
+    if (!image && imageRenderError) imageSourceText = "원본 참고 이미지를 표시하지 못했습니다. 제목 카드로 표시합니다.";
+    const overlay = await doc.embedPng(await renderCompositionOverlay(scene, assets, !image));
     const leftRows = [
       ...section("이미지 출처", imageSourceText, fonts, leftWidth),
       ...section("추천 자료 배치", stickers.map(item => `${item.label} · ${item.kind} · ${item.visual.title} (${item.visual.page}페이지)`).join("\n"), fonts, leftWidth),
@@ -284,9 +285,8 @@ export async function exportStoryboardPdf({
       const bodyTop=top-44;
       page.drawText("화면 / 참고 이미지",{x:MARGIN_X,y:bodyTop-10,size:10,font:fonts.bold,color:ink});
       const frameTop=bodyTop-24, frameHeight=leftWidth*9/16, frameY=frameTop-frameHeight;
-      page.drawRectangle({x:MARGIN_X,y:frameY,width:leftWidth,height:frameHeight,color:soft,borderColor:lineColor,borderWidth:0.6});
+      page.drawRectangle({x:MARGIN_X,y:frameY,width:leftWidth,height:frameHeight,color:rgb(17/255,17/255,19/255),borderColor:lineColor,borderWidth:0.6});
       if(image){const rect=compositionBackgroundRect(image.width,image.height,leftWidth,frameHeight);page.drawImage(image,{x:MARGIN_X+rect.x,y:frameY+rect.y,width:rect.width,height:rect.height});}
-      else if (!stickers.length) {page.drawText(imageRenderError?"참고 이미지 표시 실패":"참고 이미지 미등록",{x:MARGIN_X+16,y:frameY+frameHeight/2,size:10,font:fonts.regular,color:body});}
       page.drawImage(overlay, { x: MARGIN_X, y: frameY, width: leftWidth, height: frameHeight });
       page.drawLine({start:{x:rightX-16,y:bodyTop},end:{x:rightX-16,y:42},color:lineColor,thickness:0.6});
       drawRows(page,leftRows,MARGIN_X,frameY-12,42,fonts);
