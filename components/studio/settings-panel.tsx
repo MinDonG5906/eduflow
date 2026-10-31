@@ -214,7 +214,7 @@ export function SettingsPanel({
         <div className="settings-divider" />
         <div className="knowledge-settings">
           <BookOpen size={16} />
-          <span>AI는 등록된 지식베이스에서 원고와 관련된 근거를 검색합니다.</span>
+          <span>원문을 바탕으로 생성하고 지식베이스로 보강합니다. 관련 자료가 없거나 검색할 수 없어도 원문으로 생성합니다.</span>
           <a href="/knowledge">지식베이스 관리</a>
         </div>
       </fieldset>

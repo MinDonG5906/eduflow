@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GenerationError, generationTask } from "./generation-contract";
-import { defaults, generateDemo, sample, markdown, csv } from "./storyboard";
+import { defaults, generateDemo, sample, markdown } from "./storyboard";
 import { readAIConfig } from "./server/ai-config";
 import { createOpenAIAdapter, OPENAI_MODEL } from "./server/openai-adapter";
 import { protectPaidGeneration } from "./server/ai-protection";
@@ -160,6 +160,6 @@ test("mixed demo and AI scene exports identify the actual scene source", async (
   const demo = generateDemo(sample, defaults);
   const mixed = { ...demo, scenes: [ai.scenes[0], demo.scenes[1]] };
   assert.ok(markdown(mixed).includes("AI·데모 장면 포함"));
-  const rows = csv(mixed).split("\r\n");
-  assert.ok(rows[1].includes('"AI 생성 초안"')); assert.ok(rows[2].includes('"원문 발췌 데모"'));
+  assert.ok(markdown(mixed).includes(ai.scenes[0].narration));
+  assert.ok(markdown(mixed).includes(demo.scenes[1].narration));
 });

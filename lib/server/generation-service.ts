@@ -1,5 +1,5 @@
 import {
-  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, NO_REFERENCE_NOTICE, SERVER_TIMEOUT_MS,
+  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, SERVER_TIMEOUT_MS,
   generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse,
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
@@ -8,7 +8,7 @@ import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection 
 import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
-import type { RetrievedReference } from "../knowledge";
+import type { KnowledgeSearchStatus, RetrievedReference } from "../knowledge";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -136,11 +136,7 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
 export async function runGeneration(
   input: GenerationInput,
   adapter: GenerationAdapter,
-  options: {
-    signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[];
-    // True when the knowledge base was searched for this request, so an empty result is reported.
-    knowledgeSearched?: boolean;
-  } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[]; knowledgeStatus?: KnowledgeSearchStatus } = {},
 ): Promise<Board> {
   const controller = new AbortController();
   const cancel = () => controller.abort(new GenerationError("CANCELLED"));
@@ -193,6 +189,11 @@ export async function runGeneration(
         const record = {
           contractVersion: CONTRACT_VERSION, model: adapter.model, promptVersion: adapter.promptVersion,
           createdAt: new Date().toISOString(), attempts: attempt, mode: adapter.mode,
+          ...(adapter.mode === "ai" && options.references !== undefined ? { knowledge: {
+            ...(options.knowledgeStatus ? { status: options.knowledgeStatus } : {}),
+            retrievedCount: task.supplementalSources.length,
+            documentCount: new Set(task.supplementalSources.map(reference => reference.documentId)).size,
+          } } : {}),
         };
         const sentences = manuscriptSource(input.manuscript).sentences;
         const availableReferences = new Map(task.supplementalSources.map((reference) => [reference.id, reference]));
@@ -210,19 +211,25 @@ export async function runGeneration(
           allCorrections.push(...corrections);
           const correctionNote = termCorrectionNotice(corrections);
           // Evidence and source IDs are never spelling-corrected: preserve citations.
-          const { sceneNo, referenceIds, phase, ...content } = correctedScene;
+          const { sceneNo, referenceIds, visualReferenceIds, phase, ...content } = correctedScene;
           const expectedPhase = input.scene?.phase ?? (sceneNo === 1 ? "intro" : sceneNo === expected ? "outro" : "body");
           if (phase && phase !== expectedPhase)
             warnings.push(`${sceneNo}번 장면: 도입·본문·마무리 위치를 확인해 주세요.`);
-          const unknownIds = (referenceIds ?? []).filter((id) => !availableReferences.has(id));
+          const unknownIds = [...(referenceIds ?? []), ...(visualReferenceIds ?? [])].filter((id) => !availableReferences.has(id));
           if (unknownIds.length)
-            warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강 자료 출처가 있어 제외했습니다.`);
+            warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강·시각자료 출처가 있어 제외했습니다.`);
           const references = [...new Set(referenceIds ?? [])]
             .map((id) => availableReferences.get(id)).filter((item) => item !== undefined);
+          const visualReferences = [...new Set(visualReferenceIds ?? [])]
+            .map(id => availableReferences.get(id)).filter((item): item is RetrievedReference => item !== undefined && Boolean(item.visuals?.length));
+          const visuals = [...new Map([...references, ...visualReferences].flatMap(reference => reference.visuals ?? [])
+            .map(visual => [`${visual.documentId}:${visual.page}:${visual.figureId}`, visual])).values()].slice(0, 20);
           return {
             ...content,
             phase: expectedPhase,
             references,
+            visualReferences,
+            visuals,
             ...(input.pdfSource ? { pdfSource: input.pdfSource } : {}),
             id: input.scene?.id || crypto.randomUUID(),
             review: true,
@@ -236,17 +243,12 @@ export async function runGeneration(
           warnings.push("전체 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 확인해 주세요.");
         const correctionNote = termCorrectionNotice(allCorrections);
         if (correctionNote) warnings.push(correctionNote);
-        if (options.knowledgeSearched && !task.supplementalSources.length) {
-          // First, and within the 30-warning limit of the board schema; per-scene warnings
-          // also stay in each scene's reviewReason.
-          warnings.unshift(NO_REFERENCE_NOTICE);
-          warnings.splice(30);
-        }
         const board = {
           ...correctedHeader, scenes, settings: input.settings, mode: adapter.mode,
           ...(input.pdfSource ? { pdfSource: input.pdfSource } : {}),
           generation: {
             ...record, repairedScenes, warnings,
+            ...(record.knowledge ? { knowledgeSources: task.supplementalSources } : {}),
           },
         };
         return parseGenerationResponse(board, input);

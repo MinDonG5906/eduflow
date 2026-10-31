@@ -7,6 +7,7 @@ import type { GenerationAdapter, GenerationContext } from "./generation-service"
 import type { PdfAttachment } from "./pdf-input";
 import { preparePdfInput } from "./prepare-pdf";
 import { geminiJsonSchema, providerTask } from "./provider-prompt";
+import { citedPdfPage, selectPdfPages } from "../pdf-source";
 
 export function assertGeminiConfig(config: AIConfig) {
   // Only pinned, priced models can run under the dollar budget.
@@ -21,7 +22,7 @@ function request(context: GenerationContext) {
   const { instructions, responseSchema, taskText } = providerTask(context);
   const parts: Part[] = [
     ...(context.pdf ? [{ inlineData: { mimeType: "application/pdf", data: Buffer.from(context.pdf.data).toString("base64") } }] : []),
-    { text: taskText },
+    { text: context.pdf ? JSON.stringify({ ...JSON.parse(taskText), document: { visualPages: context.task.pdfSource?.pages ?? [] } }) : taskText },
   ];
   return { instructions, parts, schema: geminiJsonSchema(responseSchema) };
 }
@@ -51,20 +52,35 @@ export function createGeminiAdapter(config: AIConfig, options: { fetch?: typeof 
     // One call per attempt: the budget ledger reserves exactly the calls this app makes.
     httpOptions: { timeout: SERVER_TIMEOUT_MS, retryOptions: { attempts: 1 }, ...(options.fetch ? { fetch: options.fetch } : {}) },
   });
-  const preparedPdfs = new WeakMap<PdfAttachment, Promise<PdfAttachment>>();
+  const preparedPdfs = new WeakMap<PdfAttachment, Map<string, Promise<PdfAttachment>>>();
   async function completeRequest(context: GenerationContext) {
+    context.signal.throwIfAborted();
     if (!context.pdf) return request(context);
-    let prepared = preparedPdfs.get(context.pdf);
+    const source = context.task.pdfSource;
+    if (!source) throw new GenerationError("INVALID_PDF_PAGES");
+    const cited = context.task.sceneSourceScope === "citation" ? citedPdfPage(source, context.task.selectedScene) : null;
+    const pages = cited === null ? source.pages : [cited];
+    const key = JSON.stringify([source.pages, pages]);
+    let variants = preparedPdfs.get(context.pdf);
+    if (!variants) { variants = new Map(); preparedPdfs.set(context.pdf, variants); }
+    let prepared = variants.get(key);
     if (!prepared) {
-      prepared = preparePdfInput(context.pdf, context.signal);
-      preparedPdfs.set(context.pdf, prepared);
+      const attachment = context.pdf;
+      prepared = (async () => {
+        const pdf = cited === null ? attachment : { filename: attachment.filename,
+          data: await selectPdfPages(attachment.data, [source.pages.indexOf(cited) + 1]) };
+        return preparePdfInput(pdf, context.signal);
+      })();
+      variants.set(key, prepared);
     }
     const pdf = await prepared;
     context.signal.throwIfAborted();
-    return request({ ...context, pdf });
+    return request({ ...context, pdf, task: { ...context.task, pdfSource: { ...source, pages },
+      sceneSourceScope: context.task.selectedScene ? cited === null ? "selection" : "citation" : undefined,
+    } });
   }
   return {
-    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v2-duration-target",
+    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v3-duration-target",
     billing: { kind: "metered", config },
     async countInputTokens(_, context) {
       try {

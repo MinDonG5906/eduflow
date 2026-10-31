@@ -47,7 +47,7 @@ function validatePresentation(name: string, data: Buffer) {
   return slides;
 }
 
-async function findConverter() {
+export async function findOfficeConverter() {
   const configured = process.env.EDUFLOW_OFFICE_CONVERTER_PATH?.trim();
   const candidates = configured ? [configured] : [
     ...(process.env.PATH ?? "").split(delimiter).filter(Boolean).flatMap((dir) => process.platform === "win32" ? [join(dir, "soffice.com"), join(dir, "soffice.exe")] : [join(dir, "soffice")]),
@@ -73,7 +73,7 @@ export async function convertPresentation(name: string, data: Buffer, signal: Ab
   converting = true;
   let directory: string | undefined;
   try {
-    const binary = options.binary ?? await findConverter();
+    const binary = options.binary ?? await findOfficeConverter();
     signal.throwIfAborted();
     directory = await mkdtemp(join(options.tempRoot ?? tmpdir(), "eduflow-ppt-"));
     const profile = join(directory, "profile"), output = join(directory, "output");

@@ -9,10 +9,6 @@ export const CONTRACT_VERSION = "eduflow-generation-v1" as const;
 export const SERVER_TIMEOUT_MS = 90000;
 export const CLIENT_TIMEOUT_MS = SERVER_TIMEOUT_MS + 5000;
 export const MAX_OUTPUT_CHARS = 1000000;
-// The manuscript is the primary evidence, so AI generation runs without supplemental
-// sources and records this notice instead of stopping.
-export const NO_REFERENCE_NOTICE_PREFIX = "보강 자료 없음:";
-export const NO_REFERENCE_NOTICE = `${NO_REFERENCE_NOTICE_PREFIX} 지식베이스에서 이 원고와 관련된 자료를 찾지 못해 원고만으로 생성했습니다. 보강이 필요하면 지식베이스에 자료를 등록한 뒤 다시 생성하세요.`;
 export const generationRequestSchema = requestSchema.safeExtend({
   scene: sceneSchema.extend({ id: z.string().uuid() }).optional(),
 });
@@ -33,6 +29,7 @@ export const generatedSceneSchema = z.strictObject({
   sourceId: z.string().trim().max(80),
   phase: scenePhaseSchema.optional(),
   referenceIds: z.array(z.string().trim().min(1).max(100)).max(6).optional(),
+  visualReferenceIds: z.array(z.string().trim().min(1).max(100)).max(6).optional(),
 });
 const headerShape = { title: text(160), summary: text(20000), objectives: z.array(text(1000)).min(1).max(5) };
 export const generatedBoardSchema = z.strictObject({
@@ -43,6 +40,7 @@ const generatedModelBoardSchema = generatedBoardSchema.extend({
   scenes: z.array(generatedSceneSchema.extend({
     phase: scenePhaseSchema,
     referenceIds: z.array(z.string().trim().min(1).max(100)).max(6),
+    visualReferenceIds: z.array(z.string().trim().min(1).max(100)).max(6),
   })).min(1).max(20),
 });
 export const generatedEnvelopeSchema = z.strictObject({
@@ -69,6 +67,7 @@ export const errorDefinitions = {
   INVALID_PDF: { status: 400, retryable: false, error: "PDF가 손상되었거나 암호로 잠겨 있습니다. 확인 후 다시 선택해 주세요." },
   INVALID_PDF_PAGES: { status: 400, retryable: false, error: "선택한 페이지와 PDF가 일치하지 않습니다. 페이지를 다시 선택해 주세요." },
   PDF_AI_REQUIRED: { status: 503, retryable: false, error: "PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다. 무료 데모에서는 지원하지 않습니다." },
+  KNOWLEDGE_NO_MATCH: { status: 422, retryable: false, error: "지식베이스에서 이 원고와 관련된 근거를 찾지 못했습니다. 자료를 등록하거나 원고 주제를 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_DISABLED: { status: 503, retryable: false, error: "실제 AI 사용이 잠겨 있습니다. 서버 설정을 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_NOT_CONFIGURED: { status: 503, retryable: false, error: "AI 키·모델·비용 한도 설정을 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_ACCESS_DENIED: { status: 403, retryable: false, error: "현재 AI 테스트는 이 PC의 로컬 주소에서만 사용할 수 있습니다. 기존 작업은 유지됩니다." },
@@ -147,6 +146,10 @@ export function generationTask(input: GenerationInput, references: RetrievedRefe
     manuscript: input.manuscript,
     sourceSentences: sentences.map((text, i) => ({ id: `sentence:${i + 1}-${i + 1}`, text })),
     supplementalSources: references,
+    groundingGuidance: references.length
+      ? "주 자료는 사용자가 제공한 원문입니다. 지식베이스는 관련 설명과 시각자료 보강에만 사용하세요."
+      : "지식베이스 보강 자료가 없습니다. 사용자 원고 또는 첨부 PDF의 내용만으로 스토리보드를 완성하세요. 원문에 없는 사실·수치·출처를 만들지 말고 referenceIds와 visualReferenceIds는 빈 배열로 반환하세요. 화면 설명과 시각 자료 제안은 원문 내용 또는 첨부 PDF에 실제 보이는 표·그림을 바탕으로 작성하세요.",
+    visualGuidance: "supplementalSources의 visuals는 지식베이스에서 그림과 인용문 연결이 확인된 시각자료입니다. 장면의 화면·목적·나레이션과 관련된 그림을 골라 visual과 assets에 그림의 구체적인 활용 방법을 적고, 그 그림을 제공한 source id를 visualReferenceIds에 넣으세요. 원고와 같은 내용을 설명하는 그림도 선택할 수 있으며 새 사실의 보강 여부와 무관합니다. 나레이션·자막 보강 출처는 기존 referenceIds 규칙을 따르세요. 관련 없는 그림이나 visuals가 빈 자료는 visualReferenceIds에 넣지 말고, 적합한 그림이 없으면 빈 배열로 두세요. 그림을 새로 만들거나 다른 문장·페이지의 그림으로 대체하지 마세요.",
     settings: input.settings,
     sourceRequest: input.sourceRequest || "",
     ...(input.pdfSource ? { pdfSource: input.pdfSource, pdfGuidance: template.pdfGuidance } : {}),

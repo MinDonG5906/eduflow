@@ -7,7 +7,7 @@ import { PDFDocument, degrees, rgb, StandardFonts } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { formatPdfPages, parsePdfPages, selectPdfPages, MAX_AI_PDF_BYTES } from "./pdf-source";
 import { documentSchema } from "./documents";
-import { defaults, sample, generateDemo, requestSchema, markdown, csv } from "./storyboard";
+import { defaults, sample, generateDemo, requestSchema, markdown } from "./storyboard";
 import { captureGeneration, readDraft, serializeDraft } from "./studio-state";
 import { generationTask, GenerationError } from "./generation-contract";
 import { importDocumentRequest } from "./server/document-import";
@@ -47,6 +47,35 @@ function multipart(pdf: Uint8Array, requestInput = input, origin = "http://local
   return new Request("http://localhost:3000/api/generate", { method: "POST", headers: { origin }, body: form });
 }
 const coded = (code: string) => (e: unknown) => e instanceof GenerationError && e.code === code;
+
+test("RAG failure preserves image-only PDF input and original page locations during generation", async (t) => {
+  const selected = await selectPdfPages(await visualPdf(), [2]);
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-pdf-fallback-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  let calls = 0;
+  const post = createGenerateHandler({ mode: "ai", model: config.model, promptVersion: "test",
+    billing: { kind: "metered", config }, countInputTokens: async () => 3000,
+    generate: async (original, context) => {
+      calls++;
+      assert.deepEqual(original.pdfSource, input.pdfSource);
+      assert.deepEqual(context.pdf?.data, selected);
+      assert.deepEqual(context.task.supplementalSources, []);
+      assert.ok(context.limits);
+      const raw = generateDemo(sample, input.settings);
+      return { title: "Visual diagram", summary: "Blue rectangle and orange circle", objectives: ["Explain the selected diagram"],
+        scenes: raw.scenes.map(({ id, review, reviewReason, edited, generation, ...scene }, i) => ({ ...scene,
+          sceneNo: i + 1, sourceId: "pdf-page:2", evidence: "Blue rectangle and orange circle" })) };
+    },
+  }, { budgetDirectory: directory, knowledge: () => { throw new Error("database unavailable"); } });
+  const response = await post(multipart(selected));
+  assert.equal(response.status, 200);
+  const board = await response.json();
+  assert.equal(calls, 1);
+  assert.deepEqual(board.pdfSource, input.pdfSource);
+  assert.equal(board.generation.knowledge.status, "unavailable");
+  assert.ok(board.scenes.every((scene: { sourceId: string; references?: unknown[] }) =>
+    scene.sourceId === "pdf-page:2" && !scene.references?.length));
+});
 
 test("page ranges normalize duplicate selections and reject invalid or out-of-range pages", () => {
   assert.deepEqual(parsePdfPages("3-5, 2, 4, 8", 8), [2, 3, 4, 5, 8]);
@@ -156,7 +185,6 @@ test("protected SDK sends only the selected PDF in counting, generation and repa
     const mixed = structuredClone(board);
     mixed.scenes[0].pdfSource = { name: "reselected.pdf", pages: [7] };
     assert.ok(markdown(mixed).includes("원본 PDF: reselected.pdf\n선택 페이지: 7"));
-    assert.ok(csv(mixed).includes('"reselected.pdf","7"'));
     assert.ok(board.scenes[0].reviewReason.includes("원본과 대조"));
     assert.equal(board.scenes[0].sourceId, "pdf-page:2");
     assert.equal(board.generation?.attempts, 2);

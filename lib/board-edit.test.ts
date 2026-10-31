@@ -52,5 +52,5 @@ test("a regenerated scene replaces its target and keeps the original id", () => 
 
 test("export filenames replace reserved characters and fall back when empty", () => {
   assert.equal(exportFilename(' 안전/교육:1*?"<>| ', "md"), "안전_교육_1______.md");
-  assert.equal(exportFilename("   ", "csv"), "스토리보드.csv");
+  assert.equal(exportFilename("   ", "pdf"), "스토리보드.pdf");
 });

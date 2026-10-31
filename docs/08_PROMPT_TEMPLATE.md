@@ -138,8 +138,8 @@ sourceRequest가 있으면 업로드 문서에서 선택한 제작 범위입니�
 
 ## 8. 버전 기록
 
-생성 결과와 Markdown·CSV 내보내기에 프롬프트 버전이 기록됩니다.
+생성 기록과 Markdown 내보내기에 프롬프트 버전이 기록됩니다.
 
 | 날짜 | OpenAI | Claude | Gemini | 변경 |
 | --- | --- | --- | --- | --- |
-| 2026-10-27 | `eduflow-openai-v9-duration-target` | `eduflow-claude-v2-duration-target` | `eduflow-gemini-v2-duration-target` | 전체 생성에 목표 길이(초)와 길이 지시 추가. 템플릿을 `PROMPT_TEMPLATE`으로 분리하고 이 문서 작성 |
+| 2026-10-31 | `eduflow-openai-v11-duration-target` | `eduflow-claude-v4-duration-target` | `eduflow-gemini-v3-duration-target` | 이전 버전(`openai-v10-optional-knowledge`, `claude-v3-optional-knowledge`, `gemini-v2-scoped-pdf-rag`)에 전체 생성의 목표 길이(초)와 길이 지시 추가. 템플릿을 `PROMPT_TEMPLATE`으로 분리하고 이 문서 작성 |

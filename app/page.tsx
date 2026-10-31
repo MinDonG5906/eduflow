@@ -19,12 +19,11 @@ import { useGeneratorStatus } from "@/hooks/use-generator-status";
 import { usePdfSelection } from "@/hooks/use-pdf-selection";
 import { useBusyProgress, useNotice } from "@/hooks/use-timed-state";
 import { editScene, insertSceneAfter, MAX_SCENES, moveScene, removeScene, replaceScene } from "@/lib/board-edit";
-import { downloadText, exportFilename } from "@/lib/download";
+import { downloadBlob, downloadText, exportFilename } from "@/lib/download";
 import {
   defaults,
   sample,
   markdown,
-  csv,
   requestSchema,
   type Board,
   type Scene,
@@ -34,6 +33,7 @@ import { captureGeneration, retryConflict, type GenerationJob } from "@/lib/stud
 import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResponse } from "@/lib/generation-contract";
 import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, savePdf } from "@/lib/pdf-storage";
+import { loadSceneImages } from "@/lib/scene-image-storage";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
@@ -312,19 +312,55 @@ export default function Studio() {
   async function exportBoard(format: ExportFormat) {
     if (!board) return;
     try {
-      const content = format === "csv" ? csv(board) : markdown(board);
+      if (format === "pdf") {
+        notify("PDF 스토리보드를 생성하고 있어요...");
+        const formData = new FormData();
+        formData.set("board", JSON.stringify(board));
+        if (pdfReady && pdf.selected && sourceDocument?.selectedPages?.length) {
+          formData.set("pdf", pdf.selected, "selected-pages.pdf");
+          formData.set("pdfSource", JSON.stringify({ name: sourceDocument.name, pages: sourceDocument.selectedPages }));
+        }
+        // Attach scene reference images from IndexedDB
+        const imageIds = board.scenes
+          .map((s) => s.image?.id)
+          .filter((id): id is string => Boolean(id));
+        if (imageIds.length > 0) {
+          const imageMap = await loadSceneImages(imageIds);
+          for (const s of board.scenes) {
+            if (s.image?.id && imageMap.has(s.image.id)) {
+              formData.set(`scene_image_${s.id}`, imageMap.get(s.image.id)!, s.image.name || "image.png");
+            }
+          }
+        }
+        const response = await fetch("/api/export/pdf", {
+          method: "POST",
+          body: formData,
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || "PDF 생성에 실패했습니다.");
+        }
+        const blob = await response.blob();
+        downloadBlob(blob, exportFilename(filename, "pdf"));
+        notify("PDF 스토리보드를 내보냈어요.");
+        setModal(null);
+        return;
+      }
+      const content = markdown(board);
       if (format === "copy") {
         await navigator.clipboard.writeText(content);
         notify("전체 스토리보드를 복사했어요.");
         return;
       }
-      downloadText(content, format === "csv" ? "text/csv;charset=utf-8" : "text/markdown;charset=utf-8", exportFilename(filename, format));
+      downloadText(content, "text/markdown;charset=utf-8", exportFilename(filename, format));
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
-    } catch {
+    } catch (e) {
       setModal(null);
       fail(format === "copy"
         ? "복사할 수 없습니다. 브라우저의 클립보드 권한을 확인하거나 Markdown 파일로 내려받아 주세요."
-        : "내보내기에 실패했습니다. 브라우저의 다운로드 권한을 확인해 주세요.");
+        : format === "pdf"
+          ? (e instanceof Error ? e.message : "PDF 내보내기에 실패했습니다.")
+          : "내보내기에 실패했습니다. 브라우저의 다운로드 권한을 확인해 주세요.");
     }
   }
   function openExport() {

@@ -101,7 +101,7 @@ export function createOpenAIAdapter(config: AIConfig, options: { fetch?: typeof 
     } }, document);
   }
   return {
-    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v9-duration-target",
+    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v11-duration-target",
     async countInputTokens(_, context) {
       try {
         const result = await client.responses.inputTokens.count(await completePayload(context), { signal: context.signal });
