@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/connection": {},
+    "/api/documents": {},
+    "/api/documents/preview": {},
+    "/api/documents/source": {},
+    "/api/export/pdf": {},
+    "/api/generate": {},
+    "/api/knowledge": {},
+    "/api/knowledge/figure": {},
+    "/api/knowledge/file": {},
+    "/api/knowledge/location": {},
+    "/api/knowledge/page": {},
+    "/api/knowledge/recheck": {},
+    "/api/knowledge/review": {},
+    "/api/knowledge/search": {},
+    "/api/knowledge/structure": {},
+    "/api/scene-image": {}
+  }
+}

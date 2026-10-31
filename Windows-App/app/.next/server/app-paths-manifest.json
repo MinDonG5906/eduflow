@@ -1,0 +1,22 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/_global-error/page": "app/_global-error/page.js",
+  "/api/connection/route": "app/api/connection/route.js",
+  "/api/documents/preview/route": "app/api/documents/preview/route.js",
+  "/api/documents/route": "app/api/documents/route.js",
+  "/api/documents/source/route": "app/api/documents/source/route.js",
+  "/api/export/pdf/route": "app/api/export/pdf/route.js",
+  "/api/generate/route": "app/api/generate/route.js",
+  "/api/knowledge/figure/route": "app/api/knowledge/figure/route.js",
+  "/api/knowledge/file/route": "app/api/knowledge/file/route.js",
+  "/api/knowledge/location/route": "app/api/knowledge/location/route.js",
+  "/api/knowledge/page/route": "app/api/knowledge/page/route.js",
+  "/api/knowledge/recheck/route": "app/api/knowledge/recheck/route.js",
+  "/api/knowledge/review/route": "app/api/knowledge/review/route.js",
+  "/api/knowledge/route": "app/api/knowledge/route.js",
+  "/api/knowledge/search/route": "app/api/knowledge/search/route.js",
+  "/api/knowledge/structure/route": "app/api/knowledge/structure/route.js",
+  "/api/scene-image/route": "app/api/scene-image/route.js",
+  "/knowledge/page": "app/knowledge/page.js",
+  "/page": "app/page.js"
+}

@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/export/pdf/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"D:\\a\\eduflow\\eduflow\\app\\api\\export\\pdf\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};
