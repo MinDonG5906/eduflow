@@ -122,6 +122,21 @@ function structuredTables(tables: string[][][]): { text: string; reason: string 
   return { text: sections.join("\n\n"), reason: "" };
 }
 
+type TablePages = Awaited<ReturnType<PDFParse["getTable"]>>["pages"];
+
+// pdf-parse's table reader throws on some layouts (2026-10-31: 4 of 18 public KOSHA PDFs),
+// which used to fail the whole upload. Retry page by page so an unreadable table drops
+// only that page's table text; the page is still read as plain text or OCR.
+export async function readPdfTables(parser: Pick<PDFParse, "getTable">, selected: number[]): Promise<TablePages> {
+  try { return (await parser.getTable({ partial: selected })).pages; }
+  catch {
+    const pages: TablePages = [];
+    for (const page of selected)
+      pages.push(...await parser.getTable({ partial: [page] }).then((result) => result.pages, () => []));
+    return pages;
+  }
+}
+
 export async function analyzeKnowledgePdf(
   pdf: Buffer, range: string, signal: AbortSignal,
   makeOcr = createKoreanOcr,
@@ -141,8 +156,8 @@ export async function analyzeKnowledgePdf(
   try {
     const layoutDocument = await loading.promise;
     const extracted = await parser.getText({ partial: selected, pageJoiner: "" });
-    const tables = await parser.getTable({ partial: selected });
-    const tablePages = new Map(tables.pages.filter((page) => page.tables.length).map((page) => [page.num, page.tables]));
+    const tables = await readPdfTables(parser, selected);
+    const tablePages = new Map(tables.filter((page) => page.tables.length).map((page) => [page.num, page.tables]));
     for (const page of extracted.pages) {
       signal.throwIfAborted();
       const proxy = await layoutDocument.getPage(page.num);

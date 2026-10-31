@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GenerationError, generationTask } from "./generation-contract";
-import { defaults, generateDemo, sample } from "./storyboard";
+import { GenerationError, PROMPT_TEMPLATE, generationTask } from "./generation-contract";
+import { defaults, generateDemo, manuscriptSource, sample } from "./storyboard";
 import { createAnthropicAdapter } from "./server/anthropic-adapter";
 import { createConnectionHandlers } from "./server/connection-handler";
 import { readConnectionState, updateConnectionState } from "./server/connection-store";
 import { adapterFor, anthropicConfig } from "./server/generator";
-import type { GenerationContext } from "./server/generation-service";
+import { runGeneration, type GenerationContext } from "./server/generation-service";
 import { claudeJsonSchema } from "./server/provider-prompt";
 
 const input = { manuscript: sample, settings: defaults };
@@ -93,6 +93,30 @@ function claudeStream(text: string, stopReason = "end_turn") {
     { event: "message_stop", data: { type: "message_stop" } },
   ]);
 }
+
+test("Claude gets the shared prompt rules and its draft gets the same server checks as the other connections", async (t) => {
+  const state = updateConnectionState((s) => ({ ...s, provider: "anthropic-api", anthropicKey: "sk-ant-fake-test-key-1234" }), temporary(t), {});
+  const request = { manuscript: sample, settings: { ...defaults, audience: "외국인 근로자" as const, minutes: 2 } };
+  const { sentences } = manuscriptSource(sample);
+  const demo = generateDemo(request.manuscript, request.settings);
+  const draft = { title: demo.title, summary: demo.summary, objectives: demo.objectives,
+    scenes: demo.scenes.map(({ id, review, reviewReason, edited, generation, ...scene }, i) => ({ sceneNo: i + 1, ...scene,
+      ...(i === 0 ? { evidence: `${sentences[0]} ${sentences[1]}`, sourceId: "sentence:1-1, sentence:2-2" } : {}) })) };
+  let sent: Record<string, any> = {};
+  const adapter = createAnthropicAdapter(anthropicConfig(state, {}), { fetch: async (url, init) => {
+    if (String(url).includes("count_tokens")) return json({ input_tokens: 1 });
+    sent = JSON.parse(String(init?.body));
+    return claudeStream(JSON.stringify(draft));
+  } });
+  const board = await runGeneration(request, { ...adapter, generate: (_, ctx) => adapter.generate(request, { ...ctx, limits }) });
+  for (const block of [PROMPT_TEMPLATE.instruction, PROMPT_TEMPLATE.narrationRewrite, PROMPT_TEMPLATE.duration])
+    assert.ok(sent.system.includes(block));
+  const task = JSON.parse(sent.messages[0].content.at(-1).text).task;
+  assert.equal(task.audienceGuidance, PROMPT_TEMPLATE.audienceGuidance.foreignWorker);
+  assert.equal(task.targetDurationSeconds, 120);
+  assert.equal(board.scenes[0].sourceId, "sentence:1-2");
+  assert.ok(board.generation?.warnings.some((warning) => warning.startsWith("외국인 근로자용 나레이션")));
+});
 
 test("Claude API sends structured JSON with the shared output cap and maps refusals, truncation and key errors", async (t) => {
   const directory = temporary(t);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaults, generateDemo, sample, newScene, markdown } from "./storyboard";
+import { defaults, generateDemo, manuscriptSource, sample, newScene, markdown } from "./storyboard";
 import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { createGenerateHandler } from "./server/generate-handler";
@@ -139,6 +139,51 @@ test("AI repairs a scene with stray Devanagari in Korean production copy", async
   assert.equal(calls, 2);
   assert.deepEqual(board.generation?.repairedScenes, [2]);
   assert.ok(!board.scenes[1].visual.includes("क्रम"));
+});
+
+test("AI citations are located from verbatim quotes when the model's sentence ids are lists, too narrow or polluted", async () => {
+  const { sentences } = manuscriptSource(sample);
+  const model = { ...adapter(async () => {
+    const candidate = output();
+    candidate.scenes[0].evidence = `${sentences[0]} ${sentences[1]}`;
+    candidate.scenes[0].sourceId = "sentence:1-1, sentence:2-2";
+    candidate.scenes[1].evidence = `${sentences[3]} ${sentences[4]}`;
+    candidate.scenes[1].sourceId = "sentence:4-4";
+    candidate.scenes[2].evidence = `${sentences[6].slice(0, 1)}وب${sentences[6].slice(1)}`;
+    candidate.scenes[2].sourceId = "sentence:7-7";
+    candidate.scenes[3].evidence = sentences[8].slice(0, 5);
+    candidate.scenes[3].sourceId = "sentence:1-1, sentence:2-2";
+    return candidate;
+  }), mode: "ai" as const };
+  const board = await runGeneration(input, model);
+  assert.equal(board.generation?.attempts, 1);
+  assert.equal(board.scenes[0].sourceId, "sentence:1-2");
+  assert.equal(board.scenes[1].sourceId, "sentence:4-5");
+  assert.equal(board.scenes[2].sourceId, "sentence:7-7");
+  assert.equal(board.scenes[2].evidence, sentences[6]);
+  // A five-character fragment is too short to place, so it stays a reviewable warning.
+  assert.equal(board.scenes[3].sourceId, "sentence:1-1, sentence:2-2");
+  assert.deepEqual(board.generation?.warnings.filter((warning) => /근거|인용/.test(warning)).map((warning) => warning.split(":")[0]), ["4번 장면"]);
+});
+
+test("AI repairs stray Arabic in Korean copy and reports model phase labels that the position overrides once", async () => {
+  let calls = 0;
+  const model = { ...adapter(async (_, context) => {
+    const candidate = output();
+    calls++;
+    if (calls === 1) candidate.scenes[1].narration = "작وب업 전에 발판을 확인합니다.";
+    else assert.ok(context.repair?.issues.some((issue) => issue.reason === "unexpected_script_in_korean_output"));
+    candidate.scenes[2].phase = "outro";
+    candidate.scenes[3].phase = "outro";
+    return candidate;
+  }), mode: "ai" as const };
+  const board = await runGeneration(input, model);
+  assert.equal(calls, 2);
+  assert.ok(!/[؀-ۿ]/.test(board.scenes[1].narration));
+  assert.deepEqual(board.scenes.map((scene) => scene.phase), ["intro", "body", "body", "body", "body", "outro"]);
+  const phaseNotes = board.generation?.warnings.filter((warning) => warning.includes("구성 단계")) ?? [];
+  assert.equal(phaseNotes.length, 1);
+  assert.match(phaseNotes[0], /^3, 4번 장면의 구성 단계/);
 });
 
 test("server deadline settles an uncooperative provider and signals cancellation without another call", async () => {

@@ -23,6 +23,8 @@ import { editScene, insertSceneAfter, MAX_SCENES, moveScene, removeScene, replac
 import { downloadBlob, downloadText, exportFilename } from "@/lib/download";
 import {
   defaults,
+  DURATION_TOLERANCE,
+  durationOffTarget,
   sample,
   markdown,
   requestSchema,
@@ -477,11 +479,10 @@ export default function Studio() {
                   </Button>
                 </header>
                 <OverviewPanel board={board} onChange={setBoard} total={total} reviewCount={reviewCount} />
-                {Math.abs(total - board.settings.minutes * 60) >
-                  board.settings.minutes * 60 * 0.15 && (
+                {durationOffTarget(total, board.settings.minutes) && (
                   <div className="duration-warning">
                     <Clock3 size={15} />
-                    현재 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 조정해 주세요.
+                    현재 예상 시간이 목표 길이의 ±{DURATION_TOLERANCE * 100}%를 벗어났습니다. 장면별 시간을 조정해 주세요.
                   </div>
                 )}
                 <div className="board-layout">

@@ -1,5 +1,5 @@
 import { generationResponseSchema, type GenerationInput } from "./generation-contract";
-import { targetSceneCount, type Board } from "./storyboard";
+import { DURATION_TOLERANCE, targetSceneCount, type Board } from "./storyboard";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "./term-corrections";
 
 // Human scoring items from docs/06_AI_EVAL.md. "case" items are scored once per
@@ -16,7 +16,8 @@ export const RUBRIC = [
   { id: "recovery", label: "9. 실패 시 보존", scope: "round" },
 ] as const;
 
-export const DURATION_TOLERANCE = 0.1;
+// Shared with the editor notice and the server warning.
+export { DURATION_TOLERANCE };
 export const MAX_SUBTITLE_CHARS = 40;
 export const NARRATION_CHARS_PER_SECOND = { min: 3, max: 8 } as const;
 
@@ -55,11 +56,12 @@ export function checkBoard(raw: unknown, input: GenerationInput): EvalReport {
     detail: `합계 ${totalSeconds}초 / 목표 ${targetSeconds}초 (${totalSeconds >= targetSeconds ? "+" : "-"}${(drift * 100).toFixed(1)}%)`,
   });
 
-  // Server warnings use "N번 장면: ..."; PDF scenes always carry an "AI 해석" reminder, which is not a mismatch.
+  // Server citation warnings read "N번 장면: …근거…/…인용…". Other scene warnings (unconfirmed
+  // knowledge ids) are not citation problems, and PDF scenes always carry an "AI 해석" reminder.
   const flagged = new Set<number>();
   for (const warning of board.generation?.warnings ?? []) {
     const match = /^(\d+)번 장면:/.exec(warning);
-    if (match && !warning.includes("AI 해석입니다")) flagged.add(Number(match[1]));
+    if (match && /근거|인용/.test(warning) && !warning.includes("AI 해석입니다")) flagged.add(Number(match[1]));
   }
   // Re-check text citations independently so a server regression cannot hide them.
   if (!board.pdfSource) {
