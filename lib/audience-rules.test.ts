@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EASY_SENTENCE_MAX_CHARS, longSentenceScenes, narrationSentences, verbatimNarrationPercent } from "./audience-rules";
+import { EASY_SENTENCE_MAX_CHARS, longSentenceScenes, narrationSentences } from "./audience-rules";
 import { PROMPT_TEMPLATE, generationTask } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { defaults, generateDemo, sample } from "./storyboard";
@@ -10,14 +10,6 @@ test("narration sentences are split on sentence ends and counted in letters", ()
   const long = "작업을 시작하기 전에 작업 발판과 사다리의 상태를 먼저 확인합니다.";
   assert.deepEqual(longSentenceScenes([{ narration: "짧게 씁니다." }, { narration: `짧습니다. ${long}` }]), [2]);
   assert.ok([...narrationSentences(long)[0]].length > EASY_SENTENCE_MAX_CHARS);
-});
-
-test("verbatim share counts only sentences of eight letters or more found in the manuscript", () => {
-  const manuscript = "작업을 시작하기 전에 발판을 확인합니다. 안전대를 겁니다.";
-  const scenes = [{ narration: "작업을 시작하기 전에 발판을 확인합니다. 안전대를 겁니다. 고리를 옮겨 거세요." }];
-  // The second sentence is in the manuscript but too short to count as copying.
-  assert.equal(verbatimNarrationPercent(scenes, manuscript), 33);
-  assert.equal(verbatimNarrationPercent([], manuscript), 0);
 });
 
 test("each audience gets its own writing rules, visitor types add to the common visitor rule, and narration is always rewritten", () => {

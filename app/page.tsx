@@ -11,8 +11,6 @@ import { SceneEditor } from "@/components/studio/scene-editor";
 import { SceneList } from "@/components/studio/scene-list";
 import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel";
 import { ProgressDialog, StudioDialog, Toast } from "@/components/studio/studio-dialogs";
-import { AudienceSelectDialog, ComparisonDialog } from "@/components/studio/audience-compare";
-import { COMPARISON_STOP_CODES, comparisonSettings, type Audience, type ComparisonVersion } from "@/lib/audience-compare";
 import { ErrorBanner, StudioStepper, StudioTopbar } from "@/components/studio/studio-header";
 import { StudioSidebar } from "@/components/studio/studio-sidebar";
 import type { ExportFormat, StudioModal, StudioView } from "@/components/studio/types";
@@ -42,29 +40,6 @@ import { loadSceneImages } from "@/lib/scene-image-storage";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
-// One generation request. Throws GenerationError with the server's code on failure.
-async function requestBoard(job: GenerationJob, signal: AbortSignal) {
-  let body: string | FormData = JSON.stringify(job.input);
-  if (job.input.pdfSource) {
-    if (!job.pdf) throw new GenerationError("PDF_NOT_ATTACHED");
-    const form = new FormData(); form.set("input", JSON.stringify(job.input));
-    form.set("pdf", job.pdf, "selected-pages.pdf"); body = form;
-  }
-  const response = await fetch("/api/generate", {
-    method: "POST",
-    ...(typeof body === "string" ? { headers: { "Content-Type": "application/json" } } : {}),
-    body,
-    signal,
-  });
-  const raw = await response.json();
-  if (!response.ok) {
-    const failure = apiErrorSchema.safeParse(raw);
-    throw new GenerationError(failure.success ? failure.data.code : "INTERNAL_ERROR",
-      failure.success ? failure.data.inputUsage : undefined);
-  }
-  return parseGenerationResponse(raw, job.input);
-}
-
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
   const [sourceDocument, setSourceDocument] = useState<SourceDocument | null>(null);
@@ -84,10 +59,6 @@ export default function Studio() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
-  const [compareSelectOpen, setCompareSelectOpen] = useState(false);
-  const [comparison, setComparison] = useState<{ manuscript: string; versions: ComparisonVersion[] } | null>(null);
-  const [comparisonOpen, setComparisonOpen] = useState(false);
-  const [progressTitle, setProgressTitle] = useState<string | undefined>();
   const uploadRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<AbortController | null>(null);
   const importRequestRef = useRef<AbortController | null>(null);
@@ -237,7 +208,25 @@ export default function Studio() {
     const timeout = setTimeout(() => controller.abort("timeout"), CLIENT_TIMEOUT_MS);
     const sceneId = job.input.scene?.id;
     try {
-      const result = await requestBoard(job, controller.signal);
+      let body: string | FormData = JSON.stringify(job.input);
+      if (job.input.pdfSource) {
+        if (!job.pdf) throw new GenerationError("PDF_NOT_ATTACHED");
+        const form = new FormData(); form.set("input", JSON.stringify(job.input));
+        form.set("pdf", job.pdf, "selected-pages.pdf"); body = form;
+      }
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        ...(typeof body === "string" ? { headers: { "Content-Type": "application/json" } } : {}),
+        body,
+        signal: controller.signal,
+      });
+      const raw = await response.json();
+      if (!response.ok) {
+        const failure = apiErrorSchema.safeParse(raw);
+        throw new GenerationError(failure.success ? failure.data.code : "INTERNAL_ERROR",
+          failure.success ? failure.data.inputUsage : undefined);
+      }
+      const result = parseGenerationResponse(raw, job.input);
       if (sceneId) {
         setBoard((b) => (b ? replaceScene(b, sceneId, result.scenes[0]) : b));
         const targetIndex = board?.scenes.findIndex((s) => s.id === sceneId);
@@ -274,77 +263,6 @@ export default function Studio() {
       setBusy(false);
       requestRef.current = null;
     }
-  }
-  // One full storyboard per audience. Requests run one after another because the server
-  // allows a single AI request per PC; results stay aside until the user picks a version.
-  async function compareAudiences(audiences: Audience[], previous: ComparisonVersion[] | null = null) {
-    if (inFlight.current || importInFlight.current || storageBlocked || generator?.mode !== "ai" || !generator.available) return;
-    if (!valid || documentPending) return;
-    const source = isPdf && sourceDocument
-      ? { pdfSource: { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, sourceRequest: sourceDocument.query.trim() }
-      : sourceDocument?.appliedQuery ? { sourceRequest: sourceDocument.appliedQuery } : {};
-    const jobs = comparisonSettings(settings, audiences).map((item) =>
-      captureGeneration({ manuscript, settings: item, ...source }, board, isPdf ? pdf.selected ?? undefined : undefined));
-    if (!jobs.length || jobs.some((job) => !requestSchema.safeParse(job.input).success)) {
-      setError("원고와 생성 조건을 확인해 주세요.");
-      return;
-    }
-    inFlight.current = true;
-    setError("");
-    setCompareSelectOpen(false);
-    setComparisonOpen(false);
-    setBusy(true);
-    setProgress(8);
-    const run = new AbortController();
-    requestRef.current = run;
-    const versions: ComparisonVersion[] = [];
-    const runManuscript = manuscript;
-    try {
-      for (const [index, job] of jobs.entries()) {
-        const audience = job.input.settings.audience as Audience;
-        setProgressTitle(`대상별 버전을 만드는 중이에요 (${index + 1}/${jobs.length} · ${audience})`);
-        try {
-          versions.push({ audience, board: await requestBoard(job, AbortSignal.any([run.signal, AbortSignal.timeout(CLIENT_TIMEOUT_MS)])) });
-        } catch (e) {
-          if (run.signal.aborted) break;
-          const code = e instanceof GenerationError ? e.code : e instanceof TypeError ? "NETWORK" : "INTERNAL_ERROR";
-          const message = e instanceof DOMException && e.name === "TimeoutError" ? "요청 시간이 초과되었습니다. 이 대상만 다시 만들어 주세요."
-            : e instanceof TypeError ? "네트워크에 연결할 수 없습니다." : e instanceof Error ? e.message : "생성에 실패했습니다.";
-          versions.push({ audience, error: { code, message } });
-          if (COMPARISON_STOP_CODES.has(code)) {
-            for (const rest of jobs.slice(index + 1))
-              versions.push({ audience: rest.input.settings.audience as Audience, error: { code, message: `앞선 요청이 멈춰 만들지 않았어요: ${message}` } });
-            break;
-          }
-        }
-        setProgress(Math.round(((index + 1) / jobs.length) * 90));
-      }
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-      setProgressTitle(undefined);
-      requestRef.current = null;
-    }
-    const merged = previous
-      ? previous.map((version) => versions.find((item) => item.audience === version.audience) ?? version)
-      : versions;
-    if (!merged.length || (run.signal.aborted && !versions.some((version) => version.board) && !previous)) {
-      notify("대상별 비교를 취소했어요. 기존 작업은 유지됩니다.");
-      return;
-    }
-    setComparison({ manuscript: runManuscript, versions: merged });
-    setComparisonOpen(true);
-    if (run.signal.aborted) notify("비교를 중간에 멈췄어요. 만들어진 버전까지 보여 드려요.");
-  }
-  function applyVersion(version: Board) {
-    setBoard(version);
-    setSettings(version.settings);
-    setActive(0);
-    setReviewOnly(false);
-    setFilename(version.title);
-    setComparisonOpen(false);
-    setView("board");
-    notify(`${version.settings.audience} 버전으로 편집을 시작해요. 다른 버전은 대상별 비교에서 다시 볼 수 있어요.`);
   }
   function addScene() {
     if (!board || board.scenes.length >= MAX_SCENES) {
@@ -549,7 +467,6 @@ export default function Studio() {
                 generator={generator}
                 onOpenConnection={() => setConnectionOpen(true)}
                 onGenerate={() => generate()}
-                onCompare={() => setCompareSelectOpen(true)}
               />
             </>
           ) : (
@@ -616,26 +533,7 @@ export default function Studio() {
       </div>
       <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
       <Toast message={notice} onClose={() => setNotice("")} />
-      <ProgressDialog open={busy} progress={progress} generator={generator} title={progressTitle} onCancel={() => requestRef.current?.abort()} />
-      <AudienceSelectDialog
-        open={compareSelectOpen}
-        onOpenChange={setCompareSelectOpen}
-        current={settings.audience}
-        hasPrevious={Boolean(comparison)}
-        onStart={(audiences) => void compareAudiences(audiences)}
-        onShowPrevious={() => { setCompareSelectOpen(false); setComparisonOpen(true); }}
-      />
-      {comparison && (
-        <ComparisonDialog
-          open={comparisonOpen}
-          onOpenChange={setComparisonOpen}
-          versions={comparison.versions}
-          manuscript={comparison.manuscript}
-          busy={busy}
-          onApply={applyVersion}
-          onRetry={(audience) => void compareAudiences([audience], comparison.versions)}
-        />
-      )}
+      <ProgressDialog open={busy} progress={progress} generator={generator} onCancel={() => requestRef.current?.abort()} />
       <StudioDialog
         modal={modal}
         onClose={() => setModal(null)}

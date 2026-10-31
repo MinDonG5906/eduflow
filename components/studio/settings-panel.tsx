@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { ArrowRight, BookOpen, ChevronDown, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Users, X } from "lucide-react";
+import { ArrowRight, BookOpen, ChevronDown, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -231,7 +231,6 @@ export function GenerationBar({
   storageBlocked,
   generator,
   onGenerate,
-  onCompare,
   onOpenConnection,
 }: {
   settings: Settings;
@@ -242,7 +241,6 @@ export function GenerationBar({
   storageBlocked: boolean;
   generator: GeneratorStatus;
   onGenerate: () => void;
-  onCompare: () => void;
   onOpenConnection: () => void;
 }) {
   const needsAiConnection = isPdf && Boolean(generator) && (generator?.mode !== "ai" || !generator.available);
@@ -274,22 +272,14 @@ export function GenerationBar({
               <Button variant="outline" onClick={onOpenConnection}>AI 연결하기</Button>
             </div>
           )}
-        <div className="generation-buttons">
-          {/* Demo output differs by audience only in review notes, so comparing needs real AI. */}
-          {generator?.mode === "ai" && (
-            <Button variant="outline" className="compare-button" disabled={!canGenerate} onClick={onCompare}>
-              <Users size={16} /> 대상별 비교
-            </Button>
-          )}
-          <Button
-            aria-describedby={needsAiConnection ? "generation-connection-hint" : undefined}
-            className="generate-button"
-            disabled={!canGenerate}
-            onClick={onGenerate}
-          >
-            <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
-          </Button>
-        </div>
+        <Button
+          aria-describedby={needsAiConnection ? "generation-connection-hint" : undefined}
+          className="generate-button"
+          disabled={!canGenerate}
+          onClick={onGenerate}
+        >
+          <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
+        </Button>
         </div>
       </div>
       <div className="bottom-note">

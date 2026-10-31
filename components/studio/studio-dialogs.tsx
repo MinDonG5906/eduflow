@@ -29,13 +29,11 @@ export function ProgressDialog({
   open,
   progress,
   generator,
-  title = "원고가 장면으로 바뀌는 중이에요",
   onCancel,
 }: {
   open: boolean;
   progress: number;
   generator: GeneratorStatus;
-  title?: string;
   onCancel: () => void;
 }) {
   const ai = generator?.mode === "ai";
@@ -46,7 +44,7 @@ export function ProgressDialog({
           <div className="loading-icon">
             <Sparkles size={26} />
           </div>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle>원고가 장면으로 바뀌는 중이에요</DialogTitle>
           <DialogDescription>
             입력한 원고에서 핵심 내용을 나누고 초안을 구성합니다.
           </DialogDescription>
