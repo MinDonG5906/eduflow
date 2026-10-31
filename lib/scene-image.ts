@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sceneSchema, sceneReferenceSchema, settingsSchema, type Scene, type Board, type Settings } from "./storyboard";
+import { compositionStickers } from "./scene-composition";
 
 export const imageStyles = { sketch: "흑백 콘티", illustration: "컬러 일러스트", realistic: "사실적인 장면" } as const;
 export type ImageSettings = NonNullable<Board["imageSettings"]>;
@@ -9,7 +10,9 @@ export const sceneImageRequestSchema = z.object({
   scene: sceneSchema.pick({ id: true, title: true, purpose: true, visual: true, assets: true, narration: true, evidence: true, sourceId: true, pdfSource: true })
     .extend({ id: z.string().min(1).max(100), title: z.string().max(160), purpose: z.string().max(1000), visual: z.string().trim().min(1).max(5000),
       assets: z.string().max(3000), narration: z.string().max(4000), evidence: z.string().trim().min(1).max(3000), sourceId: z.string().max(100),
-      references: z.array(reference).max(6), visualReferences: z.array(reference).max(6) }),
+      references: z.array(reference).max(6), visualReferences: z.array(reference).max(6),
+      composition: z.array(z.object({ label: z.string().max(30), kind: z.enum(["표", "그림"]),
+        x: z.number().min(0).max(100), y: z.number().min(0).max(100), width: z.number().min(10).max(100), height: z.number().min(10).max(100) })).max(20).default([]) }),
   audience: settingsSchema.shape.audience,
   imageSettings: z.object({ style: z.enum(["sketch", "illustration", "realistic"]), direction: z.string().max(600) }),
   direction: z.string().max(500),
@@ -21,7 +24,8 @@ export function sceneImageInput(scene: Scene, settings: Settings, imageSettings:
   const refs = (items: Scene["references"]) => (items ?? []).map(({ id, title, excerpt, page, documentId }) => ({ id, title, excerpt, page, documentId }));
   return { scene: { id: scene.id, title: scene.title, purpose: scene.purpose, visual: scene.visual, assets: scene.assets,
     narration: scene.narration.slice(0, 4000), evidence: scene.evidence.slice(0, 3000), sourceId: scene.sourceId, pdfSource: scene.pdfSource,
-    references: refs(scene.references), visualReferences: refs(scene.visualReferences) }, audience: settings.audience, imageSettings, direction };
+    references: refs(scene.references), visualReferences: refs(scene.visualReferences),
+    composition: compositionStickers(scene).map(({ label, kind, x, y, width, height }) => ({ label, kind: kind as "표" | "그림", x, y, width, height })) }, audience: settings.audience, imageSettings, direction };
 }
 export const sceneImageResultSchema = z.object({
   sceneId: z.string(), data: z.string().min(1).max(12000000), mimeType: z.literal("image/png"),

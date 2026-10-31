@@ -10,10 +10,13 @@ import { imageStyles, sceneImageInput, sceneImageResultSchema, sceneImageStatusS
 import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-image-storage";
 import type { Scene, Settings } from "@/lib/storyboard";
 import { SceneSection } from "./scene-section";
+import { SceneComposition } from "./scene-composition";
+import { compositionStickers } from "@/lib/scene-composition";
+import { exportSceneComposition } from "@/lib/scene-composition-export";
 
-export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onOpenConnection }: {
+export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onOpenConnection }: {
   scene: Scene; settings: Settings; imageSettings: ImageSettings; onSettingsChange: (settings: ImageSettings) => void;
-  onChange: (image: Scene["image"]) => void; onOpenConnection: () => void;
+  onChange: (image: Scene["image"]) => void; onPlacementsChange: (placements: Scene["visualPlacements"]) => void; onOpenConnection: () => void;
 }) {
   const [status, setStatus] = useState<SceneImageStatus | null>(null);
   const [direction, setDirection] = useState("");
@@ -107,25 +110,27 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     finally { if (upload.current) upload.current.value = ""; }
   }
   const canGenerate = Boolean(status?.available && scene.visual.trim() && scene.evidence.trim() && !busy);
-  return <SceneSection title="콘티 이미지" icon={ImageIcon} description="장면 설명과 연결된 원문·RAG 근거로 제작용 이미지를 만듭니다. 확정한 이미지는 PDF에도 반영됩니다."
+  return <SceneSection title="콘티 이미지" icon={ImageIcon} description="인물과 자료의 배치·구도를 확인하는 콘티입니다. 추천 표·그림의 자리를 스티커로 표시하며, 이미지 저장과 PDF에도 반영됩니다."
     action={<Button size="sm" variant="outline" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />이미지 첨부</Button>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>
       <div className="scene-image-actions">
         <Button disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "콘티 생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "콘티 이미지 생성"}</Button>
         {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
+        {(scene.image || compositionStickers(scene).length > 0) && <Button variant="outline" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
+          try {
+            const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
+            if (scene.image && !background) throw new Error("콘티 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
+            downloadBlob(await exportSceneComposition(scene, background), "storyboard-composition.png");
+          } catch { setError("콘티 이미지를 저장하지 못했습니다. 다시 시도해 주세요."); }
+        }}><Download size={14} />이미지 저장</Button>}
         {scene.image && <>
-          <Button variant="outline" disabled={busy || !preview} onClick={async () => { const blob = await loadSceneImage(scene.image!.id).catch(() => undefined); if (blob) downloadBlob(blob, scene.image!.name || "storyboard-image.png"); }}><Download size={14} />이미지 저장</Button>
           <Button variant="ghost" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} />이미지 제거</Button>
         </>}
       </div>
       {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
         : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
-      <div className={`scene-image-frame ${preview ? "has-image" : ""}`}>
-        {preview ? <img src={preview} alt={`${scene.title} ${scene.image?.sourceType === "generated" ? "AI 생성 콘티" : "참고 이미지"}`} />
-          : <div><ImageIcon size={30} /><p>{scene.image ? "이 브라우저에서 이미지를 찾지 못했습니다. 다시 첨부하거나 생성하세요." : "이 장면의 화면을 이미지로 확인하세요."}</p></div>}
-        {scene.image?.sourceType === "generated" && <span className="scene-image-badge">AI 생성 · 원문 대조 필요</span>}
-      </div>
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} />
       <div className="scene-image-settings">
         <label>공통 그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
           {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -144,7 +149,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
         {[...(scene.references ?? []), ...(scene.visualReferences ?? [])].filter((ref, i, refs) => refs.findIndex(item => item.id === ref.id) === i).map(ref => <p key={ref.id}><strong>{ref.title}{ref.page ? ` · ${ref.page}페이지` : ""}</strong><br />{ref.excerpt}</p>)}
       </details>
       {message && <p role="status" className="scene-image-cost">{message}</p>}
-      {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="scene-image-cost">이미지 생성 후 장면 내용 또는 공통 설정이 바뀌었습니다. 새 내용에 맞춰 이미지를 다시 생성하세요.</p>}
+      {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="scene-image-cost">장면 내용·자료 배치 또는 공통 설정이 바뀌었습니다. 배경 구도가 맞는지 확인하고 필요하면 다시 생성하세요.</p>}
       {error && <p role="alert" className="connection-error">{error}</p>}
     </div>
   </SceneSection>;

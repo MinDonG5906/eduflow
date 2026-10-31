@@ -36,5 +36,6 @@ export function removeScene(board: Board, index: number): Board | null {
 // A regenerated scene keeps the identity of the scene it replaces.
 export function replaceScene(board: Board, id: string, replacement: Scene): Board {
   return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id,
-    ...(s.image && !replacement.image ? { image: s.image } : {}) } : s)) };
+    ...(s.image && !replacement.image ? { image: s.image } : {}),
+    ...(s.visualPlacements ? { visualPlacements: s.visualPlacements } : {}) } : s)) };
 }

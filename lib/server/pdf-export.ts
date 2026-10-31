@@ -7,6 +7,7 @@ import type { Board } from "../storyboard";
 import { citedPdfPage, sourceUnit, type PdfSource } from "../pdf-source";
 import { officeFontCandidates } from "./office-fonts";
 import { renderPdfPages } from "./pdf-render";
+import { compositionStickers } from "../scene-composition";
 
 // A4 Landscape dimensions in points (297mm x 210mm)
 const PAGE_WIDTH = 841.89;
@@ -212,6 +213,7 @@ export async function exportStoryboardPdf({
   const totalDuration = board.scenes.reduce((n,s)=>n+s.duration,0);
   for (let idx = 0; idx < board.scenes.length; idx++) {
     const scene = board.scenes[idx];
+    const stickers = compositionStickers(scene);
     let image: PDFImage | undefined;
     let imageSourceText = "";
 
@@ -247,6 +249,7 @@ export async function exportStoryboardPdf({
 
     const leftRows = [
       ...section("이미지 출처", imageSourceText, fonts, leftWidth),
+      ...section("추천 자료 배치", stickers.map(item => `${item.label} · ${item.kind} · ${item.visual.title} (${item.visual.page}페이지)`).join("\n"), fonts, leftWidth),
       ...section("장면 제목", scene.title, fonts, leftWidth),
       ...section("장면 목적", scene.purpose, fonts, leftWidth),
     ];
@@ -271,10 +274,21 @@ export async function exportStoryboardPdf({
       page.drawText(status,{x:PAGE_WIDTH-MARGIN_X-12-fonts.bold.widthOfTextAtSize(status,10),y:top-18,size:10,font:fonts.bold,color:scene.review?warning:rgb(36/255,112/255,68/255)});
       const bodyTop=top-44;
       page.drawText("화면 / 참고 이미지",{x:MARGIN_X,y:bodyTop-10,size:10,font:fonts.bold,color:ink});
-      const frameTop=bodyTop-24, frameHeight=158, frameY=frameTop-frameHeight;
+      const frameTop=bodyTop-24, frameHeight=leftWidth*9/16, frameY=frameTop-frameHeight;
       page.drawRectangle({x:MARGIN_X,y:frameY,width:leftWidth,height:frameHeight,color:soft,borderColor:lineColor,borderWidth:0.6});
-      if(image){const scale=Math.min((leftWidth-8)/image.width,(frameHeight-8)/image.height);const w=image.width*scale,h=image.height*scale;page.drawImage(image,{x:MARGIN_X+(leftWidth-w)/2,y:frameY+(frameHeight-h)/2,width:w,height:h});}
-      else {page.drawText(imageRenderError?"참고 이미지 표시 실패":"참고 이미지 미등록",{x:MARGIN_X+16,y:frameY+frameHeight/2,size:10,font:fonts.regular,color:body});}
+      if(image){const padding=stickers.length?0:8;const scale=Math.min((leftWidth-padding)/image.width,(frameHeight-padding)/image.height);const w=image.width*scale,h=image.height*scale;page.drawImage(image,{x:MARGIN_X+(leftWidth-w)/2,y:frameY+(frameHeight-h)/2,width:w,height:h});}
+      else if (!stickers.length) {page.drawText(imageRenderError?"참고 이미지 표시 실패":"참고 이미지 미등록",{x:MARGIN_X+16,y:frameY+frameHeight/2,size:10,font:fonts.regular,color:body});}
+      for (const sticker of stickers) {
+        const x = MARGIN_X + sticker.x / 100 * leftWidth, y = frameY + (100 - sticker.y - sticker.height) / 100 * frameHeight;
+        const w = sticker.width / 100 * leftWidth, h = sticker.height / 100 * frameHeight;
+        page.drawRectangle({ x, y, width: w, height: h, color: rgb(1, .977, .87), borderColor: rgb(.66, .50, .14), borderWidth: .6, borderDashArray: [2, 1.2] });
+        const size = Math.min(34, sticker.width * 16 / 12, sticker.height * 9 / 3.7) * leftWidth / 1600;
+        const label = `${sticker.label} · ${sticker.kind}`;
+        page.drawText(label, { x: x + (w - fonts.bold.widthOfTextAtSize(label, size)) / 2, y: y + h / 2 + size * .45, size, font: fonts.bold, color: ink });
+        let title = sticker.visual.title;
+        while (title && fonts.regular.widthOfTextAtSize(title, size * .8) > w - 6) title = title.slice(0, -1);
+        page.drawText(title, { x: x + (w - fonts.regular.widthOfTextAtSize(title, size * .8)) / 2, y: y + h / 2 - size * .85, size: size * .8, font: fonts.regular, color: ink });
+      }
       page.drawLine({start:{x:rightX-16,y:bodyTop},end:{x:rightX-16,y:42},color:lineColor,thickness:0.6});
       drawRows(page,leftRows,MARGIN_X,frameY-12,42,fonts);
       drawRows(page,rightRows,rightX,bodyTop,42,fonts);

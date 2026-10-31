@@ -71,6 +71,13 @@ export const sceneImageSchema = z.object({
 });
 export type SceneImage = z.infer<typeof sceneImageSchema>;
 
+// Percentage coordinates in a 16:9 composition, independent of AI pixels.
+export const visualPlacementSchema = z.object({
+  visualId: z.string().max(320), x: z.number().min(0).max(90), y: z.number().min(0).max(90),
+  width: z.number().min(10).max(100), height: z.number().min(10).max(100),
+}).refine(p => p.x + p.width <= 100 && p.y + p.height <= 100, "placement outside frame");
+export type VisualPlacement = z.infer<typeof visualPlacementSchema>;
+
 export const sceneSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -92,6 +99,7 @@ export const sceneSchema = z.object({
   image: sceneImageSchema.optional(),
   visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
   visuals: z.array(visualRecommendationSchema).max(20).optional(),
+  visualPlacements: z.array(visualPlacementSchema).max(20).refine(items => new Set(items.map(item => item.visualId)).size === items.length, "duplicate visual placement").optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
