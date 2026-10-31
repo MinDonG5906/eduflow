@@ -126,7 +126,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     {scene.image?.sourceType !== "generated" && scene.image && <label className="image-direction-field">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
   </div>;
   return <SceneSection title="스토리보드" icon={ImageIcon} className="storyboard-image-section"
-    action={<InfoDialog title="스토리보드 안내" description="이미지 생성 비용, 편집 방법과 참고 근거를 확인하세요.">
+    action={<InfoDialog title="스토리보드 안내" description="이미지 생성 비용과 편집 방법을 확인하세요.">
       <section><h4>생성 비용·전송 정보</h4>
         {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도입니다.</p>
           <p>호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
@@ -138,9 +138,6 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
         <p>이미지가 없으면 검정 배경에 장면 제목과 자막을 표시합니다. 생성한 배경은 원문과 대조가 필요한 AI 이미지입니다.</p>
         <p>공통 그림체·인물·배경은 모든 장면의 다음 생성에 적용됩니다. 장면별 요청은 현재 장면에만 적용되며 현재 이미지 참고를 켜면 구도·인물 참고로 전송합니다.</p>
       </section>
-      <details className="scene-image-evidence"><summary>참고할 원문·RAG 근거</summary><blockquote>{scene.evidence || "원문 근거를 먼저 확인하세요."}</blockquote>
-        {[...(scene.references ?? []), ...(scene.visualReferences ?? [])].filter((ref, i, refs) => refs.findIndex(item => item.id === ref.id) === i).map(ref => <p key={ref.id}><strong>{ref.title}{ref.page ? ` · ${ref.page}페이지` : ""}</strong><br />{ref.excerpt}</p>)}
-      </details>
     </InfoDialog>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>

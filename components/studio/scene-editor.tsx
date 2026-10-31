@@ -2,7 +2,6 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
-  BookOpen,
   Check,
   CheckCircle2,
   Clock3,
@@ -124,23 +123,33 @@ export function SceneEditor({
         </div>
       </details>
       <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} />
-      <SceneSection title="원문 근거" icon={Quote}
-        action={<EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
-        description={<><span className="scene-source-location">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name)}</span>
-          {scene.pdfSource && <span className="scene-source-name">{scene.pdfSource.name}</span>}</>}>
-        <Textarea aria-label="원문 근거" value={scene.evidence} onChange={event => onChange("evidence", event.target.value)} rows={3} />
-        {scene.edited.includes("evidence") && <small className="scene-edited-note">직접 수정한 근거입니다.</small>}
+      <SceneSection title="원문 근거" icon={Quote}>
+        <div className="scene-source-list">
+          <article className="scene-source-card">
+            <header className="scene-source-card-heading">
+              <div><span className="scene-source-badge">원문</span><h4>{scene.pdfSource?.name ?? source?.name ?? "입력 원고"}</h4>
+                <p className="scene-source-meta">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name ?? source?.name)}</p>
+              </div>
+              <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />
+            </header>
+            <div className="scene-source-editable">
+              <Textarea aria-label="원문 근거" value={scene.evidence} onChange={event => onChange("evidence", event.target.value)} rows={3} />
+              {scene.edited.includes("evidence") && <small className="scene-edited-note">직접 수정한 근거입니다.</small>}
+            </div>
+          </article>
+          {knowledgeReferences.map(reference => <article className="scene-source-card" key={reference.id}>
+            <header className="scene-source-card-heading">
+              <div><span className="scene-source-badge is-knowledge">지식베이스</span><h4>{reference.title}</h4>
+                <p className="scene-source-meta">{reference.page ? `원본 ${reference.page}페이지` : "등록 본문"} · {reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "제공 자료"}{reference.published ? ` · ${reference.published}` : ""}{reference.revision ? ` · ${reference.revision}` : ""}</p>
+                <p className="scene-source-meta">{[scene.references?.some(item => item.id === reference.id) && "나레이션·자막 참고", scene.visualReferences?.some(item => item.id === reference.id) && "시각자료 참고"].filter(Boolean).join(" · ")}</p>
+              </div>
+              <KnowledgeSource references={[reference]} context={reference.title} />
+            </header>
+            <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
+          </article>)}
+          {!knowledgeReferences.length && <p className="scene-section-empty">이 장면에 연결된 지식베이스 근거가 없습니다.</p>}
+        </div>
       </SceneSection>
-      {Boolean(scene.references?.length) && <SceneSection title="보강 자료 근거" icon={BookOpen}
-        description="나레이션과 자막에 참고한 지식베이스 자료입니다.">
-        <div className="scene-source-list">{scene.references!.map(reference => <article className="scene-source-card" key={reference.id}>
-          <header className="scene-source-card-heading"><div><h4>{reference.title}</h4>
-            <p className="scene-source-meta">{reference.page ? `${reference.page}페이지 · ` : ""}{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "제공 자료"}{reference.published ? ` · ${reference.published}` : ""}</p></div>
-            <KnowledgeSource references={[reference]} context={reference.title} />
-          </header>
-          <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
-        </article>)}</div>
-      </SceneSection>}
       <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
       <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
         description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
