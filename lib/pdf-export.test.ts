@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { PDFDocument, PDFPage, rgb } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { createCanvas } from "@napi-rs/canvas";
+import { execFileSync } from "node:child_process";
 import { exportStoryboardPdf } from "./server/pdf-export";
 import type { Board } from "./storyboard";
 import { moveScene } from "./board-edit";
@@ -268,4 +269,30 @@ test("long production fields and image sources survive unlimited continuation pa
     const text = (await parser.getText()).text.replace(/\s/g, "");
     for (const marker of [...fields.map(f=>f+"END"),"SOURCEEND","REFERENCEEND"]) assert.ok(text.includes(marker),marker);
   } finally { await parser.destroy(); }
+});
+
+test("a document title longer than a page cannot stall PDF export or hide scene content", () => {
+  const board = structuredClone(sampleBoard);
+  board.scenes = [board.scenes[0]];
+  const markers = Array.from({ length: 40 }, (_, index) => `제목부분${index}끝`);
+  board.title = markers.join("\n");
+  // A separate process bounds the failure even if pagination stops making progress.
+  const result = execFileSync(process.execPath, ["--conditions=react-server", "--import", "tsx", "-e", `
+    const { exportStoryboardPdf } = require('./lib/server/pdf-export.ts');
+    const { PDFDocument } = require('pdf-lib');
+    const { PDFParse } = require('pdf-parse');
+    (async () => {
+      const data = await exportStoryboardPdf({board: JSON.parse(process.argv[1])});
+      const document = await PDFDocument.load(data);
+      const parser = new PDFParse({data});
+      try { console.log(JSON.stringify({pages: document.getPageCount(), text: (await parser.getText()).text})); }
+      finally { await parser.destroy(); }
+    })().catch(error => { console.error(error); process.exitCode = 1; });
+  `, JSON.stringify(board)], { cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
+  const { pages, text } = JSON.parse(result) as { pages: number; text: string };
+  assert.ok(pages >= 3 && pages < 10);
+  const compact = text.replace(/\s/g, "");
+  for (const marker of markers) assert.ok(compact.includes(marker), marker);
+  assert.ok(compact.includes(board.scenes[0].narration.replace(/\s/g, "")));
+  assert.ok(compact.includes(board.scenes[0].purpose.replace(/\s/g, "")));
 });

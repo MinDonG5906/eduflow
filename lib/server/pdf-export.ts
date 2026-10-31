@@ -191,7 +191,20 @@ export async function exportStoryboardPdf({
   }
 
 
-  const titleLines = wrapText(board.title || "무제 스토리보드", fonts.bold, 14, CONTENT_WIDTH);
+  const fullTitleLines = wrapText(board.title || "무제 스토리보드", fonts.bold, 14, CONTENT_WIDTH);
+  // A long edited title must not consume the scene's entire body area and
+  // leave the continuation loop unable to consume any rows.
+  const titleLines = fullTitleLines.length <= 4 ? fullTitleLines : ["스토리보드 (전체 제목은 앞장 참조)"];
+  if (fullTitleLines.length > 4) {
+    const linesPerPage = Math.floor((PAGE_HEIGHT - MARGIN_TOP - 32 - 42) / 19);
+    for (let start = 0; start < fullTitleLines.length; start += linesPerPage) {
+      const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      page.drawText("EDUFLOW / STORYBOARD", { x: MARGIN_X, y: PAGE_HEIGHT - MARGIN_TOP - 8, size: 9, font: fonts.bold, color: ink });
+      fullTitleLines.slice(start, start + linesPerPage).forEach((text, i) => {
+        page.drawText(text, { x: MARGIN_X, y: PAGE_HEIGHT - MARGIN_TOP - 32 - i * 19, size: 14, font: fonts.bold, color: ink });
+      });
+    }
+  }
   const top = PAGE_HEIGHT - MARGIN_TOP - 42 - titleLines.length * 19;
   const leftWidth = 280;
   const rightX = MARGIN_X + leftWidth + 32;

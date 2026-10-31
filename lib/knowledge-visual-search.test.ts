@@ -124,5 +124,5 @@ test("table card markup preserves merged cells and empty answers", () => {
   assert.match(markup, /colSpan="2"/i);
   assert.equal((markup.match(/aria-label="빈 셀"/g) ?? []).length, 2);
   assert.match(markup, /600m³, 200m³\/min, 30분/);
-  assert.match(markup, /원본 서식은 원본 페이지/);
+  assert.match(markup, /<caption class="sr-only">추천 표의 추출 내용<\/caption>/);
 });
