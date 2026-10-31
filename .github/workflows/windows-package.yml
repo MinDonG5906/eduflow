@@ -3,7 +3,7 @@ name: Windows local app
 on:
   workflow_dispatch:
   push:
-    branches: ["feature/windows-local-launcher"]
+    branches: ["feature/windows-local-launcher", "fix/include-windows-package"]
   pull_request:
     paths:
       - "windows/**"
@@ -68,3 +68,4 @@ jobs:
           name: EduFlow-Windows-x64
           path: dist/EduFlow/
           if-no-files-found: error
+          include-hidden-files: true
