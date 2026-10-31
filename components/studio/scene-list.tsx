@@ -1,8 +1,16 @@
 import { CheckCheck, Clock3, FileText, Plus, Settings2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Scene } from "@/lib/storyboard";
+import { useSceneImageUrl } from "@/hooks/use-scene-image-url";
 
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
+
+function SceneMiniArt({ scene, index }: { scene: Scene; index: number }) {
+  const url = useSceneImageUrl(scene.image?.id);
+  return <div className={`scene-mini-art ${url ? "has-image" : ""}`}>
+    {url ? <img src={url} style={{ objectFit: "contain" }} alt={`${index + 1}번 장면 스토리보드`} /> : <><span>{String(index + 1).padStart(2, "0")}</span><div className={`mini-landscape landscape-${index % 3}`}><FileText size={22} /></div></>}
+  </div>;
+}
 
 export function SceneList({
   scenes,
@@ -46,12 +54,7 @@ export function SceneList({
               className={`scene-item ${i === active ? "active" : ""}`}
               onClick={() => onSelect(i)}
             >
-              <div className="scene-mini-art">
-                <span>{String(i + 1).padStart(2, "0")}</span>
-                <div className={`mini-landscape landscape-${i % 3}`}>
-                  <FileText size={22} />
-                </div>
-              </div>
+              <SceneMiniArt scene={s} index={i} />
               <div className="scene-item-body">
                 <strong>{s.title || "제목 없는 장면"}</strong>
                 {s.phase && <em className="scene-phase">{phaseLabels[s.phase]}</em>}

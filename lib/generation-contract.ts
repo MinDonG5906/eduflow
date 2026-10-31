@@ -62,6 +62,7 @@ export const generationResponseSchema = boardSchema.extend({
 });
 
 export const errorDefinitions = {
+  IMAGE_MODEL_UNAVAILABLE: { status: 503, retryable: false, error: "이 OpenAI 키에서 이미지 모델을 사용할 수 없습니다. OpenAI 프로젝트의 이미지 모델 권한·조직 인증·결제 설정을 확인해 주세요. 기존 이미지는 유지됩니다." },
   PDF_NOT_ATTACHED: { status: 400, retryable: false, error: "선택한 PDF를 다시 불러오고 페이지를 선택해 주세요. 기존 작업은 유지됩니다." },
   PDF_TOO_LARGE: { status: 413, retryable: false, error: "선택한 PDF는 50MB 미만이어야 합니다. 보낼 페이지 수를 줄여 주세요." },
   PDF_RENDER_TOO_LARGE: { status: 413, retryable: false, error: "선택한 페이지를 PDF 호환본으로 준비하는 처리 용량(50MB)을 넘었습니다. 보낼 페이지 수를 줄여 주세요. 기존 작업은 유지됩니다." },
@@ -135,7 +136,8 @@ export function generationTask(input: GenerationInput, references: RetrievedRefe
     groundingGuidance: references.length
       ? "주 자료는 사용자가 제공한 원문입니다. 지식베이스는 관련 설명과 시각자료 보강에만 사용하세요."
       : "지식베이스 보강 자료가 없습니다. 사용자 원고 또는 첨부 PDF의 내용만으로 스토리보드를 완성하세요. 원문에 없는 사실·수치·출처를 만들지 말고 referenceIds와 visualReferenceIds는 빈 배열로 반환하세요. 화면 설명과 시각 자료 제안은 원문 내용 또는 첨부 PDF에 실제 보이는 표·그림을 바탕으로 작성하세요.",
-    visualGuidance: "supplementalSources의 visuals는 지식베이스에서 연결이 확인된 그림 또는 추출·검토된 표입니다. kind가 table이면 excerpt의 실제 검색 구절과 표의 크기 정보로 장면 관련성을 판단하세요. 선택한 표는 화면에서 셀·병합·빈 칸을 보존한 미리보기로 제공됩니다. 제공되지 않은 셀 내용을 추측하지 마세요. 장면의 화면·목적·나레이션과 관련된 그림·표를 골라 visual과 assets에 시각자료의 구체적인 활용 방법을 적고, 그 자료를 제공한 source id를 visualReferenceIds에 넣으세요. 원고와 같은 내용을 설명하는 그림·표도 선택할 수 있으며 새 사실의 보강 여부와 무관합니다. 나레이션·자막 보강 출처는 기존 referenceIds 규칙을 따르세요. 관련 없는 그림·표나 visuals가 빈 자료는 visualReferenceIds에 넣지 말고, 적합한 시각자료가 없으면 빈 배열로 두세요. 그림·표를 새로 만들거나 다른 문장·페이지의 자료로 대체하지 마세요. 적합한 시각자료가 제공되면 visualReferenceIds에 해당 source id를 넣어 추천 카드로 연결하세요.",
+    subtitleGuidance: "각 장면의 subtitle은 서로 다른 내용의 짧은 자막 2개를 줄바꿈(\\n)으로 구분한 두 줄 문자열로 작성하세요. 첫 줄은 장면의 핵심 내용, 둘째 줄은 이어지는 설명·행동·주의사항을 담으세요. 각 줄은 가능하면 40자 이내로 쓰고 번호나 글머리표는 붙이지 마세요. 한 문장을 임의로 반으로 자르거나 같은 말을 반복하지 마세요. 원문·연결 근거에 없는 사실을 추가하지 마세요. 장면 재생성에도 동일하게 적용합니다.",
+    visualGuidance: "supplementalSources의 visuals는 지식베이스에서 연결이 확인된 그림 또는 추출·검토된 표입니다. kind가 table이면 excerpt의 실제 검색 구절과 표의 크기 정보로 장면 관련성을 판단하세요. 선택한 표는 화면에서 셀·병합·빈 칸을 보존한 미리보기로 제공됩니다. 제공되지 않은 셀 내용을 추측하지 마세요. 장면의 화면·목적·나레이션과 관련된 그림·표를 골라 visual과 assets에 시각자료의 구체적인 활용 방법을 적고, 그 자료를 제공한 source id를 visualReferenceIds에 넣으세요. 원고와 같은 내용을 설명하는 그림·표도 선택할 수 있으며 새 사실의 보강 여부와 무관합니다. 나레이션·자막 보강 출처는 기존 referenceIds 규칙을 따르세요. 관련 없는 그림·표나 visuals가 빈 자료는 visualReferenceIds에 넣지 말고, 적합한 시각자료가 없으면 빈 배열로 두세요. 그림·표를 새로 만들거나 다른 문장·페이지의 자료로 대체하지 마세요. 적합한 시각자료가 제공되면 visualReferenceIds에 해당 source id를 넣어 추천 카드로 연결하세요. 여러 장면에서 같은 자료만 반복하기보다 각 장면의 핵심 설명에 맞는 서로 다른 그림·표를 검토하세요. 한 장면에 여러 자료가 직접 관련되면 함께 선택할 수 있습니다. 다양성을 위해 관련 없는 자료를 선택하지 마세요.",
     settings: input.settings,
     sourceRequest: input.sourceRequest || "",
     ...(input.pdfSource ? { pdfSource: input.pdfSource,

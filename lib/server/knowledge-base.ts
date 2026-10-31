@@ -221,8 +221,9 @@ export class KnowledgeBase {
   search(query: string, limit = 6, topic = ""): RetrievedReference[] {
     limit = Math.max(0, Math.min(20, Math.floor(limit)));
     if (!limit) return [];
-    // Reserve an independent channel so a document's two text hits cannot starve its visuals.
-    const visualSources = this.searchVisuals(query, Math.min(4, Math.ceil(limit / 2)), topic);
+    // Reserve visual slots, then fill unused text slots with more relevant assets.
+    // The combined result keeps the same limit and source validation rules.
+    const visualSources = this.searchVisuals(query, limit, topic);
     const needles = searchNeedles(query);
     if (!needles.length) return visualSources;
     const topicNeedles = searchNeedles(topic);
@@ -269,7 +270,8 @@ export class KnowledgeBase {
         origin: row.origin, ...(row.page ? { page: row.page } : {}) });
       if (selected.length >= limit) break;
     }
-    return [...selected.slice(0, limit - visualSources.length), ...visualSources];
+    const visualCount = Math.min(visualSources.length, Math.max(Math.ceil(limit / 2), limit - selected.length));
+    return [...selected.slice(0, limit - visualCount), ...visualSources.slice(0, visualCount)];
   }
 
   searchVisuals(query: string, limit = 4, topic = ""): RetrievedReference[] {

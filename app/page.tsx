@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { ConnectionDialog } from "@/components/studio/connection-dialog";
 import { DocumentSource } from "@/components/studio/document-source";
 import { ManuscriptPanel } from "@/components/studio/manuscript-panel";
-import { OverviewPanel } from "@/components/studio/overview-panel";
 import { SceneEditor } from "@/components/studio/scene-editor";
 import { SceneList } from "@/components/studio/scene-list";
 import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel";
@@ -35,6 +34,8 @@ import { apiErrorSchema, CLIENT_TIMEOUT_MS, GenerationError, parseGenerationResp
 import { findDocumentExcerpt, MAX_MANUSCRIPT_CHARS, type SourceDocument } from "@/lib/documents";
 import { deletePdf, savePdf } from "@/lib/pdf-storage";
 import { loadSceneImages } from "@/lib/scene-image-storage";
+import { defaultImageSettings } from "@/lib/scene-image";
+import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
@@ -471,12 +472,15 @@ export default function Studio() {
             board && (
               <>
                 <header className="workspace-heading">
-                  <h1>스토리보드 편집</h1>
+                  <h1 className="sr-only">스토리보드 편집</h1>
+                  <input className="board-title-input" aria-label="콘텐츠 제목" value={board.title} onChange={event => setBoard({ ...board, title: event.target.value })} />
                   <Button className="export-top" onClick={openExport}>
                     <Download size={16} /> 내보내기
                   </Button>
                 </header>
-                <OverviewPanel board={board} onChange={setBoard} total={total} reviewCount={reviewCount} />
+                {board.generation?.warnings.filter(warning => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map(warning => (
+                  <p key={warning} className="term-correction-notice" role="status">{warning}</p>
+                ))}
                 {Math.abs(total - board.settings.minutes * 60) >
                   board.settings.minutes * 60 * 0.15 && (
                   <div className="duration-warning">
@@ -512,6 +516,10 @@ export default function Studio() {
                         setModal("regenerate");
                       }}
                       canRegenerate={canGenerate}
+                      settings={board.settings}
+                      imageSettings={board.imageSettings ?? defaultImageSettings}
+                      onImageSettingsChange={imageSettings => setBoard(current => current ? { ...current, imageSettings } : current)}
+                      onOpenConnection={() => setConnectionOpen(true)}
                     />
                   )}
                 </div>

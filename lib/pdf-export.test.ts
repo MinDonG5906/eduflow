@@ -141,8 +141,9 @@ test("exportStoryboardPdf handles landscape and portrait user-attached images wi
   assert.ok(text.includes("안전보건공단 2025 가이드북 p.15"), "Should include landscape image source");
   assert.ok(text.includes("대한응급의학회 포스터 세로형"), "Should include portrait image source");
 
-  // Scene 3 has no image, should show fallback
-  assert.ok(text.includes("참고 이미지 미등록"), "Should show fallback for scene 3");
+  // Missing backgrounds now use a rendered title card; keep the full title in PDF text.
+  assert.ok(text.includes(sampleBoard.scenes[2].title), "Should retain the title for the title-card scene");
+  assert.ok(!text.includes("참고 이미지 미등록"), "Should not show the obsolete missing-image placeholder");
 });
 
 test("scene reordering retains image attachment when generating PDF", async () => {
@@ -223,15 +224,16 @@ test("PDF export maps scene citations against the attached selection and rejects
     image: undefined, sourceId: "pdf-page:24", pdfSource: { name: "manual.pdf", pages: [24] } }] };
   const draw = t.mock.method(PDFPage.prototype, "drawImage");
   const result = await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource });
-  assert.equal(draw.mock.callCount(), 1);
-  const selectedImage = draw.mock.calls[0].arguments[0];
+  const sourceDraws = () => draw.mock.calls.filter(call => call.arguments[0].height > call.arguments[0].width);
+  assert.equal(sourceDraws().length, 1);
+  const selectedImage = sourceDraws()[0].arguments[0];
   assert.ok(selectedImage.height > selectedImage.width, "citation must use second attached page, not first scene-selected page");
   const parser = new PDFParse({ data: result });
   try { assert.ok((await parser.getText()).text.includes("원본 24페이지")); }
   finally { await parser.destroy(); }
 
   await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource: { ...attachedPdfSource, name: "different.pdf" } });
-  assert.equal(draw.mock.callCount(), 1, "a different attached document cannot become this scene's source image");
+  assert.equal(sourceDraws().length, 1, "a different attached document cannot become this scene's source image");
 });
 
 test("PDF export API validates origin, size, JSON and attached page metadata before rendering", async () => {

@@ -17,6 +17,9 @@ export function promptTask<T extends Pick<GenerationContext["task"], "supplement
   const scene = task.selectedScene;
   return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources),
     ...(scene ? { selectedScene: { ...scene,
+      ...(scene.image ? { image: { ...scene.image, generated: scene.image.generated ? {
+        model: scene.image.generated.model, createdAt: scene.image.generated.createdAt, basedOn: scene.image.generated.basedOn,
+      } : undefined } } : {}),
       ...(scene.references ? { references: promptKnowledgeSources(scene.references) } : {}),
       ...(scene.visualReferences ? { visualReferences: promptKnowledgeSources(scene.visualReferences) } : {}),
       ...(scene.visuals ? { visuals: scene.visuals.map(promptVisual) } : {}),

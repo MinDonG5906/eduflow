@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaults, generateDemo, sample, newScene, markdown } from "./storyboard";
-import { apiErrorSchema, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
+import { apiErrorSchema, generationTask, GenerationError, MAX_OUTPUT_CHARS, parseGenerationResponse, type GenerationInput } from "./generation-contract";
 import { runGeneration, type GenerationAdapter } from "./server/generation-service";
 import { createGenerateHandler } from "./server/generate-handler";
 import { readDraft, serializeDraft } from "./studio-state";
@@ -398,4 +398,17 @@ test("extractive demo and unregistered typos keep their original wording", async
   }), mode: "ai" });
   assert.equal(ai.scenes[0].narration, "미등록오타를 확인합니다.");
   assert.ok(!ai.generation?.warnings.some((warning) => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)));
+});
+
+
+test("new scenes and regeneration request two distinct caption lines without changing saved captions", () => {
+  for (const language of ["한국어", "영어"] as const) {
+    const settings = { ...defaults, language };
+    const board = generateDemo(sample, settings);
+    assert.ok(board.scenes.every(scene => scene.subtitle.split("\n").length === 2));
+    const regenerated = generateDemo(sample, settings, board.scenes[0]);
+    assert.equal(regenerated.scenes[0].subtitle.split("\n").length, 2);
+    assert.match(generationTask({ manuscript: sample, settings }).subtitleGuidance, /자막 2개/);
+    assert.match(generationTask({ manuscript: sample, settings, scene: board.scenes[0] }).subtitleGuidance, /장면 재생성/);
+  }
 });
