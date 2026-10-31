@@ -63,10 +63,14 @@ test("image-only PDFs retain normalized filename fallback and explicit topics", 
 
 test("scene citation retrieval keeps the original page scope", async () => {
   const data = await sourcePdf(["Ventilation equipment inspection.", "Emergency rescue communication."]);
-  const query = await generationKnowledgeQuery({ manuscript: "", settings: defaults, pdfSource: { name: "manual.pdf", pages: [22, 25] },
-    scene: { ...newScene(), sourceId: "pdf-page:25" }, sceneSourceScope: "citation" }, context(data));
+  const pdfSource = { name: "manual.pdf", pages: [22, 25] };
+  const input = { manuscript: "", settings: defaults, pdfSource,
+    scene: { ...newScene(), sourceId: "pdf-page:25", pdfSource }, sceneSourceScope: "citation" as const };
+  const query = await generationKnowledgeQuery(input, context(data));
   assert.ok(query.query.includes("Emergency rescue"));
   assert.ok(!query.query.includes("Ventilation"));
+  const stale = await generationKnowledgeQuery({ ...input, scene: { ...input.scene, sourceId: "pdf-page:18" } }, context(data));
+  assert.ok(stale.query.includes("Ventilation") && stale.query.includes("Emergency rescue"));
 });
 
 test("generation handler supplies the validated attachment to retrieval before paid admission", async () => {

@@ -235,7 +235,9 @@ export async function runGeneration(
         const relabeledScenes: number[] = [];
         const scenes = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
           const normalizedScene = adapter.mode === "ai"
-            ? input.pdfSource ? { ...scene, evidence: cleanEvidence(scene.evidence) }
+            ? input.pdfSource ? { ...scene, evidence: cleanEvidence(scene.evidence),
+              // Never turn an out-of-selection/printed folio into a guessed file page.
+              sourceId: task.pdfCitationIds?.includes(scene.sourceId) ? scene.sourceId : "" }
               : alignManuscriptCitation(scene, sentences)
             : scene;
           const warning = citationWarning(normalizedScene, sentences, input.pdfSource);

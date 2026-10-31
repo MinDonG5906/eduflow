@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { Images } from "lucide-react";
 import { recommendationImageUrl, type VisualRecommendation } from "@/lib/knowledge-structure";
 import { KnowledgeSource } from "@/components/knowledge-source";
 import type { Scene } from "@/lib/storyboard";
+import { KnowledgeTablePreview } from "@/components/knowledge-table-preview";
+import { SceneSection } from "./scene-section";
 
 function FigurePreview({ visual }: { visual: VisualRecommendation }) {
   const [missing, setMissing] = useState(false);
@@ -10,16 +13,20 @@ function FigurePreview({ visual }: { visual: VisualRecommendation }) {
 }
 
 export function VisualRecommendations({ visuals, references }: { visuals: VisualRecommendation[]; references: NonNullable<Scene["references"]> }) {
-  if (!visuals.length) return <section className="scene-visuals" aria-label="시각자료 추천"><h3>시각자료 추천</h3><p>이 장면에 추가로 추천된 지식베이스 그림이 없습니다. 위의 화면 설명과 시각 자료 제안에서 원문을 바탕으로 한 구성을 확인하세요.</p></section>;
-  return <section className="scene-visuals" aria-label="시각자료 추천">
-    <h3>시각자료 추천</h3>
-    <p>이 장면의 내용과 관련된 지식베이스 원본 그림입니다. 제작 전에 그림과 연결 문장을 함께 확인하세요.</p>
-    <div className="scene-visual-grid">{visuals.map(visual => <article className="scene-visual-card" key={visual.id}>
-      <FigurePreview visual={visual} />
-      <strong>{visual.title}</strong><small>원본 {visual.page}페이지</small>
-      <blockquote>{visual.quote}</blockquote><p>{visual.reason}</p>
-      <a href={`/api/knowledge/file?id=${encodeURIComponent(visual.documentId)}#page=${visual.filePage}`} target="_blank" rel="noopener noreferrer">원본 페이지 확인</a>
-      <KnowledgeSource key={visual.id} references={references.filter(reference => reference.documentId === visual.documentId && reference.visuals?.some(item => item.id === visual.id)).map(reference => ({ ...reference, excerpt: visual.quote, visuals: [visual] }))} />
-    </article>)}</div>
-  </section>;
+  return <SceneSection title="시각자료 추천" icon={Images} description="장면 제작에 참고할 표·그림입니다. 필요한 자료를 원본과 대조하세요.">
+    {!visuals.length ? <p className="scene-section-empty">이 장면에 연결된 추천 자료가 없습니다.</p>
+      : <div className="scene-source-list">{visuals.map(visual => {
+        const reference = references.find(reference => reference.documentId === visual.documentId && reference.visuals?.some(item => item.id === visual.id))
+          ?? references.find(reference => reference.documentId === visual.documentId && reference.page === visual.page);
+        const source = { ...(reference ?? { id: visual.id, title: visual.title, url: "", published: "", revision: "", origin: "user" as const }),
+          documentId: visual.documentId, page: visual.page, excerpt: visual.quote, visuals: [visual] };
+        return <article className="scene-source-card" key={visual.id}>
+          <header className="scene-source-card-heading"><div><h4>{visual.title}</h4>
+            <p className="scene-source-meta">{visual.kind === "table" ? "표" : "그림"} · {visual.page}페이지{reference ? ` · ${reference.title}` : ""}</p></div>
+            <KnowledgeSource references={[source]} context={visual.title} />
+          </header>
+          <div className="scene-visual-content">{visual.kind === "table" && visual.table ? <KnowledgeTablePreview table={visual.table} /> : <FigurePreview visual={visual} />}</div>
+        </article>;
+      })}</div>}
+  </SceneSection>;
 }

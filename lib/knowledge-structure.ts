@@ -78,9 +78,12 @@ export function preserveKnowledgeReview(next: KnowledgeStructure, previous?: Kno
 export const visualRecommendationSchema = z.object({
   id: z.string().max(320), figureId: id, documentId: z.string().uuid(), blockId: id,
   title: z.string().max(160), page: z.number().int().positive(), filePage: z.number().int().positive(),
-  bounds: boundsSchema, quote: z.string().max(900), reason: z.string().max(500),
+  // Old drafts omit kind and retain their original figure crop.
+  kind: z.enum(["figure", "table"]).optional(),
+  table: knowledgeTableSchema.optional(),
+  bounds: boundsSchema.optional(), quote: z.string().max(900), reason: z.string().max(500),
   model: z.string().max(100), confidence: z.number().min(0).max(1),
-});
+}).refine(visual => visual.kind === "table" ? Boolean(visual.table && visual.table.id === visual.figureId) : Boolean(visual.bounds), "missing visual content");
 export type VisualRecommendation = z.infer<typeof visualRecommendationSchema>;
 
 /** A merged cell participates in every row it covers. Empty cells remain explicit;
@@ -165,6 +168,20 @@ export function recommendationsForBlocks(documentId: string, structure: Knowledg
       title: figure.title, page: structure.page, filePage: structure.filePage, bounds: figure.bounds,
       quote: link.quote, reason: link.reason, model: link.model, confidence: link.confidence }] : [];
   }).slice(0, 10);
+}
+
+/** Accepted tables are visual sources too. Proposed tables and unresolved symbols stay out. */
+export function tableRecommendationsForBlocks(documentId: string, structure: KnowledgeStructure, blockIds: string[]): VisualRecommendation[] {
+  return structure.blocks.filter(block => blockIds.includes(block.id) && block.tableId && !block.text.includes("[원본 기호 확인]"))
+    .flatMap(block => {
+      const table = structure.tables.find(table => table.id === block.tableId);
+      if (!table || table.cells.some(cell => cell.text.includes("[원본 기호 확인]"))) return [];
+      return [{ id: `${documentId}:${structure.page}:table:${table.id}:${block.id}`, kind: "table" as const,
+        figureId: table.id, documentId, blockId: block.id, title: `원본 ${structure.page}페이지 표`,
+        page: structure.page, filePage: structure.filePage, table,
+        quote: block.text.slice(0, 900), reason: "검색된 구절이 포함된 표입니다. 셀 내용과 병합 구조를 원본과 함께 확인하세요.",
+        model: "structured-table", confidence: 1 }];
+    });
 }
 
 export function recommendationImageUrl(visual: VisualRecommendation) {

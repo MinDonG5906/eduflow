@@ -22,7 +22,7 @@ function request(context: GenerationContext) {
   const { instructions, responseSchema, taskText } = providerTask(context);
   const parts: Part[] = [
     ...(context.pdf ? [{ inlineData: { mimeType: "application/pdf", data: Buffer.from(context.pdf.data).toString("base64") } }] : []),
-    { text: context.pdf ? JSON.stringify({ ...JSON.parse(taskText), document: { visualPages: context.task.pdfSource?.pages ?? [] } }) : taskText },
+    { text: taskText },
   ];
   return { instructions, parts, schema: geminiJsonSchema(responseSchema) };
 }
@@ -80,7 +80,7 @@ export function createGeminiAdapter(config: AIConfig, options: { fetch?: typeof 
     } });
   }
   return {
-    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v3-duration-target",
+    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v4-duration-target",
     billing: { kind: "metered", config },
     async countInputTokens(_, context) {
       try {

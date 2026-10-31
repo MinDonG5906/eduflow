@@ -231,6 +231,7 @@ export function GenerationBar({
   storageBlocked,
   generator,
   onGenerate,
+  onOpenConnection,
 }: {
   settings: Settings;
   isPdf: boolean;
@@ -240,7 +241,9 @@ export function GenerationBar({
   storageBlocked: boolean;
   generator: GeneratorStatus;
   onGenerate: () => void;
+  onOpenConnection: () => void;
 }) {
+  const needsAiConnection = isPdf && Boolean(generator) && (generator?.mode !== "ai" || !generator.available);
   return (
     <>
       <div className="generation-bar">
@@ -257,13 +260,27 @@ export function GenerationBar({
             </p>
           </div>
         </div>
+        <div className="generation-actions">
+          {needsAiConnection && (
+            <div className="generation-connection">
+              <p id="generation-connection-hint" role="status">
+                {generator?.mode === "demo"
+                  ? `${documentFormat} 생성은 실제 AI 연결이 필요해 데모 모드에서는 사용할 수 없습니다.`
+                  : "AI 연결이 준비되지 않아 생성할 수 없습니다. 연결 설정을 확인해 주세요."}
+                {" "}첨부 자료와 선택한 페이지는 연결 후에도 유지됩니다.
+              </p>
+              <Button variant="outline" onClick={onOpenConnection}>AI 연결하기</Button>
+            </div>
+          )}
         <Button
+          aria-describedby={needsAiConnection ? "generation-connection-hint" : undefined}
           className="generate-button"
           disabled={!canGenerate}
           onClick={onGenerate}
         >
           <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
         </Button>
+        </div>
       </div>
       <div className="bottom-note">
         <ShieldCheck size={13} />

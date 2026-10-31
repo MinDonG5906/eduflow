@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+// Only a match, a valid citation, or an explicit user choice may open a PDF page.
+// In particular, unresolved image-only citations must not default to the first page.
+export function sourcePageToDisplay(pages: { page: number }[], browsed?: number | null, matched?: number | null, cited?: number | null) {
+  return [browsed, matched, cited].find(page => page != null && pages.some(item => item.page === page));
+}
+
 export const sourceBoxSchema = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1), z.number().min(0).max(1)]);
 export type SourceBox = z.infer<typeof sourceBoxSchema>;
 export const sourcePageSchema = z.object({
