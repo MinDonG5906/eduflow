@@ -523,7 +523,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
   .generation-bar { position: static; flex-direction: column; padding: 18px 16px; gap: 16px; }
   .generation-bar strong { max-width: none; font-size: 12px; }
   .generation-bar p { font-size: 11px; }
-  .generate-button { width: 100%; }
+  .generate-button,.compare-button { width: 100%; }
   .bottom-note { font-size: 10px; line-height: 1.9; text-align: left; justify-content: flex-start; }
   .bottom-note .note-dot { display: none; }
   .page-footer { align-items: flex-start; flex-direction: column; gap: 8px; }
@@ -589,6 +589,23 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .connection-warning svg { flex: none; margin-top: 3px; }
 .connection-steps { padding-left: 18px; font-size: 12px; line-height: 1.8; color: var(--body); list-style: decimal; }
 .connection-error { color: var(--error); font-size: 12px; }
+.compare-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.generation-buttons { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.compare-button { min-height: 44px; padding-inline: 16px; font-size: 13px; flex-shrink: 0; }
+.compare-dialog { display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - 2rem); }
+.compare-scroll { overflow: auto; min-height: 0; border: 1px solid var(--hairline); border-radius: 10px; }
+.compare-grid { display: grid; }
+.compare-head,.compare-scene { padding: 12px 14px; border-right: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); min-width: 0; }
+.compare-head { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; background: var(--canvas-soft); }
+.compare-head h3 { font-size: 13px; font-weight: 600; line-height: 1.5; }
+.compare-audience { font-size: 11px; color: var(--body); }
+.compare-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; width: 100%; font-size: 11px; }
+.compare-metrics dt { color: var(--body); }
+.compare-metrics dd { font-weight: 600; font-variant-numeric: tabular-nums; }
+.compare-objectives { padding-left: 16px; list-style: disc; font-size: 11px; color: var(--body); line-height: 1.6; }
+.compare-scene { display: flex; flex-direction: column; gap: 6px; font-size: 12px; line-height: 1.7; }
+.compare-scene strong { font-size: 12px; font-weight: 600; }
+.compare-subtitle { align-self: flex-start; padding: 2px 8px; border-radius: 4px; background: var(--surface); font-size: 11px; }
 @media (max-width: 767px) {
   .connection-select { font-size: 16px; height: 40px; }
 }
