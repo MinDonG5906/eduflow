@@ -2,14 +2,13 @@ import { CheckCheck, Clock3, FileText, Plus, Settings2, ShieldCheck } from "luci
 import { Button } from "@/components/ui/button";
 import type { Scene } from "@/lib/storyboard";
 import { useSceneImageUrl } from "@/hooks/use-scene-image-url";
-import { clampImageScale } from "@/lib/scene-composition";
 
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
 
 function SceneMiniArt({ scene, index }: { scene: Scene; index: number }) {
   const url = useSceneImageUrl(scene.image?.id);
   return <div className={`scene-mini-art ${url ? "has-image" : ""}`}>
-    {url ? <img src={url} style={{ width: `${clampImageScale(scene.image?.scalePercent)}%`, height: `${clampImageScale(scene.image?.scalePercent)}%`, objectFit: "contain" }} alt={`${index + 1}번 장면 콘티`} /> : <><span>{String(index + 1).padStart(2, "0")}</span><div className={`mini-landscape landscape-${index % 3}`}><FileText size={22} /></div></>}
+    {url ? <img src={url} style={{ objectFit: "contain" }} alt={`${index + 1}번 장면 콘티`} /> : <><span>{String(index + 1).padStart(2, "0")}</span><div className={`mini-landscape landscape-${index % 3}`}><FileText size={22} /></div></>}
   </div>;
 }
 

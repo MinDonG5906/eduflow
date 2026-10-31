@@ -67,7 +67,6 @@ export const sceneImageSchema = z.object({
   name: z.string().max(200).optional(),
   mimeType: z.string().max(50).optional(),
   pageNumber: z.number().int().positive().optional(),
-  scalePercent: z.number().min(20).max(100).optional(),
   generated: z.object({ model: z.string().max(100), prompt: z.string().max(40000), createdAt: z.string().datetime(), basedOn: z.string().regex(/^[a-f0-9]{64}$/).optional() }).optional(),
 });
 export type SceneImage = z.infer<typeof sceneImageSchema>;
@@ -101,6 +100,7 @@ export const sceneSchema = z.object({
   visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
   visuals: z.array(visualRecommendationSchema).max(20).optional(),
   visualPlacements: z.array(visualPlacementSchema).max(20).refine(items => new Set(items.map(item => item.visualId)).size === items.length, "duplicate visual placement").optional(),
+  subtitleSettings: z.object({ enabled: z.boolean(), position: z.enum(["auto", "top", "bottom"]) }).optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({

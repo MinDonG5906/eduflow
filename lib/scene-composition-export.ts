@@ -1,5 +1,6 @@
 import type { Scene } from "./storyboard";
 import { compositionBackgroundRect, compositionOverlaySvg } from "./scene-composition";
+import { loadCompositionAssets } from "./composition-assets";
 
 const imageFromUrl = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
   const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url;
@@ -12,11 +13,12 @@ export async function exportSceneComposition(scene: Scene, background?: Blob): P
   if (background) {
     const url = URL.createObjectURL(background);
     try {
-      const image = await imageFromUrl(url), rect = compositionBackgroundRect(image.width, image.height, 1600, 900, scene.image?.scalePercent);
+      const image = await imageFromUrl(url), rect = compositionBackgroundRect(image.width, image.height, 1600, 900);
       context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
     } finally { URL.revokeObjectURL(url); }
   }
-  const overlay = await imageFromUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compositionOverlaySvg(scene))}`);
+  const { assets } = await loadCompositionAssets(scene);
+  const overlay = await imageFromUrl(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(compositionOverlaySvg(scene, assets))}`);
   context.drawImage(overlay, 0, 0);
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("콘티 이미지를 저장하지 못했습니다.")), "image/png"));
 }

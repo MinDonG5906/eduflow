@@ -37,5 +37,6 @@ export function removeScene(board: Board, index: number): Board | null {
 export function replaceScene(board: Board, id: string, replacement: Scene): Board {
   return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id,
     ...(s.image && !replacement.image ? { image: s.image } : {}),
-    ...(s.visualPlacements ? { visualPlacements: s.visualPlacements } : {}) } : s)) };
+    ...(s.visualPlacements ? { visualPlacements: s.visualPlacements } : {}),
+    ...(s.subtitleSettings ? { subtitleSettings: s.subtitleSettings } : {}) } : s)) };
 }

@@ -7,7 +7,10 @@ import type { Board } from "../storyboard";
 import { citedPdfPage, sourceUnit, type PdfSource } from "../pdf-source";
 import { officeFontCandidates } from "./office-fonts";
 import { renderPdfPages } from "./pdf-render";
-import { compositionBackgroundRect, compositionStickers } from "../scene-composition";
+import { compositionBackgroundRect, compositionStickers, type CompositionAssets } from "../scene-composition";
+import { createCompositionAssetLoader } from "./composition-assets";
+import { GlobalFonts } from "@napi-rs/canvas";
+import { renderCompositionOverlay } from "./composition-render";
 
 // A4 Landscape dimensions in points (297mm x 210mm)
 const PAGE_WIDTH = 841.89;
@@ -59,6 +62,7 @@ async function loadKoreanFonts(doc: PDFDocument): Promise<FontSet> {
   }
 
   const regular = await doc.embedFont(regularBytes);
+  GlobalFonts.register(regularBytes, "EduFlow Korean");
   const bold = boldBytes ? await doc.embedFont(boldBytes) : regular;
 
   return { regular, bold };
@@ -146,14 +150,17 @@ export async function exportStoryboardPdf({
   pdfBuffer,
   attachedPdfSource,
   sceneImages,
+  compositionAssets,
 }: {
   board: Board;
   pdfBuffer?: Uint8Array;
   attachedPdfSource?: PdfSource;
   sceneImages?: Map<string, Uint8Array>;
+  compositionAssets?: CompositionAssets;
 }): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const fonts = await loadKoreanFonts(doc);
+  const loadAssets = createCompositionAssetLoader();
 
   // 1. Prepare PDF page screenshots if pdfBuffer is supplied
   const pageImageMap = new Map<number, PDFImage>();
@@ -214,6 +221,8 @@ export async function exportStoryboardPdf({
   for (let idx = 0; idx < board.scenes.length; idx++) {
     const scene = board.scenes[idx];
     const stickers = compositionStickers(scene);
+    const assets = compositionAssets ?? await loadAssets(scene);
+    const overlay = await doc.embedPng(await renderCompositionOverlay(scene, assets));
     let image: PDFImage | undefined;
     let imageSourceText = "";
 
@@ -276,19 +285,9 @@ export async function exportStoryboardPdf({
       page.drawText("화면 / 참고 이미지",{x:MARGIN_X,y:bodyTop-10,size:10,font:fonts.bold,color:ink});
       const frameTop=bodyTop-24, frameHeight=leftWidth*9/16, frameY=frameTop-frameHeight;
       page.drawRectangle({x:MARGIN_X,y:frameY,width:leftWidth,height:frameHeight,color:soft,borderColor:lineColor,borderWidth:0.6});
-      if(image){const rect=compositionBackgroundRect(image.width,image.height,leftWidth,frameHeight,embeddedSceneImages.has(scene.id)?scene.image?.scalePercent:100);page.drawImage(image,{x:MARGIN_X+rect.x,y:frameY+rect.y,width:rect.width,height:rect.height});}
+      if(image){const rect=compositionBackgroundRect(image.width,image.height,leftWidth,frameHeight);page.drawImage(image,{x:MARGIN_X+rect.x,y:frameY+rect.y,width:rect.width,height:rect.height});}
       else if (!stickers.length) {page.drawText(imageRenderError?"참고 이미지 표시 실패":"참고 이미지 미등록",{x:MARGIN_X+16,y:frameY+frameHeight/2,size:10,font:fonts.regular,color:body});}
-      for (const sticker of stickers) {
-        const x = MARGIN_X + sticker.x / 100 * leftWidth, y = frameY + (100 - sticker.y - sticker.height) / 100 * frameHeight;
-        const w = sticker.width / 100 * leftWidth, h = sticker.height / 100 * frameHeight;
-        page.drawRectangle({ x, y, width: w, height: h, color: rgb(1, .977, .87), borderColor: rgb(.66, .50, .14), borderWidth: .6, borderDashArray: [2, 1.2] });
-        const size = Math.min(34, sticker.width * 16 / 12, sticker.height * 9 / 3.7) * leftWidth / 1600;
-        const label = `${sticker.label} · ${sticker.kind}`;
-        page.drawText(label, { x: x + (w - fonts.bold.widthOfTextAtSize(label, size)) / 2, y: y + h / 2 + size * .45, size, font: fonts.bold, color: ink });
-        let title = sticker.visual.title;
-        while (title && fonts.regular.widthOfTextAtSize(title, size * .8) > w - 6) title = title.slice(0, -1);
-        page.drawText(title, { x: x + (w - fonts.regular.widthOfTextAtSize(title, size * .8)) / 2, y: y + h / 2 - size * .85, size: size * .8, font: fonts.regular, color: ink });
-      }
+      page.drawImage(overlay, { x: MARGIN_X, y: frameY, width: leftWidth, height: frameHeight });
       page.drawLine({start:{x:rightX-16,y:bodyTop},end:{x:rightX-16,y:42},color:lineColor,thickness:0.6});
       drawRows(page,leftRows,MARGIN_X,frameY-12,42,fonts);
       drawRows(page,rightRows,rightX,bodyTop,42,fonts);

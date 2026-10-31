@@ -362,7 +362,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .scene-image-source { display: grid; gap: 6px; color: var(--body); font-size: 12px; }
 .scene-composition-workspace { display: grid; gap: 12px; }
 .scene-composition-frame { position: relative; width: min(100%, 782px); aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--hairline); border-radius: 8px; background: #f5f5f6; }
-.scene-composition-frame:not(.has-image):not(.has-stickers) { aspect-ratio: auto; height: 160px; }
+.scene-composition-frame:not(.has-image):not(.has-stickers):not(.has-subtitle) { aspect-ratio: auto; height: 160px; }
 .scene-composition-frame > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .composition-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: var(--body); font-size: 12px; text-align: center; background-image: linear-gradient(#e7e7e9 1px, transparent 1px), linear-gradient(90deg, #e7e7e9 1px, transparent 1px); background-size: 24px 24px; }
 .composition-sticker-target { position: absolute; padding: 0; border: 2px solid transparent; background: transparent; cursor: grab; touch-action: none; border-radius: 6px; }
@@ -370,18 +370,11 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .composition-sticker-target.selected { border-color: #947222; }
 .composition-sticker-target:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
 .composition-sticker-target:disabled { cursor: wait; }
-.composition-background-outline { position: absolute; border: 1px dashed #777; pointer-events: none; }
 .scene-section .composition-resize-handle { position: absolute; z-index: 3; width: 22px; height: 22px; min-height: 22px; padding: 0; transform: translate(-100%, -100%); border: 2px solid white; border-radius: 3px; background: #a98024; box-shadow: 0 0 0 1px #72581d; cursor: nwse-resize; touch-action: none; }
 .scene-section .composition-sticker-target { min-height: 0; }
 .composition-resize-handle::after { content: ""; display: block; width: 10px; height: 10px; margin: 4px; background: repeating-linear-gradient(135deg, transparent 0 3px, white 3px 4px); }
-.composition-resize-handle.background { background: #555; box-shadow: 0 0 0 1px #333; }
 .composition-resize-handle:focus-visible { outline: 3px solid #2664c2; outline-offset: 3px; }
 .composition-resize-handle:disabled { cursor: wait; }
-.composition-image-size { display: grid; gap: 8px; font-size: 12px; }
-.composition-image-size > label { display: flex; align-items: center; gap: 12px; }
-.composition-image-size > div { display: flex; align-items: center; gap: 12px; }
-.composition-image-size input { flex: 1; min-width: 0; accent-color: #555; }
-.composition-image-size p { color: var(--body); line-height: 1.6; font-size: 11px; }
 .composition-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 .composition-toolbar label, .composition-controls > label:not(.connection-check), .composition-geometry label { display: grid; gap: 6px; font-size: 12px; color: var(--ink); min-width: 0; }
 .composition-toolbar select, .composition-controls select, .composition-geometry input { min-height: 36px; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }
@@ -875,3 +868,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .generation-connection { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .generation-connection p { flex: 1 1 220px; margin: 0; line-height: 1.6; }
 @media (max-width: 600px) { .generation-bar > .generation-actions { align-items: stretch; max-width: none; width: 100%; } }
+
+.composition-subtitle-controls { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--hairline); border-radius: 8px; }
+.composition-subtitle-controls > label:not(.connection-check) { display: grid; gap: 6px; font-size: 12px; }
+.composition-subtitle-controls select { min-height: 36px; width: 100%; border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; background: var(--surface); }

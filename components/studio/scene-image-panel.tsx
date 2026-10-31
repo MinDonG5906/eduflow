@@ -11,12 +11,13 @@ import { deleteSceneImage, loadSceneImage, saveSceneImage } from "@/lib/scene-im
 import type { Scene, Settings } from "@/lib/storyboard";
 import { SceneSection } from "./scene-section";
 import { SceneComposition } from "./scene-composition";
-import { clampImageScale, compositionStickers } from "@/lib/scene-composition";
+import { compositionStickers, compositionSubtitle } from "@/lib/scene-composition";
 import { exportSceneComposition } from "@/lib/scene-composition-export";
 
-export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onOpenConnection }: {
+export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onOpenConnection }: {
   scene: Scene; settings: Settings; imageSettings: ImageSettings; onSettingsChange: (settings: ImageSettings) => void;
   onChange: (image: Scene["image"]) => void; onPlacementsChange: (placements: Scene["visualPlacements"]) => void; onOpenConnection: () => void;
+  onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const [status, setStatus] = useState<SceneImageStatus | null>(null);
   const [direction, setDirection] = useState("");
@@ -87,7 +88,6 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       await saveSceneImage(id, blob); saved = id;
       if (!unchanged()) throw new Error("장면 내용이 변경되어 기존 이미지를 유지했습니다.");
       latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성 콘티 · 원문과 대조 필요", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
-        ...(scene.image?.scalePercent !== undefined ? { scalePercent: scene.image.scalePercent } : {}),
         generated: { model: result.model, prompt: result.prompt, createdAt: result.createdAt, basedOn: result.basedOn } });
       saved = undefined;
       setMessage("콘티 이미지를 저장했습니다. 원문과 대조한 뒤 사용하세요.");
@@ -111,14 +111,14 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     finally { if (upload.current) upload.current.value = ""; }
   }
   const canGenerate = Boolean(status?.available && scene.visual.trim() && scene.evidence.trim() && !busy);
-  return <SceneSection title="콘티 이미지" icon={ImageIcon} description="인물과 자료의 배치·구도를 확인하는 콘티입니다. 추천 표·그림의 자리를 스티커로 표시하며, 이미지 저장과 PDF에도 반영됩니다."
+  return <SceneSection title="콘티 이미지" icon={ImageIcon} description="추천 사진·표와 장면 자막을 콘티에 직접 배치합니다. 조정한 위치·크기는 이미지 저장과 PDF에도 반영됩니다."
     action={<Button size="sm" variant="outline" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />이미지 첨부</Button>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>
       <div className="scene-image-actions">
         <Button disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "콘티 생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "콘티 이미지 생성"}</Button>
         {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
-        {(scene.image || compositionStickers(scene).length > 0) && <Button variant="outline" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
+        {(scene.image || compositionStickers(scene).length > 0 || compositionSubtitle(scene)) && <Button variant="outline" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
           try {
             const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
             if (scene.image && !background) throw new Error("콘티 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
@@ -131,8 +131,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       </div>
       {status?.available ? <p className="scene-image-cost">한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도 적용<br />호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
         : <p className="scene-image-cost">{status?.reason || "이미지 연결 상태를 확인하고 있습니다."} <Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></p>}
-      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange}
-        onImageScaleChange={scalePercent => { if (scene.image) onChange({ ...scene.image, scalePercent: clampImageScale(scalePercent) }); }} />
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} />
       <div className="scene-image-settings">
         <label>공통 그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
           {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

@@ -223,15 +223,16 @@ test("PDF export maps scene citations against the attached selection and rejects
     image: undefined, sourceId: "pdf-page:24", pdfSource: { name: "manual.pdf", pages: [24] } }] };
   const draw = t.mock.method(PDFPage.prototype, "drawImage");
   const result = await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource });
-  assert.equal(draw.mock.callCount(), 1);
-  const selectedImage = draw.mock.calls[0].arguments[0];
+  const sourceDraws = () => draw.mock.calls.filter(call => call.arguments[0].height > call.arguments[0].width);
+  assert.equal(sourceDraws().length, 1);
+  const selectedImage = sourceDraws()[0].arguments[0];
   assert.ok(selectedImage.height > selectedImage.width, "citation must use second attached page, not first scene-selected page");
   const parser = new PDFParse({ data: result });
   try { assert.ok((await parser.getText()).text.includes("원본 24페이지")); }
   finally { await parser.destroy(); }
 
   await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource: { ...attachedPdfSource, name: "different.pdf" } });
-  assert.equal(draw.mock.callCount(), 1, "a different attached document cannot become this scene's source image");
+  assert.equal(sourceDraws().length, 1, "a different attached document cannot become this scene's source image");
 });
 
 test("PDF export API validates origin, size, JSON and attached page metadata before rendering", async () => {
