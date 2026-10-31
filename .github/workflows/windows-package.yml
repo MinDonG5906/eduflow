@@ -37,7 +37,7 @@ jobs:
           Copy-Item (Get-Command node).Source dist/EduFlow/node.exe
           Copy-Item windows/README.txt dist/EduFlow/README.txt
           $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-          & $csc /nologo /target:exe /out:dist/EduFlow/EduFlow.exe windows/Launcher.cs
+          & $csc /nologo /target:exe /out:dist\EduFlow\EduFlow.exe windows\Launcher.cs
           if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
       - name: Smoke test packaged server
         shell: pwsh
