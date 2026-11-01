@@ -34,6 +34,7 @@ export type KnowledgeDocument = Omit<KnowledgeSource, "text"> & {
   sha256: string;
   pendingPages?: number;
   hasFile?: boolean;
+  automation?: { runId: string; state: string; reason: string; exceptions: number };
 };
 
 export type KnowledgeImportPage = {

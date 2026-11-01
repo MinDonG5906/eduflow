@@ -4,7 +4,7 @@ import type { KnowledgeSearchStatus, RetrievedReference } from "../knowledge";
 import { manuscriptSource } from "../storyboard";
 import type { PdfAttachment } from "./pdf-input";
 import { indexPdfSource } from "./pdf-source-index";
-import { searchKnowledge } from "./knowledge-base";
+import { searchHybridKnowledge } from "./knowledge-hybrid-search";
 import { citedPdfPage } from "../pdf-source";
 
 export type KnowledgeSearchContext = { pdf?: PdfAttachment; signal: AbortSignal };
@@ -74,5 +74,5 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
 export async function searchGenerationKnowledge(input: GenerationInput, context: KnowledgeSearchContext) {
   const { query, topic } = await generationKnowledgeQuery(input, context);
   context.signal.throwIfAborted();
-  return searchKnowledge(query, topic);
+  return searchHybridKnowledge(query, topic, undefined, context.signal);
 }

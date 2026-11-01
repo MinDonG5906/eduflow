@@ -1,5 +1,4 @@
-import { listKnowledgeReview, reviewKnowledgePage } from "@/lib/server/knowledge-handler";
-
 export const runtime = "nodejs";
-export const GET = (request: Request) => listKnowledgeReview(request);
-export const POST = (request: Request) => reviewKnowledgePage(request);
+const removed = () => Response.json({ error: "검수 기능이 제거되었습니다." }, { status: 410 });
+export const POST = removed;
+export const GET = removed;

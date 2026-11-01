@@ -84,7 +84,7 @@ export class LocalAIBudget {
       if (config.reservationCost > config.requestBudget) throw new GenerationError("BUDGET_EXCEEDED");
       const active = this.db.prepare("SELECT count(*) AS n FROM reservations WHERE active=1").get()!;
       const recent = this.db.prepare("SELECT count(*) AS n FROM reservations WHERE created > ?").get(now - 3600000)!;
-      if (Number(active.n) >= config.maxConcurrent || Number(recent.n) >= config.requestsPerHour)
+      if (Number(active.n) >= config.maxConcurrent || (config.requestsPerHour > 0 && Number(recent.n) >= config.requestsPerHour))
         throw new GenerationError("RATE_LIMITED");
       // UTC periods are deterministic across processes and independent of host timezone.
       const date = new Date(now).toISOString();
@@ -100,6 +100,25 @@ export class LocalAIBudget {
         .run(id, day, month, now, config.attemptCost);
       return id;
     });
+  }
+
+  /** Read-only scheduling hint. reserve() still enforces every limit at call time. */
+  availability(config: AIConfig, now = Date.now()): { ready: boolean; nextAt: number; reason: string } {
+    if (config.reservationCost > config.requestBudget) return { ready: false, nextAt: 0, reason: "요청당 비용 한도 설정 확인 필요" };
+    if (Number(this.db.prepare("SELECT count(*) AS n FROM reservations WHERE active=1").get()?.n) >= config.maxConcurrent)
+      return { ready: false, nextAt: now + 60000, reason: "다른 AI 작업이 끝나면 자동 재개" };
+    const recent = this.db.prepare("SELECT created FROM reservations WHERE created>? ORDER BY created").all(now - 3600000);
+    if (config.requestsPerHour > 0 && recent.length >= config.requestsPerHour)
+      return { ready: false, nextAt: Number(recent[recent.length - config.requestsPerHour].created) + 3601000, reason: "시간당 호출 한도 · 자동 재개 대기" };
+    const date = new Date(now), iso = date.toISOString();
+    for (const [period, limit, nextAt, reason] of [
+      [`month:${iso.slice(0, 7)}`, config.monthBudget, Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1), "월 비용 한도 · 다음 기간 자동 재개"],
+      [`day:${iso.slice(0, 10)}`, config.dayBudget, Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1), "일 비용 한도 · 다음 기간 자동 재개"],
+    ] as const) {
+      const used = Number(this.db.prepare("SELECT amount FROM budgets WHERE period=?").get(period)?.amount ?? 0);
+      if (used + config.reservationCost > limit) return { ready: false, nextAt, reason };
+    }
+    return { ready: true, nextAt: 0, reason: "" };
   }
 
   private reservation(id: string): Reservation {

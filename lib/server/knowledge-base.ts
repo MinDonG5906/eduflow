@@ -106,7 +106,7 @@ export class KnowledgeBase {
     return rows.map(documentFromRow);
   }
 
-  addImported(meta: KnowledgeMetadata, sha256: string, pdf: Buffer, pages: KnowledgeImportPage[]): KnowledgeDocument {
+  addImported(meta: KnowledgeMetadata, sha256: string, pdf: Buffer, pages: KnowledgeImportPage[], active = true): KnowledgeDocument {
     const source = knowledgeMetadataSchema.parse(meta);
     if (!pages.length || pages.length > 200 || pages.reduce((sum, page) => sum + page.text.length, 0) > 200000)
       throw new Error("KNOWLEDGE_SIZE");
@@ -117,10 +117,10 @@ export class KnowledgeBase {
     const id = randomUUID(), createdAt = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      if (this.db.prepare("SELECT id FROM documents WHERE sha256=? AND active=1 LIMIT 1").get(sha256))
+      if (active && this.db.prepare("SELECT id FROM documents WHERE sha256=? AND active=1 LIMIT 1").get(sha256))
         throw new Error("KNOWLEDGE_DUPLICATE");
-      this.db.prepare("INSERT INTO documents(id,title,origin,url,published,revision,sha256,created_at) VALUES(?,?,?,?,?,?,?,?)")
-        .run(id, source.title, source.origin, source.url ?? "", source.published, source.revision, sha256, createdAt);
+      this.db.prepare("INSERT INTO documents(id,title,origin,url,published,revision,sha256,created_at,active) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(id, source.title, source.origin, source.url ?? "", source.published, source.revision, sha256, createdAt, active ? 1 : 0);
       this.db.prepare("INSERT INTO knowledge_files(document_id,pdf) VALUES(?,?)").run(id, pdf);
       const insertChunk = this.db.prepare("INSERT INTO chunks(document_id,ordinal,page,text,block_ids) VALUES(?,?,?,?,?)");
       for (const [index, piece] of pieces.entries()) insertChunk.run(id, index + 1, piece.page, piece.text, JSON.stringify(piece.blockIds));
@@ -131,7 +131,7 @@ export class KnowledgeBase {
       this.db.exec("COMMIT");
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     return { id, title: source.title, origin: source.origin, ...(source.url ? { url: source.url } : {}),
-      published: source.published, revision: source.revision, sha256, createdAt, active: true,
+      published: source.published, revision: source.revision, sha256, createdAt, active,
       chunks: pieces.length, pendingPages: pages.length - safe.length, hasFile: true };
   }
 
@@ -139,6 +139,16 @@ export class KnowledgeBase {
     const rows = this.db.prepare("SELECT page,file_page,text,method,confidence,reason,status FROM knowledge_review_pages WHERE document_id=? ORDER BY page")
       .all(id) as { page: number; file_page: number; text: string; method: KnowledgeReviewPage["method"]; confidence: number | null; reason: string; status: KnowledgeReviewPage["status"] }[];
     return rows.map(({ reason, file_page, ...row }) => ({ ...row, filePage: file_page, reviewReason: reason }));
+  }
+
+  activateReplacement(id: string, original: string, validate: () => void) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      validate();
+      if (!this.db.prepare("UPDATE documents SET active=0 WHERE id=?").run(original).changes) throw new Error("원본 자료가 삭제됐습니다.");
+      if (!this.db.prepare("UPDATE documents SET active=1 WHERE id=?").run(id).changes) throw new Error("저장할 자료가 삭제됐습니다.");
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 
   pdf(id: string): Buffer | null {

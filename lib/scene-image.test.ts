@@ -65,7 +65,7 @@ test("image generation is separately opt-in, cannot switch text providers, and n
   const config = sceneImageConfig(directory, env);
   assert.equal(config.reservationCost / 1_000_000, publicStatus.reservationUSD);
   assert.equal(config.attemptCost / 1_000_000, publicStatus.perImageCeilingUSD);
-  assert.equal(config.dayBudget, 1_000_000); assert.equal(config.monthBudget, 5_000_000);
+  assert.equal(config.dayBudget, 5_000_000); assert.equal(config.monthBudget, 10_000_000);
   assert.equal((await connections.POST(post({ action: "setImageEnabled", enabled: false, consent: true }))).status, 200);
   assert.equal((await (await handler.GET(post({}))).json()).available, false);
 });

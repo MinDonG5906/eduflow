@@ -67,7 +67,7 @@ test("old .env.local setups keep OpenAI, and saved Claude keys use pinned prices
   const config = anthropicConfig(state, { EDUFLOW_AI_DAY_BUDGET_USD: "50", EDUFLOW_AI_MONTH_BUDGET_USD: "100" });
   assert.equal(config.model, "claude-opus-5-5");
   assert.equal(config.inputRate, 4_000_000);
-  assert.equal(config.dayBudget, 1_000_000);
+  assert.equal(config.dayBudget, 5_000_000);
   assert.ok(config.reservationCost <= config.requestBudget);
   assert.equal(adapterFor({ ...state, anthropicModel: "claude-haiku-5-5" }, {}).model, "claude-haiku-5-5");
   const capped = anthropicConfig(state, { EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "12000" });

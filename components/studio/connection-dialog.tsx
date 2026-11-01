@@ -12,7 +12,7 @@ type Action = Record<string, unknown> & { action: string };
 
 const providerText: Record<Provider, { title: string; detail: string }> = {
   demo: { title: "무료 데모", detail: "원문을 나누는 데모 · 외부 AI 전송 없음" },
-  "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $1·월 $5 한도" },
+  "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $5·월 $10 한도" },
   "anthropic-api": { title: "Claude API 키", detail: "Claude Console 키로 결제 · 같은 비용 한도" },
   "gemini-api": { title: "Gemini (팀 키)", detail: "운영자가 서버에 넣은 팀 키 사용 · 키 입력 없이 바로 생성" },
 };
@@ -39,7 +39,7 @@ function KeyForm({ vendor, saved, onSave, onRemove, busy }: {
       </label>
       <label className="connection-check">
         <input type="checkbox" checked={consent} disabled={busy} onChange={(e) => setConsent(e.target.checked)} />
-        <span>유료 호출에 동의합니다. 이 PC 기준 하루 $1·월 $5 한도 안에서만 호출합니다.</span>
+        <span>유료 호출에 동의합니다. 이 PC 기준 하루 $5·월 $10 한도 안에서만 호출합니다.</span>
       </label>
       <Button disabled={busy || key.trim().length < 10 || !consent}
         onClick={async () => { if (await onSave(key.trim())) { setKey(""); setConsent(false); } }}>
@@ -149,7 +149,7 @@ export function ConnectionDialog({ open, onOpenChange }: {
 
           <section className="connection-image-settings">
             <h3>스토리보드 이미지 생성</h3>
-            <p className="connection-note">이미지 생성 연결: {status.sceneImages.vendor ?? "연결 필요"}. 기존 OpenAI 키 또는 Gemini 팀 키를 사용하며 글 생성 모델 선택은 유지합니다. 유료 호출은 하루 $1·월 $5 한도를 함께 사용합니다.</p>
+            <p className="connection-note">이미지 생성 연결: {status.sceneImages.vendor ?? "연결 필요"}. 기존 OpenAI 키 또는 Gemini 팀 키를 사용하며 글 생성 모델 선택은 유지합니다. 유료 호출은 하루 $5·월 $10 한도를 함께 사용합니다.</p>
             {!status.sceneImages.vendor ? <p className="connection-note">위에서 OpenAI 키를 연결하거나 운영자가 Gemini 팀 키를 연결하면 사용할 수 있습니다.</p>
               : status.sceneImages.enabled ? <><p className="connection-note" role="status">스토리보드 이미지 생성이 켜져 있습니다. 장면 편집에서 이미지를 생성하세요.</p>
                 <Button variant="outline" disabled={busy} onClick={() => change({ action: "setImageEnabled", enabled: false, consent: true })}>이미지 생성 끄기</Button></>
