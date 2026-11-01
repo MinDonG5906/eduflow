@@ -128,7 +128,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
   return <SceneSection title="스토리보드" icon={ImageIcon} className="storyboard-image-section"
     action={<InfoDialog title="스토리보드 안내" description="이미지 생성 비용과 편집 방법을 확인하세요.">
       <section><h4>생성 비용·전송 정보</h4>
-        {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $1·월 $5 한도입니다.</p>
+        {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $5·월 $10 한도입니다.</p>
           <p>호출 전 ${status.reservationUSD.toFixed(3)}를 임시 확보하며 자동 재시도는 하지 않습니다. 장면 내용·연결 근거{scene.image && useReference ? "·참고 이미지" : ""}가 {status.vendor ?? "연결된 이미지 AI"}로 전송됩니다.</p>
           <p>사용 모델: {status.model}</p></> : <p>{status?.reason || "이미지 연결 상태를 확인하고 있습니다."}</p>}
         <p>자료 이동·크기 조절, 자막 편집, 이미지·PDF 저장에는 추가 AI 비용이 없습니다.</p>

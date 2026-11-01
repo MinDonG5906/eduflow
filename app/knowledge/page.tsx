@@ -7,13 +7,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import type { KnowledgeDocument, RetrievedReference } from "@/lib/knowledge";
 import { KnowledgeStructurePanel } from "@/components/knowledge-structure-panel";
 import { KnowledgeSource } from "@/components/knowledge-source";
-import { KnowledgeReviewPanel } from "@/components/knowledge-review-panel";
+import { KnowledgeValidationPanel } from "@/components/knowledge-validation-panel";
 
-type DetailView = "structure" | "review" | "info";
-type Filter = "all" | "review" | "archived";
+type DetailView = "structure" | "info";
+type Filter = "all" | "archived";
 function DocumentStatus({ document }: { document: KnowledgeDocument }) {
+  if (document.automation) return <span className="kb-status">{document.automation.reason}</span>;
   return <span className={`kb-status ${!document.active ? "" : document.pendingPages ? "warning" : document.chunks ? "success" : ""}`}>
-    {!document.active ? "검색 제외" : document.pendingPages ? <><TriangleAlert size={12} />{document.pendingPages}쪽 확인 필요</> : document.chunks ? <><Check size={12} />검색 가능</> : "검색 구간 없음"}
+    {!document.active ? "검색 제외" : document.pendingPages ? <><TriangleAlert size={12} />{document.pendingPages}쪽 처리 전</> : document.chunks ? <><Check size={12} />검색 가능</> : "검색 구간 없음"}
   </span>;
 }
 
@@ -21,7 +22,7 @@ export default function KnowledgePage() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"library" | "search">("library");
+  const [view, setView] = useState<"library" | "search" | "validation">("validation");
   const [detail, setDetail] = useState<DetailView>("structure");
   const [filter, setFilter] = useState<Filter>("all");
   const [documentQuery, setDocumentQuery] = useState("");
@@ -48,12 +49,22 @@ export default function KnowledgePage() {
   const [sourceTarget, setSourceTarget] = useState<{ documentId: string; page?: number; blockId?: string; figureId?: string } | null>(null);
   const detailRef = useRef<HTMLElement>(null);
   const justRegistered = useRef(false);
-  const draftCache = useRef<Record<string, Record<number, string>>>({});
   const busy = !!action || panelBusy;
   const selected = documents.find(document => document.id === selectedId);
-  const reviewCount = documents.filter(document => document.pendingPages).length;
-  const visibleDocuments = documents.filter(document => (filter !== "review" || document.pendingPages) &&
-    (filter !== "archived" || !document.active) && document.title.toLocaleLowerCase().includes(documentQuery.toLocaleLowerCase()));
+  const visibleDocuments = documents.filter(document => (filter !== "archived" || !document.active) && document.title.toLocaleLowerCase().includes(documentQuery.toLocaleLowerCase()));
+
+  async function automateExisting(ids: string[]) {
+    setAction("auto"); setError(""); setView("validation");
+    try {
+      const response = await fetch("/api/knowledge/validation", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "enqueue-existing", documentIds: ids }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error);
+      const failure = data.results?.find((item: { error?: string }) => item.error);
+      if (failure) throw new Error(failure.error);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "자동 처리를 시작하지 못했습니다."); }
+    finally { setAction(null); }
+  }
 
   async function refresh() {
     const response = await fetch("/api/knowledge", { cache: "no-store" });
@@ -77,7 +88,7 @@ export default function KnowledgePage() {
 
   function selectDocument(document: KnowledgeDocument, target?: DetailView) {
     setSelectedId(document.id); setView("library");
-    setDetail(target ?? (document.pendingPages ? "review" : document.hasFile ? "structure" : "info"));
+    setDetail(target ?? (document.hasFile ? "structure" : "info"));
     setNotice(""); setError("");
     requestAnimationFrame(() => {
       if (window.matchMedia("(max-width: 1000px)").matches) detailRef.current?.scrollIntoView({ block: "start" });
@@ -96,7 +107,8 @@ export default function KnowledgePage() {
       if (!response.ok) throw new Error(result.error || "자료 등록에 실패했습니다.");
       await refresh(); setFilter("all"); setDocumentQuery(""); selectDocument(result.document); justRegistered.current = true; setRegisterOpen(false);
       setTitle(""); setUrl(""); setPublished(""); setRevision(""); setText(""); setFile(null); setPdfPages("");
-      setNotice(`자료를 등록했습니다. ${result.document.chunks}개 구간을 검색할 수 있습니다.${result.document.pendingPages ? " 확인할 페이지를 아래에서 검토해 주세요." : ""}`);
+      if (result.queued) { setView("validation"); setNotice("자료를 등록했습니다. 자동 판독과 저장을 시작합니다."); }
+      else setNotice(`자료를 등록했습니다. ${result.document.chunks}개 구간을 검색할 수 있습니다.`);
     } catch (error) { setFormError(error instanceof Error ? error.message : "자료 등록에 실패했습니다."); }
     finally { setAction(null); }
   }
@@ -137,18 +149,23 @@ export default function KnowledgePage() {
       <div className="nav-caption">스튜디오</div>
       <a className="nav-item" href="/"><FileText size={18} />스토리보드 작업<ChevronRight size={14} /></a>
       <a className="nav-item selected" href="/knowledge" aria-current="page"><BookOpen size={18} />지식베이스<ChevronRight size={14} /></a>
-      <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16} /><span>원본과 검토 결과는 이 PC에 보관</span></div><div className="profile"><div className="avatar">E</div><div><strong>나의 워크스페이스</strong><small>로컬 프로토타입</small></div></div></div>
+      <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16} /><span>원본과 판독 내용은 이 PC에 보관</span></div><div className="profile"><div className="avatar">E</div><div><strong>나의 워크스페이스</strong><small>로컬 프로토타입</small></div></div></div>
     </aside>
     <div className="kb-workspace">
       <header className="kb-topbar"><a href="/" className="kb-back"><ArrowLeft size={16} />스토리보드</a><span className="kb-breadcrumb">워크스페이스 <ChevronRight size={14} />지식베이스</span><span className="kb-local"><ShieldCheck size={14} />로컬 보관</span></header>
       <main id="knowledge-main" className="kb-main">
-        <div className="kb-page-heading"><div><h1>지식베이스</h1><p>스토리보드가 참고할 자료와 원문 근거를 관리하세요.</p></div><Button disabled={busy} onClick={() => { setFormError(""); setRegisterOpen(true); }}><Plus size={16} />자료 등록</Button></div>
-        <nav className="kb-view-nav" aria-label="지식베이스 작업"><button aria-current={view === "library" ? "page" : undefined} disabled={busy} onClick={() => { setView("library"); setError(""); }}>등록 자료 <span>{documents.length}</span></button><button aria-current={view === "search" ? "page" : undefined} disabled={busy} onClick={() => { setView("search"); setError(""); }}><Search size={15} />근거 검색</button></nav>
+        <div className="kb-page-heading"><div><h1>지식베이스</h1></div>{view !== "validation" && <Button disabled={busy} onClick={() => { setFormError(""); setRegisterOpen(true); }}><Plus size={16} />직접 등록</Button>}</div>
+        <nav className="kb-view-nav kb-simple-nav" aria-label="지식베이스 작업">
+          <button aria-current={view === "validation" ? "page" : undefined} disabled={busy} onClick={() => { setView("validation"); setError(""); }}>처리 현황</button>
+          <button aria-current={view === "library" ? "page" : undefined} disabled={busy} onClick={() => { setView("library"); setError(""); }}>자료 관리</button>
+          {view !== "validation" && <button aria-current={view === "search" ? "page" : undefined} disabled={busy} onClick={() => { setView("search"); setError(""); }}><Search size={15} />검색</button>}
+        </nav>
+        <div hidden={view !== "validation"}><KnowledgeValidationPanel documents={documents} onChange={refresh} onBusyChange={setPanelBusy} /></div>
         {error && <div className="kb-alert error" role="alert"><TriangleAlert size={16} /><span>{error}</span>{!documents.length && <Button variant="ghost" onClick={() => { setError(""); setLoading(true); refresh().catch(error => setError(error.message)).finally(() => setLoading(false)); }}>다시 시도</Button>}</div>}
         <div hidden={view !== "library"}><div className="kb-library">
           <section className="kb-document-list" aria-label="등록 자료 목록">
             <label className="kb-list-search"><Search size={16} /><input aria-label="자료 제목 검색" placeholder="자료 제목 찾기" value={documentQuery} onChange={event => setDocumentQuery(event.target.value)} /></label>
-            <div className="kb-filters" aria-label="자료 필터">{([ ["all", "전체", documents.length], ["review", "확인 필요", reviewCount], ["archived", "검색 제외", documents.filter(d => !d.active).length] ] as const).map(([value, label, count]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span>{count}</span></button>)}</div>
+            <div className="kb-filters" aria-label="자료 필터">{([ ["all", "전체", documents.length], ["archived", "검색 제외", documents.filter(d => !d.active).length] ] as const).map(([value, label, count]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label} <span>{count}</span></button>)}</div>
             <div className="kb-document-items" aria-busy={loading}>
               {loading ? <p className="kb-empty-inline" role="status">자료를 불러오는 중…</p> : visibleDocuments.length ? visibleDocuments.map(document => <button className={`kb-document-item ${selectedId === document.id ? "selected" : ""}`} key={document.id} disabled={busy} aria-pressed={selectedId === document.id} aria-controls="knowledge-detail" onClick={() => selectDocument(document)}>
                 <div className="kb-document-title"><FileText size={18} /><strong>{document.title}</strong><ChevronRight size={15} /></div>
@@ -163,16 +180,16 @@ export default function KnowledgePage() {
                 <details className="kb-manage" key={selected.id} onKeyDown={event => { if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); } }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }}><summary aria-label="선택한 자료 관리"><MoreHorizontal size={18} /><span>자료 관리</span></summary><div><Button variant="ghost" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); setActive(selected); }}>{selected.active ? "근거 검색에서 제외" : "근거 검색에 다시 포함"}</Button><Button variant="ghost" className="kb-danger" disabled={busy} onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); setFormError(""); setDeleteTarget(selected); }}>자료 삭제…</Button></div></details>
               </header>
               {!selected.active && <div className="kb-alert warning">이 자료는 근거 검색에서 제외되어 있습니다. 자료 관리에서 다시 포함할 수 있습니다.</div>}
-              <nav className="kb-detail-nav" aria-label="선택한 자료 보기">{([ ["structure", "표·그림"], ["review", `판독 확인${selected.pendingPages ? ` ${selected.pendingPages}` : ""}`], ["info", "자료 정보"] ] as const).map(([value, label]) => <button key={value} disabled={busy || (value !== "info" && !selected.hasFile)} aria-current={detail === value ? "page" : undefined} onClick={() => setDetail(value)}>{label}</button>)}</nav>
+              {selected.hasFile && !selected.title.startsWith("[시험용]") && <div className="kb-alert"><p>자료를 자동으로 판독하고 검색에 저장합니다.</p><Button disabled={busy} onClick={() => selected.automation ? setView("validation") : automateExisting([selected.id])}>{selected.automation ? "자동 처리 진행 보기" : "이 자료 전체 자동 처리"}</Button></div>}
+              <nav className="kb-detail-nav" aria-label="선택한 자료 보기">{([ ["structure", "표·그림"], ["info", "자료 정보"] ] as const).map(([value, label]) => <button key={value} disabled={busy || (value !== "info" && !selected.hasFile)} aria-current={detail === value ? "page" : undefined} onClick={() => setDetail(value)}>{label}</button>)}</nav>
               <div className="kb-detail-body">
                 {selected.hasFile && <div hidden={detail !== "structure"}><KnowledgeStructurePanel key={`${selected.id}:${structureRevision}`} documentId={selected.id} title={selected.title} initialPage={sourceTarget?.documentId === selected.id ? sourceTarget.page : undefined} initialBlockId={sourceTarget?.documentId === selected.id ? sourceTarget.blockId : undefined} initialFigureId={sourceTarget?.documentId === selected.id ? sourceTarget.figureId : undefined} onChange={async () => { await refresh(); }} onBusyChange={setPanelBusy} /></div>}
-                {selected.hasFile && <div hidden={detail !== "review"}><KnowledgeReviewPanel key={selected.id} documentId={selected.id} initialDrafts={draftCache.current[selected.id]} onDraftsChange={drafts => { draftCache.current[selected.id] = drafts; }} onChange={async () => { await refresh(); }} onBusyChange={setPanelBusy} onRecheck={() => setStructureRevision(value => value + 1)} /></div>}
                 {detail === "info" && <div className="kb-info"><h3>자료 정보</h3><dl><div><dt>자료 종류</dt><dd>{selected.origin === "official" ? "공식 자료" : "내부 승인 자료"}</dd></div><div><dt>검색 가능 구간</dt><dd>{selected.chunks}개</dd></div><div><dt>발행일·기준일</dt><dd>{selected.published || "미기재"}</dd></div><div><dt>판본·개정 정보</dt><dd>{selected.revision || "미기재"}</dd></div></dl><div className="kb-inline-actions">{selected.hasFile && <a className="kb-link-button" href={`/api/knowledge/file?id=${selected.id}`} target="_blank" rel="noopener noreferrer"><FileText size={15} />등록한 원본 PDF<ArrowUpRight size={14} /></a>}{selected.url && <a className="kb-link-button" href={selected.url} target="_blank" rel="noopener noreferrer">원본 출처<ArrowUpRight size={14} /></a>}</div>{!selected.hasFile && <p className="kb-hint">본문으로 등록한 자료입니다. 표·그림을 확인하려면 원본 파일을 새 자료로 등록해 주세요.</p>}</div>}
               </div>
             </> : <div className="kb-empty-detail"><BookOpen size={30} strokeWidth={1.4} /><h2>{documents.length ? "확인할 자료를 선택하세요" : "근거 자료부터 준비해 보세요"}</h2><p>{documents.length ? "목록에서 자료를 선택하면 표·그림과 확인할 페이지가 이곳에 표시됩니다." : "자료를 등록하면 스토리보드에 사용할 문장과 출처를 찾을 수 있습니다."}</p>{!documents.length && !loading && <Button onClick={() => setRegisterOpen(true)}><Plus size={16} />자료 등록</Button>}</div>}
           </section>
-        </div></div><div hidden={view !== "search"}><section className="kb-search-panel"><h2>스토리보드에 사용할 근거 찾기</h2><p>등록된 자료에서 원고 주제와 관련된 문장과 출처를 확인하세요.</p><form onSubmit={preview} className="kb-search-form"><label className="kb-list-search"><Search size={18} /><input aria-label="검색할 원고나 주제" required minLength={3} value={query} onChange={event => setQuery(event.target.value)} placeholder="예: 밀폐공간 작업 전 환기 방법" /></label><Button disabled={busy || query.trim().length < 3}>{action === "search" ? "검색 중…" : "근거 검색"}</Button></form><p className="kb-hint">3자 이상 입력 · 검색에서 제외한 자료와 미승인 내용은 결과에 포함되지 않습니다.</p>
-          {matches && <div className="kb-search-results" aria-live="polite"><h3>“{searchedQuery}” 검색 결과 · {matches.length}개</h3>{matches.length ? matches.map(match => <article key={match.id}><span className="kb-eyebrow">{match.page ? `원본 ${match.page}페이지` : "본문 근거"}</span><h4>{match.title}</h4><blockquote>{match.excerpt}</blockquote><KnowledgeSource references={[match]} /><Button variant="outline" disabled={busy} onClick={() => { const document = documents.find(d => d.id === match.documentId); if (document) { setFilter("all"); setDocumentQuery(""); selectDocument(document, "info"); } }}>자료 상세 보기<ChevronRight size={14} /></Button></article>) : <p className="kb-empty-inline">관련 근거를 찾지 못했습니다. 다른 표현으로 검색하거나 자료의 검토 상태를 확인해 주세요.</p>}</div>}
+        </div></div><div hidden={view !== "search"}><section className="kb-search-panel"><h2>스토리보드에 사용할 근거 찾기</h2><p>등록된 자료에서 원고 주제와 관련된 문장과 출처를 확인하세요.</p><form onSubmit={preview} className="kb-search-form"><label className="kb-list-search"><Search size={18} /><input aria-label="검색할 원고나 주제" required minLength={3} value={query} onChange={event => setQuery(event.target.value)} placeholder="예: 밀폐공간 작업 전 환기 방법" /></label><Button disabled={busy || query.trim().length < 3}>{action === "search" ? "검색 중…" : "근거 검색"}</Button></form><p className="kb-hint">3자 이상 입력 · 검색에서 제외한 자료와 처리 전 내용은 결과에 포함되지 않습니다.</p>
+          {matches && <div className="kb-search-results" aria-live="polite"><h3>“{searchedQuery}” 검색 결과 · {matches.length}개</h3>{matches.length ? matches.map(match => <article key={match.id}><span className="kb-eyebrow">{match.page ? `원본 ${match.page}페이지` : "본문 근거"}</span><h4>{match.title}</h4><blockquote>{match.excerpt}</blockquote><KnowledgeSource references={[match]} /><Button variant="outline" disabled={busy} onClick={() => { const document = documents.find(d => d.id === match.documentId); if (document) { setFilter("all"); setDocumentQuery(""); selectDocument(document, "info"); } }}>자료 상세 보기<ChevronRight size={14} /></Button></article>) : <p className="kb-empty-inline">관련 근거를 찾지 못했습니다. 다른 표현으로 검색하거나 자료의 처리 상태를 확인해 주세요.</p>}</div>}
         </section></div>
       </main>
     </div>
@@ -183,8 +200,8 @@ export default function KnowledgePage() {
         <div className="kb-segmented" aria-label="등록 방식"><button type="button" aria-pressed={inputMode === "file"} onClick={() => setInputMode("file")}>파일 업로드</button><button type="button" aria-pressed={inputMode === "text"} onClick={() => setInputMode("text")}>본문 붙여넣기</button></div>
         {inputMode === "file" ? <label className="kb-file-input"><FileText size={24} /><strong>{file?.name || "등록할 문서 파일을 선택하세요"}</strong><span>PDF · Word · 한글 · PPT · TXT / 최대 50MB</span><input type="file" aria-label="문서 파일" accept=".pdf,.docx,.txt,.hwp,.hwpx,.ppt,.pptx" onChange={event => setFile(event.target.files?.[0] ?? null)} /></label> : <label>본문 텍스트<textarea rows={6} minLength={30} maxLength={200000} value={text} onChange={event => setText(event.target.value)} placeholder="본문을 30자 이상 붙여넣으세요." /></label>}
         <details className="kb-optional"><summary>페이지 범위·발행 정보 (선택)</summary><div className="kb-form-row">{inputMode === "file" && <label>페이지 범위<input value={pdfPages} onChange={event => setPdfPages(event.target.value)} placeholder="전체 페이지 · 예: 11, 15-17" /></label>}<label>발행일·기준일<input maxLength={100} value={published} onChange={event => setPublished(event.target.value)} placeholder="예: 2026-10-01" /></label><label>판본·개정 정보<input maxLength={100} value={revision} onChange={event => setRevision(event.target.value)} /></label></div></details>
-      </fieldset>{formError && <p className="kb-alert error" role="alert">{formError}</p>}{action === "add" && <p className="kb-alert" role="status">문서를 읽고 있습니다. 완료되면 등록한 자료의 검토 화면으로 이동합니다.</p>}<div className="kb-dialog-actions"><Button variant="outline" type="button" disabled={busy} onClick={() => setRegisterOpen(false)}>취소</Button><Button type="submit" disabled={busy || (inputMode === "file" ? !file : text.trim().length < 30)}>{action === "add" ? "자료 읽는 중…" : "등록하고 확인하기"}</Button></div></form>
+      </fieldset>{formError && <p className="kb-alert error" role="alert">{formError}</p>}{action === "add" && <p className="kb-alert" role="status">문서를 읽고 있습니다. 완료되면 등록한 자료 화면으로 이동합니다.</p>}<div className="kb-dialog-actions"><Button variant="outline" type="button" disabled={busy} onClick={() => setRegisterOpen(false)}>취소</Button><Button type="submit" disabled={busy || (inputMode === "file" ? !file : text.trim().length < 30)}>{action === "add" ? "자료 읽는 중…" : "등록하고 확인하기"}</Button></div></form>
     </DialogContent></Dialog>
-    <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open && !busy) setDeleteTarget(null); }}><DialogContent showCloseButton={!busy} finalFocus={() => document.querySelector<HTMLElement>(".kb-manage summary") ?? detailRef.current}><DialogHeader><DialogTitle>자료를 삭제할까요?</DialogTitle><DialogDescription>“{deleteTarget?.title}”의 원본, 검색 구간, 검토 결과를 함께 삭제합니다. 복구할 수 없습니다.</DialogDescription></DialogHeader><p className="kb-hint">잠시 사용하지 않으려면 자료 관리에서 ‘근거 검색에서 제외’를 선택하세요.</p>{formError && <p className="kb-alert error" role="alert">{formError}</p>}<div className="kb-dialog-actions"><Button variant="outline" disabled={busy} onClick={() => setDeleteTarget(null)}>취소</Button><Button variant="destructive" disabled={busy} onClick={remove}>{action === "delete" ? "삭제 중…" : "완전히 삭제"}</Button></div></DialogContent></Dialog>
+    <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open && !busy) setDeleteTarget(null); }}><DialogContent showCloseButton={!busy} finalFocus={() => document.querySelector<HTMLElement>(".kb-manage summary") ?? detailRef.current}><DialogHeader><DialogTitle>자료를 삭제할까요?</DialogTitle><DialogDescription>“{deleteTarget?.title}”의 원본, 검색 구간, 판독 내용를 함께 삭제합니다. 복구할 수 없습니다.</DialogDescription></DialogHeader><p className="kb-hint">잠시 사용하지 않으려면 자료 관리에서 ‘근거 검색에서 제외’를 선택하세요.</p>{formError && <p className="kb-alert error" role="alert">{formError}</p>}<div className="kb-dialog-actions"><Button variant="outline" disabled={busy} onClick={() => setDeleteTarget(null)}>취소</Button><Button variant="destructive" disabled={busy} onClick={remove}>{action === "delete" ? "삭제 중…" : "완전히 삭제"}</Button></div></DialogContent></Dialog>
   </div>;
 }

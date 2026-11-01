@@ -1,3 +1,3 @@
 import type { NextConfig } from 'next';
-const config: NextConfig = { devIndicators: false, serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas", "mammoth", "tesseract.js"] };
+const config: NextConfig = { devIndicators: false, serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas", "mammoth", "tesseract.js", "@huggingface/transformers", "onnxruntime-node"] };
 export default config;

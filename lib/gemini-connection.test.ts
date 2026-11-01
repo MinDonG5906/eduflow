@@ -52,7 +52,7 @@ test("Gemini uses pinned prices under the team caps, and an unknown model or mis
   for (const model of Object.keys(GEMINI_MODELS)) {
     const config = geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: model, EDUFLOW_AI_DAY_BUDGET_USD: "50", EDUFLOW_AI_MONTH_BUDGET_USD: "100" });
     assert.equal(config.model, model);
-    assert.equal(config.dayBudget, 1_000_000);
+    assert.equal(config.dayBudget, 5_000_000);
     assert.ok(config.reservationCost <= config.requestBudget, model);
   }
   const capped = geminiConfig({ ...teamEnv, EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "12000" });

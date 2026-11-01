@@ -1,4 +1,3 @@
-import { recheckKnowledge } from "@/lib/server/knowledge-handler";
-
 export const runtime = "nodejs";
-export async function POST(request: Request) { return recheckKnowledge(request); }
+const removed = () => Response.json({ error: "검수 기능이 제거되었습니다." }, { status: 410 });
+export const POST = removed;

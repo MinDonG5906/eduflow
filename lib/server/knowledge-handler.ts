@@ -9,6 +9,10 @@ import { extractDocument } from "./document-import";
 import { KnowledgeBase } from "./knowledge-base";
 import { analyzeKnowledgePdf, normalizeKnowledgeFile } from "./knowledge-ingest";
 import { selectPdfPages } from "../pdf-source";
+import { searchHybridKnowledge } from "./knowledge-hybrid-search";
+import { ValidationStore, validationDirectory } from "./knowledge-validation-store";
+import { enqueueExisting, ensureValidationWorker } from "./knowledge-validation-queue";
+import { validationCounts } from "../knowledge-validation";
 
 const headers = { "Cache-Control": "no-store" };
 const updateSchema = z.object({ id: z.string().uuid(), active: z.boolean() });
@@ -47,7 +51,16 @@ function withBase<T>(operation: (base: KnowledgeBase) => T, directory?: string):
 export async function listKnowledge(request: Request, directory?: string) {
   try {
     localRead(request);
-    return Response.json({ documents: withBase((base) => base.list(), directory) }, { headers });
+    const store = new ValidationStore(directory ?? validationDirectory());
+    try {
+      const runs = store.list(), jobs = store.jobs();
+      const documents = withBase(base => base.list(), directory).map(doc => {
+        const run = runs.find(run => run.sourceDocumentId === doc.id || run.localDocumentId === doc.id);
+        const job = jobs.find(job => job.runId === run?.id);
+        return run && job ? { ...doc, automation: { runId: run.id, state: job.state, reason: job.reason, exceptions: validationCounts(run).exceptions } } : doc;
+      });
+      return Response.json({ documents }, { headers });
+    } finally { store.close(); }
   } catch (error) { return failure(error); }
 }
 
@@ -91,13 +104,18 @@ export async function addKnowledge(request: Request, directory?: string) {
           const pdf = await normalizeKnowledgeFile(file.name, bytes, request.signal);
           if (pdf.length > 50 * 1024 * 1024) throw new DocumentImportError("변환된 PDF는 50MB 이하이어야 합니다.", 413);
           const { pages, total } = await analyzeKnowledgePdf(pdf, pdfPages, request.signal);
+          if (pages.length > 200) throw new DocumentImportError("200쪽을 넘는 자료는 페이지 범위를 나누어 등록해 주세요.");
           let storedPdf = pdf;
           if (pages.length !== total || pages.some((page, index) => page.page !== index + 1)) {
             try { storedPdf = Buffer.from(await selectPdfPages(pdf, pages.map((page) => page.page))); }
             catch { throw new DocumentImportError("선택한 페이지를 보관하지 못했습니다."); }
           }
           const document = withBase((base) => base.addImported(metadata, createHash("sha256").update(bytes).digest("hex"), storedPdf, pages), directory);
-          return Response.json({ document }, { status: 201, headers });
+          const target = directory ?? validationDirectory();
+          const [queued] = await enqueueExisting([document.id], target);
+          if (queued.error) throw new DocumentImportError(queued.error);
+          ensureValidationWorker(target);
+          return Response.json({ document, queued: true }, { status: 201, headers });
         } finally { ingesting = false; }
       }
     }
@@ -199,6 +217,6 @@ export async function searchKnowledgeRequest(request: Request, directory?: strin
   try {
     assertLocalAIRequest(request);
     const { query } = searchSchema.parse(await request.json());
-    return Response.json({ references: withBase((base) => base.search(query), directory) }, { headers });
+    return Response.json({ references: await searchHybridKnowledge(query, "", directory, request.signal) }, { headers });
   } catch (error) { return failure(error); }
 }
