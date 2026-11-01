@@ -68,15 +68,15 @@ test("paid calls are disabled by default and incomplete/unsafe configuration fai
 
 test("shared daily and monthly caps apply without personal budget settings and cannot be raised by them", () => {
   const defaults = config({ EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined });
-  assert.equal(defaults.dayBudget, 1_000_000);
-  assert.equal(defaults.monthBudget, 5_000_000);
+  assert.equal(defaults.dayBudget, 5_000_000);
+  assert.equal(defaults.monthBudget, 10_000_000);
   const raised = config({ EDUFLOW_AI_DAY_BUDGET_USD: "100", EDUFLOW_AI_MONTH_BUDGET_USD: "200" });
   assert.equal(raised.dayBudget, defaults.dayBudget);
   assert.equal(raised.monthBudget, defaults.monthBudget);
   const lower = config({ EDUFLOW_AI_DAY_BUDGET_USD: "0.5", EDUFLOW_AI_MONTH_BUDGET_USD: "2" });
   assert.equal(lower.dayBudget, 500_000);
   assert.equal(lower.monthBudget, 2_000_000);
-  assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "2" }), coded("AI_NOT_CONFIGURED"));
+  assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "6" }), coded("AI_NOT_CONFIGURED"));
 });
 
 test("110000 input tokens fit the configured repair budget while 110001 are blocked before generation", async (t) => {
@@ -88,8 +88,8 @@ test("110000 input tokens fit the configured repair budget while 110001 are bloc
   assert.equal(policy.maxInputTokens, 110000);
   assert.equal(policy.attemptCost, 118500);
   assert.equal(policy.reservationCost, 237000);
-  assert.equal(policy.dayBudget, 1000000);
-  assert.equal(policy.monthBudget, 5000000);
+  assert.equal(policy.dayBudget, 5000000);
+  assert.equal(policy.monthBudget, 10000000);
   assert.throws(() => config({ EDUFLOW_AI_MAX_INPUT_TOKENS: "110001" }), coded("AI_NOT_CONFIGURED"));
   const underfunded = new LocalAIBudget(temporary(t)); t.after(() => underfunded.close());
   assert.throws(() => underfunded.reserve({ ...policy, requestBudget: 200000 }), coded("BUDGET_EXCEEDED"));
@@ -120,7 +120,8 @@ test("separate member PCs each receive the shared budget and preserve their own 
   const firstDirectory = temporary(t), secondDirectory = temporary(t);
   const policy = config({
     EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined,
-    EDUFLOW_AI_REQUEST_BUDGET_USD: "1", EDUFLOW_AI_MAX_INPUT_TOKENS: "100000",
+    EDUFLOW_AI_REQUEST_BUDGET_USD: "2", EDUFLOW_AI_MAX_INPUT_TOKENS: "100000",
+    EDUFLOW_AI_INPUT_USD_PER_MILLION: "2", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "4",
     EDUFLOW_AI_MAX_OUTPUT_TOKENS: "100000", EDUFLOW_AI_REQUESTS_PER_HOUR: "100",
   });
   const now = Date.parse("2026-10-11T10:00:00Z");
@@ -130,22 +131,22 @@ test("separate member PCs each receive the shared budget and preserve their own 
     budget.startAttempt(id); budget.settleAttempt(id); budget.finish(id);
   };
   const first = new LocalAIBudget(firstDirectory);
-  useDay(first, now);
+  for (let i = 0; i < 4; i++) useDay(first, now);
   assert.throws(() => first.reserve(policy, now + 1000), coded("BUDGET_EXCEEDED"));
   first.close();
   const second = new LocalAIBudget(secondDirectory);
   try { useDay(second, now); }
   finally { second.close(); }
-  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 600_000);
-  assert.equal(inspect(secondDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 600_000);
+  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 4_800_000);
+  assert.equal(inspect(secondDirectory).budgets.find((row) => row.period === "day:2026-10-11")?.amount, 1_200_000);
   const reopened = new LocalAIBudget(firstDirectory);
   try {
     assert.throws(() => reopened.reserve(policy, now + 1000), coded("BUDGET_EXCEEDED"));
     // Daily turnover grants a new daily allowance, while the month remains capped.
-    for (let day = 1; day < 8; day++) useDay(reopened, now + day * 86400000);
-    assert.throws(() => reopened.reserve(policy, now + 8 * 86400000), coded("BUDGET_EXCEEDED"));
+    for (let day = 1; day < 5; day++) useDay(reopened, now + day * 86400000);
+    assert.throws(() => reopened.reserve(policy, now + 5 * 86400000), coded("BUDGET_EXCEEDED"));
   } finally { reopened.close(); }
-  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "month:2026-10")?.amount, 4_800_000);
+  assert.equal(inspect(firstDirectory).budgets.find((row) => row.period === "month:2026-10")?.amount, 9_600_000);
 });
 
 test("paid prototype admits only matching loopback browser origins", () => {
@@ -314,4 +315,28 @@ test("paid HTTP handler cannot bypass missing configuration; demo still works wi
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
   }
+});
+
+
+test("zero hourly cap allows more than 100 sequential requests but preserves budget and concurrency limits", t => {
+  const directory = temporary(t), budget = new LocalAIBudget(directory);
+  t.after(() => budget.close());
+  const policy = config({ EDUFLOW_AI_REQUESTS_PER_HOUR: "0" });
+  const now = Date.parse("2026-11-01T04:00:00Z");
+  assert.equal(policy.requestsPerHour, 0);
+  for (let i = 0; i < 105; i++) {
+    assert.equal(budget.availability(policy, now).ready, true);
+    const id = budget.reserve(policy, now);
+    budget.startAttempt(id); budget.settleAttempt(id); budget.finish(id);
+  }
+  const active = budget.reserve(policy, now);
+  assert.equal(budget.availability(policy, now).ready, false);
+  assert.throws(() => budget.reserve(policy, now), coded("RATE_LIMITED"));
+  budget.finish(active);
+  const dayLimited = config({ EDUFLOW_AI_REQUESTS_PER_HOUR: "0", EDUFLOW_AI_DAY_BUDGET_USD: "0.315" });
+  assert.match(budget.availability(dayLimited, now).reason, /일 비용 한도/);
+  assert.throws(() => budget.reserve(dayLimited, now), coded("BUDGET_EXCEEDED"));
+  const monthLimited = config({ EDUFLOW_AI_REQUESTS_PER_HOUR: "0", EDUFLOW_AI_DAY_BUDGET_USD: "0.315", EDUFLOW_AI_MONTH_BUDGET_USD: "0.315" });
+  assert.match(budget.availability(monthLimited, now + 86400000).reason, /월 비용 한도/);
+  assert.throws(() => budget.reserve(monthLimited, now + 86400000), coded("BUDGET_EXCEEDED"));
 });

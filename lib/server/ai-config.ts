@@ -4,8 +4,8 @@ import { GenerationError } from "../generation-contract";
 
 // Shared by every local checkout. Lower personal limits remain valid.
 export const TEAM_AI_BUDGET_LIMITS = Object.freeze({
-  dayUSD: "1.00",
-  monthUSD: "5.00",
+  dayUSD: "5.00",
+  monthUSD: "10.00",
 });
 
 // All amounts are integer millionths of a US dollar; never use floating-point money.
@@ -28,7 +28,8 @@ const schema = z.object({
   monthBudget: positiveMoney,
   maxInputTokens: integer("16000", 110000),
   maxOutputTokens: integer("8000", 100000),
-  requestsPerHour: integer("5", 100),
+  // Zero explicitly disables the hourly cap; monetary and concurrency limits still apply.
+  requestsPerHour: z.string().regex(/^\d+$/).default("5").transform(Number).pipe(z.number().int().min(0).max(100)),
   maxConcurrent: integer("1", 4),
 });
 export type AIConfig = z.infer<typeof schema> & { attemptCost: number; reservationCost: number };
