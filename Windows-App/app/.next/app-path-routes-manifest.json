@@ -1,0 +1,22 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/_global-error/page": "/_global-error",
+  "/api/connection/route": "/api/connection",
+  "/api/documents/preview/route": "/api/documents/preview",
+  "/api/documents/route": "/api/documents",
+  "/api/documents/source/route": "/api/documents/source",
+  "/api/export/pdf/route": "/api/export/pdf",
+  "/api/generate/route": "/api/generate",
+  "/api/knowledge/figure/route": "/api/knowledge/figure",
+  "/api/knowledge/file/route": "/api/knowledge/file",
+  "/api/knowledge/location/route": "/api/knowledge/location",
+  "/api/knowledge/page/route": "/api/knowledge/page",
+  "/api/knowledge/recheck/route": "/api/knowledge/recheck",
+  "/api/knowledge/review/route": "/api/knowledge/review",
+  "/api/knowledge/route": "/api/knowledge",
+  "/api/knowledge/search/route": "/api/knowledge/search",
+  "/api/knowledge/structure/route": "/api/knowledge/structure",
+  "/api/scene-image/route": "/api/scene-image",
+  "/knowledge/page": "/knowledge",
+  "/page": "/"
+}
