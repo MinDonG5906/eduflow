@@ -141,29 +141,30 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     </InfoDialog>}>
     <input ref={upload} type="file" accept="image/png,image/jpeg" hidden onChange={event => attach(event.target.files?.[0])} />
     <div className="scene-image-workspace" aria-busy={busy}>
-      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} onTextChange={onTextChange} generationSettings={generationSettings} />
-      {!status?.available && <div className="image-connection-status" role="status"><span>{status?.reason || "이미지 연결 상태 확인 중…"}</span><Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></div>}
-      {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="image-notice">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
-      {message && <p role="status" className="image-notice">{message}</p>}
-      {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="image-notice">설정이 변경되었습니다. 필요하면 배경을 다시 생성하세요.</p>}
-      {error && <p role="alert" className="connection-error">{error}</p>}
-      <div className="scene-image-actionbar">
-        <div className="image-file-actions">
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />첨부</Button>
-          <Button variant="outline" size="sm" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
-            try {
-              const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
-              if (scene.image && !background) throw new Error("스토리보드 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
-              downloadBlob(await exportSceneComposition(scene, background), "storyboard-composition.png");
-            } catch { setError("스토리보드 이미지를 저장하지 못했습니다. 다시 시도해 주세요."); }
-          }}><Download size={14} />이미지 저장</Button>
-          {scene.image && <Button variant="ghost" size="icon-sm" aria-label="배경 이미지 제거" title="배경 이미지 제거" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} /></Button>}
+      <SceneComposition scene={scene} preview={preview} busy={busy} onChange={onPlacementsChange} onSubtitleSettingsChange={onSubtitleSettingsChange} onTextChange={onTextChange} generationSettings={generationSettings} actions={<>
+        {!status?.available && <div className="image-connection-status" role="status"><span>{status?.reason || "이미지 연결 상태 확인 중…"}</span><Button variant="outline" size="sm" onClick={onOpenConnection}>모델 연결</Button></div>}
+        {(!scene.visual.trim() || !scene.evidence.trim()) && <p className="image-notice">화면 설명과 원문 근거를 채우면 이미지를 생성할 수 있습니다.</p>}
+        {message && <p role="status" className="image-notice">{message}</p>}
+        {basisHash && scene.image?.generated?.basedOn && basisHash !== scene.image.generated.basedOn && <p role="status" className="image-notice">설정이 변경되었습니다. 필요하면 배경을 다시 생성하세요.</p>}
+        {error && <p role="alert" className="connection-error">{error}</p>}
+        <div className="scene-image-actionbar">
+          <div className="image-file-actions">
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => upload.current?.click()}><Upload size={14} />첨부</Button>
+            <Button variant="outline" size="sm" disabled={busy || Boolean(scene.image && !preview)} onClick={async () => {
+              try {
+                const background = scene.image ? await loadSceneImage(scene.image.id) : undefined;
+                if (scene.image && !background) throw new Error("스토리보드 배경을 찾지 못했습니다. 다시 첨부해 주세요.");
+                downloadBlob(await exportSceneComposition(scene, background), "storyboard-composition.png");
+              } catch { setError("스토리보드 이미지를 저장하지 못했습니다. 다시 시도해 주세요."); }
+            }}><Download size={14} />이미지 저장</Button>
+            {scene.image && <Button variant="ghost" size="icon-sm" aria-label="배경 이미지 제거" title="배경 이미지 제거" disabled={busy} onClick={() => { onChange(undefined); setMessage(""); setError(""); }}><Trash2 size={14} /></Button>}
+          </div>
+          <div className="image-generate-actions">
+            {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
+            <Button className="image-generate-button" disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "이미지 생성"}</Button>
+          </div>
         </div>
-        <div className="image-generate-actions">
-          {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
-          <Button className="image-generate-button" disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "이미지 생성"}</Button>
-        </div>
-      </div>
+      </>} />
     </div>
   </SceneSection>;
 }

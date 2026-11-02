@@ -39,6 +39,8 @@ import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
   const [sourceDocument, setSourceDocument] = useState<SourceDocument | null>(null);
@@ -98,6 +100,11 @@ export default function Studio() {
   const citedPage = isPdf && sourceDocument ? citedPdfPage({ name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, scene) : null;
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
+  const target = (board?.settings.minutes || 0) * 60;
+  const offTarget = Math.abs(total - target) > target * 0.15;
+  // Next scene still needing review, wrapping past the end; never the current one.
+  const nextReview = board ? [...board.scenes.keys()].map(i => (active + 1 + i) % board.scenes.length)
+    .find(i => i !== active && board.scenes[i].review) : undefined;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
   const canGenerate = canStartGeneration({ generator, isPdf, valid, ready, busy, importing, documentPending: Boolean(documentPending), keyword, storageBlocked });
   const notify = (text: string) => setNotice(text);
@@ -478,11 +485,24 @@ export default function Studio() {
                     <Download size={16} /> 내보내기
                   </Button>
                 </header>
+                <div className="board-summary" aria-label="생성 조건과 진행 상황">
+                  <span className="board-chip">{board.settings.audience}</span>
+                  <span className="board-chip">난이도 {board.settings.difficulty}</span>
+                  <span className="board-chip">출력 {board.settings.language}</span>
+                  <span className={`board-chip ${offTarget ? "is-warning" : ""}`}>
+                    <Clock3 size={12} aria-hidden="true" /> 총 {clock(total)} / 목표 {board.settings.minutes}분
+                  </span>
+                  <span className="board-review-progress">
+                    검토 완료 {board.scenes.length - reviewCount}/{board.scenes.length}
+                    <span className="board-review-meter" aria-hidden="true">
+                      <span style={{ width: `${((board.scenes.length - reviewCount) / board.scenes.length) * 100}%` }} />
+                    </span>
+                  </span>
+                </div>
                 {board.generation?.warnings.filter(warning => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map(warning => (
                   <p key={warning} className="term-correction-notice" role="status">{warning}</p>
                 ))}
-                {Math.abs(total - board.settings.minutes * 60) >
-                  board.settings.minutes * 60 * 0.15 && (
+                {offTarget && (
                   <div className="duration-warning">
                     <Clock3 size={15} />
                     현재 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 조정해 주세요.
@@ -510,6 +530,7 @@ export default function Studio() {
                       onChange={updateScene}
                       onMove={moveActiveScene}
                       onDelete={() => setModal("delete")}
+                      onNextReview={nextReview === undefined ? undefined : () => setActive(nextReview)}
                       onRegenerate={() => {
                         setDirection("");
                         setSceneSourceScope("citation");
@@ -531,9 +552,7 @@ export default function Studio() {
             )
           )}
           <footer className="page-footer">
-            <span>
-              EduFlow <span>Make knowledge flow.</span>
-            </span>
+            <span>EduFlow</span>
             <span>교육 콘텐츠 스토리보드 스튜디오</span>
           </footer>
         </main>
