@@ -7,4 +7,6 @@ export type GeneratorStatus = {
   // Who receives the manuscript when generating; null in demo mode.
   vendor: "OpenAI" | "Anthropic" | "Google" | null;
 } | null;
-export type ExportFormat = "md" | "copy" | "pdf";
+export type ExportFormat = "md" | "copy" | "pdf" | "srt" | "vtt";
+// Which language to export, and for translations whether subtitles also show the Korean line.
+export type ExportOptions = { language: import("@/lib/languages").ViewerLanguage; subtitles: import("@/lib/localization").SubtitleMode };

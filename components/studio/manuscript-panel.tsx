@@ -1,5 +1,5 @@
 import type { ReactNode, RefObject } from "react";
-import { BookOpen, FileText, Lightbulb, PencilLine, Plus, Upload } from "lucide-react";
+import { BookOpen, FileText, PencilLine, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SourceFormat } from "@/lib/pdf-source";
 
@@ -72,7 +72,7 @@ export function ManuscriptPanel({
           onChange={(e) => onImport(e.target.files?.[0])}
         />
       </div>
-      <p className="file-formats" role="status">PDF · PPT/PPTX · HWP/HWPX · Word(.docx) · TXT · 파일 용량 제한 없음 {importing && "· 문서 변환과 큰 문서 읽기는 시간이 걸릴 수 있습니다."}</p>
+      <p className="file-formats" role="status">PDF · PPT/PPTX · HWP/HWPX · Word(.docx) · TXT{importing && " · 문서 변환과 큰 문서 읽기는 시간이 걸릴 수 있습니다."}</p>
       {documentSource}
       <div
         className="manuscript-editor"
@@ -93,7 +93,7 @@ export function ManuscriptPanel({
           onChange={(e) => onManuscriptChange(e.target.value)}
           disabled={busy || importing || storageBlocked}
           placeholder={
-            isPdf ? `${documentFormat}에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 ${documentUnit}를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다.` : "어떤 이야기를 전하고 싶으신가요?\n\n교육 원고를 입력하거나, 준비한 내용을 붙여 넣어 주세요.\n학습자가 꼭 알아야 할 핵심 개념과 설명이 담겨 있으면 좋아요."
+            isPdf ? `${documentFormat}에 덧붙일 설명이 있다면 입력해 주세요.\n선택한 ${documentUnit}를 직접 읽으므로 별도로 원고를 붙여 넣지 않아도 됩니다.` : "교육 원고를 입력하거나 붙여 넣어 주세요."
           }
         />
         {!manuscript && !isPdf && (
@@ -105,8 +105,7 @@ export function ManuscriptPanel({
                 <Plus size={13} />
               </span>
             </div>
-            <p>아이디어가 장면이 되는 곳</p>
-            <small>원고를 작성하거나 PDF·PPT·한글·Word·TXT 파일을 여기에 놓아 주세요.</small>
+            <small>파일을 여기에 놓아도 됩니다.</small>
           </div>
         )}
       </div>
@@ -117,21 +116,11 @@ export function ManuscriptPanel({
             : isPdf ? `${documentFormat}에 덧붙일 설명 · 선택 입력`
             : manuscript && !valid
               ? "공백 제외 100자 이상 입력해 주세요"
-              : "공백 제외 최소 100자 · PDF·PPT·한글·Word·TXT 지원"}
+              : "공백 제외 최소 100자"}
         </span>
         <span>
           <strong>{manuscript.length.toLocaleString()}</strong> / 20,000자
         </span>
-      </div>
-      <div className="writing-tip">
-        <Lightbulb size={16} />
-        <div>
-          <strong>이런 원고일수록 더 좋아요</strong>
-          <p>
-            주제와 학습 목표가 분명하고, 핵심 개념과 사례가 순서대로 정리된 원고를
-            준비해 주세요.
-          </p>
-        </div>
       </div>
     </section>
   );

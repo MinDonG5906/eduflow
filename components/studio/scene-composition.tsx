@@ -6,13 +6,23 @@ import { Button } from "@/components/ui/button";
 import type { Scene, VisualPlacement } from "@/lib/storyboard";
 import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, compositionVisuals, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
 
-export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onTextChange, generationSettings }: {
+// Remembered per browser tab so moving between scenes keeps the same inspector tab.
+const TAB_KEY = "eduflow-composition-tab";
+const tabs = [{ id: "subtitle", label: "자막", icon: Captions }, { id: "narration", label: "나레이션", icon: MessageSquareText }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "image", label: "이미지 생성", icon: ImageIcon }];
+function initialTab() {
+  try { const saved = sessionStorage.getItem(TAB_KEY); if (tabs.some(item => item.id === saved)) return saved!; } catch {}
+  return "subtitle";
+}
+
+export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onTextChange, generationSettings, actions }: {
   onTextChange: (field: "subtitle" | "narration" | "assets", value: string) => void; generationSettings: ReactNode;
+  // Rendered inside the inspector so a sticky action bar never covers the preview.
+  actions?: ReactNode;
   scene: Scene; preview?: string; busy: boolean; onChange: (placements: VisualPlacement[]) => void; onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const id = useId();
-  const [tab, setTab] = useState("image");
-  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "subtitle", label: "자막", icon: Captions }, { id: "narration", label: "나레이션", icon: MessageSquareText }];
+  const [tab, setTabState] = useState(initialTab);
+  const setTab = (next: string) => { setTabState(next); try { sessionStorage.setItem(TAB_KEY, next); } catch {} };
   const [firstCaption, ...followingCaptions] = scene.subtitle.replace(/\r/g, "").split("\n");
   const secondCaption = followingCaptions.join("\n");
   const visuals = compositionVisuals(scene), placements = sceneVisualPlacements(scene);
@@ -112,6 +122,7 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
           {subtitle?.truncated && <p role="status" className="image-notice">자막이 길어 미리보기에서 일부를 줄였습니다. PDF 자막 항목에는 전체 문장이 유지됩니다.</p>}
         </div>}
       </div>
+      {actions}
     </div>
     {sources.missing.length > 0 && <p role="status" className="image-notice">추천 사진 일부를 불러오지 못했습니다. 아래 시각자료 추천에서 원본을 확인해 주세요.</p>}
   </div>;

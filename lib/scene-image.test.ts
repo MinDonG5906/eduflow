@@ -204,7 +204,7 @@ test("generated provenance, common style and source evidence survive draft recov
   assert.equal(moved.scenes[1].evidence, board.scenes[0].evidence);
   const bytes = await exportStoryboardPdf({ board: moved, sceneImages: new Map([[board.scenes[0].id, png()]]) });
   const parser = new PDFParse({ data: bytes });
-  try { assert.match((await parser.getText()).text.replace(/\s/g, ""), /AI생성스토리보드\(원본증거아님\)/); }
+  try { assert.match((await parser.getText()).text.replace(/\s/g, ""), /출처:AI생성·/); }
   finally { await parser.destroy(); }
 });
 

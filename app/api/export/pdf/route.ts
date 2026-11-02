@@ -4,6 +4,12 @@ import { GenerationError } from "@/lib/generation-contract";
 import { MAX_AI_PDF_BYTES, pdfSourceSchema, type PdfSource } from "@/lib/pdf-source";
 import { PDFDocument } from "pdf-lib";
 import { boardSchema } from "@/lib/storyboard";
+import { z } from "zod";
+
+const languageSchema = z.object({
+  label: z.string().min(1).max(40),
+  master: z.record(z.string(), z.object({ narration: z.string().max(24000), subtitle: z.string().max(2000) })),
+});
 
 export const runtime = "nodejs";
 
@@ -35,6 +41,7 @@ export async function POST(request: Request) {
     let rawBoard: unknown;
     let pdfBuffer: Uint8Array | undefined;
     let attachedPdfSource: PdfSource | undefined;
+    let language: z.infer<typeof languageSchema> | undefined;
     const sceneImages = new Map<string, Uint8Array>();
 
     if (contentType.includes("multipart/form-data")) {
@@ -44,6 +51,12 @@ export async function POST(request: Request) {
         return Response.json({ error: "스토리보드 데이터가 누락되었습니다." }, { status: 400 });
       }
       rawBoard = JSON.parse(boardStr);
+      const languageStr = formData.get("language");
+      if (typeof languageStr === "string") {
+        const parsed = languageSchema.safeParse(JSON.parse(languageStr));
+        if (!parsed.success) return Response.json({ error: "내보낼 언어 정보를 확인해 주세요." }, { status: 400 });
+        language = parsed.data;
+      }
 
       const pdfFile = formData.get("pdf");
       if (pdfFile instanceof Blob) {
@@ -83,6 +96,7 @@ export async function POST(request: Request) {
       pdfBuffer,
       attachedPdfSource,
       sceneImages,
+      language,
     });
 
     return new Response(new Uint8Array(pdfBytes), {

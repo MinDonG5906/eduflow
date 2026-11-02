@@ -136,7 +136,7 @@ export function EvidenceSource({ scene, manuscript, file, source }: {
         {!loading && current && <>
           <div className={pdf ? "source-reader" : "source-reader is-manuscript"}>
             {pdf && <div className="source-page-image">{singlePage?.page === current.page ? <PdfPreview file={singlePage.file} total={1} originalPages={[current.page]} format={sourceFormat(scene.pdfSource?.name ?? "")} highlightBoxes={boxes} evidenceMode /> : <p>페이지 미리보기 준비 중…</p>}</div>}
-            <div className="source-transcript"><h3>{pdf ? "원문 문장·구절" : "원고 문장"}</h3><small>번호는 이 보기에서 구분한 순서입니다.</small>
+            <div className="source-transcript"><h3>{pdf ? "원문 문장·구절" : "원고 문장"}</h3>
               <div className="source-passages" ref={textViewport} tabIndex={0} aria-label="원문 문장 목록">
                 {passages.length ? passages.map(passage => {
                   const hit = selectedMatch && passage.start < selectedMatch.end && passage.end > selectedMatch.start;

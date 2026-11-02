@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronRight, FileText, MoreHorizontal, Plus, Search, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BookOpen, Check, ChevronRight, FileText, MoreHorizontal, Plus, Search, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { KnowledgeDocument, RetrievedReference } from "@/lib/knowledge";
@@ -145,14 +145,12 @@ export default function KnowledgePage() {
     <a className="skip-link" href="#knowledge-main">자료 관리로 건너뛰기</a>
     <aside className="sidebar kb-sidebar" aria-label="워크스페이스 탐색">
       <a className="brand" href="/"><div className="brand-symbol" aria-hidden="true"><span /><span /><span /></div><span>EduFlow</span></a>
-      <div className="workspace-label">MY WORKSPACE <span>개인</span></div>
-      <div className="nav-caption">스튜디오</div>
       <a className="nav-item" href="/"><FileText size={18} />스토리보드 작업<ChevronRight size={14} /></a>
       <a className="nav-item selected" href="/knowledge" aria-current="page"><BookOpen size={18} />지식베이스<ChevronRight size={14} /></a>
-      <div className="sidebar-bottom"><div className="privacy"><ShieldCheck size={16} /><span>원본과 판독 내용은 이 PC에 보관</span></div><div className="profile"><div className="avatar">E</div><div><strong>나의 워크스페이스</strong><small>로컬 프로토타입</small></div></div></div>
+      
     </aside>
     <div className="kb-workspace">
-      <header className="kb-topbar"><a href="/" className="kb-back"><ArrowLeft size={16} />스토리보드</a><span className="kb-breadcrumb">워크스페이스 <ChevronRight size={14} />지식베이스</span><span className="kb-local"><ShieldCheck size={14} />로컬 보관</span></header>
+      <header className="kb-topbar"><a href="/" className="kb-back"><ArrowLeft size={16} />스토리보드</a></header>
       <main id="knowledge-main" className="kb-main">
         <div className="kb-page-heading"><div><h1>지식베이스</h1></div>{view !== "validation" && <Button disabled={busy} onClick={() => { setFormError(""); setRegisterOpen(true); }}><Plus size={16} />직접 등록</Button>}</div>
         <nav className="kb-view-nav kb-simple-nav" aria-label="지식베이스 작업">

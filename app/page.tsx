@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, Clock3, Download, Sparkles } from "lucide-react";
+import { CircleHelp, Clock3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectionDialog } from "@/components/studio/connection-dialog";
 import { DocumentSource } from "@/components/studio/document-source";
 import { ManuscriptPanel } from "@/components/studio/manuscript-panel";
 import { SceneEditor } from "@/components/studio/scene-editor";
+import { ScriptView } from "@/components/studio/script-view";
 import { SceneList } from "@/components/studio/scene-list";
 import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel";
 import { ProgressDialog, StudioDialog, Toast } from "@/components/studio/studio-dialogs";
 import { ErrorBanner, StudioStepper, StudioTopbar } from "@/components/studio/studio-header";
 import { StudioSidebar } from "@/components/studio/studio-sidebar";
-import type { ExportFormat, StudioModal, StudioView } from "@/components/studio/types";
+import type { ExportFormat, ExportOptions, StudioModal, StudioView } from "@/components/studio/types";
 import { useDraftStorage } from "@/hooks/use-draft-storage";
 import { canStartGeneration } from "@/lib/generation-availability";
 import { useGeneratorStatus } from "@/hooks/use-generator-status";
@@ -38,6 +39,16 @@ import { defaultImageSettings } from "@/lib/scene-image";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
+import { useLocalization } from "@/hooks/use-localization";
+import { localizationTargets, viewerLanguage, viewerLanguages, type ViewerLanguage } from "@/lib/languages";
+import { editLocalizedScene, editLocalizedTitle, localizedBoard, pendingScenes } from "@/lib/localization";
+import { srt, vtt } from "@/lib/subtitles";
+
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+// Remembered per browser tab so a reload keeps the board view.
+const BOARD_MODE_KEY = "eduflow-board-mode";
+const VIEW_LANGUAGE_KEY = "eduflow-view-language";
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
@@ -56,6 +67,13 @@ export default function Studio() {
   const [sceneSourceScope, setSceneSourceScope] = useState<"citation" | "selection">("citation");
   const [filename, setFilename] = useState("나의 스토리보드");
   const [reviewOnly, setReviewOnly] = useState(false);
+  // The board view only renders after the draft is restored on the client, so reading here cannot mismatch hydration.
+  const [boardMode, setBoardModeState] = useState<"scene" | "script">(() => { try { return sessionStorage.getItem(BOARD_MODE_KEY) === "script" ? "script" : "scene"; } catch { return "scene"; } });
+  const setBoardMode = (next: "scene" | "script") => { setBoardModeState(next); try { sessionStorage.setItem(BOARD_MODE_KEY, next); } catch {} };
+  const [viewLanguage, setViewLanguageState] = useState<ViewerLanguage>(() => {
+    try { const saved = sessionStorage.getItem(VIEW_LANGUAGE_KEY); return viewerLanguages.find(language => language.code === saved)?.code ?? "ko"; } catch { return "ko"; }
+  });
+  const setViewLanguage = (next: ViewerLanguage) => { setViewLanguageState(next); try { sessionStorage.setItem(VIEW_LANGUAGE_KEY, next); } catch {} };
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -98,6 +116,11 @@ export default function Studio() {
   const citedPage = isPdf && sourceDocument ? citedPdfPage({ name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, scene) : null;
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
   const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
+  const target = (board?.settings.minutes || 0) * 60;
+  const offTarget = Math.abs(total - target) > target * 0.15;
+  // Next scene still needing review, wrapping past the end; never the current one.
+  const nextReview = board ? [...board.scenes.keys()].map(i => (active + 1 + i) % board.scenes.length)
+    .find(i => i !== active && board.scenes[i].review) : undefined;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
   const canGenerate = canStartGeneration({ generator, isPdf, valid, ready, busy, importing, documentPending: Boolean(documentPending), keyword, storageBlocked });
   const notify = (text: string) => setNotice(text);
@@ -112,6 +135,12 @@ export default function Studio() {
 
   function updateScene<K extends keyof Scene>(key: K, value: Scene[K]) {
     setBoard((b) => (b ? editScene(b, active, key, value) : b));
+  }
+  const boardRef = useRef(board);
+  boardRef.current = board;
+  const translation = useLocalization(() => boardRef.current, setBoard);
+  function editSceneAt<K extends keyof Scene>(index: number, key: K, value: Scene[K]) {
+    setBoard((b) => (b ? editScene(b, index, key, value) : b));
   }
   function loadSample() {
     setSourceDocument(null);
@@ -311,13 +340,26 @@ export default function Studio() {
       setError("저장 원본을 내려받지 못했습니다. 기존 저장 데이터는 계속 보호됩니다. 브라우저 다운로드 권한을 확인해 주세요.");
     }
   }
-  async function exportBoard(format: ExportFormat) {
+  async function exportBoard(format: ExportFormat, { language, subtitles }: ExportOptions) {
     if (!board) return;
+    const translated = language !== "ko";
+    if (translated && pendingScenes(board, language).length) return notify("번역되지 않은 장면이 있어 내보낼 수 없어요.");
+    const target = translated ? localizedBoard(board, language, subtitles) : board;
+    const label = translated ? viewerLanguage(language).label : undefined;
+    const name = translated ? `${filename}-${language}` : filename;
     try {
+      if (format === "srt" || format === "vtt") {
+        downloadText(format === "srt" ? srt(target) : vtt(target), format === "srt" ? "application/x-subrip;charset=utf-8" : "text/vtt;charset=utf-8", exportFilename(name, format));
+        notify(`${format === "srt" ? "SRT" : "WebVTT"} 자막 파일을 내보냈어요.`);
+        return;
+      }
       if (format === "pdf") {
         notify("PDF 스토리보드를 생성하고 있어요...");
         const formData = new FormData();
-        formData.set("board", JSON.stringify(board));
+        formData.set("board", JSON.stringify(target));
+        if (label) formData.set("language", JSON.stringify({ label,
+          // Dual subtitles already carry the Korean lines; an empty section is left out.
+          master: Object.fromEntries(board.scenes.map(scene => [scene.id, { narration: scene.narration, subtitle: subtitles === "dual" ? "" : scene.subtitle }])) }));
         if (pdfReady && pdf.selected && sourceDocument?.selectedPages?.length) {
           formData.set("pdf", pdf.selected, "selected-pages.pdf");
           formData.set("pdfSource", JSON.stringify({ name: sourceDocument.name, pages: sourceDocument.selectedPages }));
@@ -343,18 +385,18 @@ export default function Studio() {
           throw new Error(errData.error || "PDF 생성에 실패했습니다.");
         }
         const blob = await response.blob();
-        downloadBlob(blob, exportFilename(filename, "pdf"));
+        downloadBlob(blob, exportFilename(name, "pdf"));
         notify("PDF 스토리보드를 내보냈어요.");
         setModal(null);
         return;
       }
-      const content = markdown(board);
+      const content = markdown(target, label);
       if (format === "copy") {
         await navigator.clipboard.writeText(content);
         notify("전체 스토리보드를 복사했어요.");
         return;
       }
-      downloadText(content, "text/markdown;charset=utf-8", exportFilename(filename, format));
+      downloadText(content, "text/markdown;charset=utf-8", exportFilename(name, format));
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
     } catch (e) {
       setModal(null);
@@ -478,17 +520,55 @@ export default function Studio() {
                     <Download size={16} /> 내보내기
                   </Button>
                 </header>
+                <div className="board-summary" aria-label="생성 조건과 진행 상황">
+                  <span className="board-chip">{board.settings.audience}</span>
+                  <span className="board-chip">난이도 {board.settings.difficulty}</span>
+                  <span className="board-chip">출력 {board.settings.language}</span>
+                  <span className={`board-chip ${offTarget ? "is-warning" : ""}`}>
+                    <Clock3 size={12} aria-hidden="true" /> 총 {clock(total)} / 목표 {board.settings.minutes}분
+                  </span>
+                  <span className="board-review-progress">
+                    검토 완료 {board.scenes.length - reviewCount}/{board.scenes.length}
+                    <span className="board-review-meter" aria-hidden="true">
+                      <span style={{ width: `${((board.scenes.length - reviewCount) / board.scenes.length) * 100}%` }} />
+                    </span>
+                  </span>
+                </div>
+                <div className="board-view-controls">
+                <div className="segmented board-mode" role="group" aria-label="편집 보기">
+                  {([["scene", "장면 편집"], ["script", "대본 보기"]] as const).map(([mode, label]) => (
+                    <button key={mode} aria-pressed={boardMode === mode} className={boardMode === mode ? "active" : ""} onClick={() => setBoardMode(mode)}>{label}</button>
+                  ))}
+                </div>
+                {boardMode === "script" && <label className="board-language">시청자 언어
+                  <select value={viewLanguage} onChange={event => setViewLanguage(event.target.value as ViewerLanguage)}>
+                    <option value="ko">한국어 (원본)</option>
+                    {localizationTargets.map(code => <option key={code} value={code}>
+                      {viewerLanguage(code).label} · {board.scenes.length - pendingScenes(board, code).length}/{board.scenes.length}
+                    </option>)}
+                  </select>
+                </label>}
+                </div>
                 {board.generation?.warnings.filter(warning => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map(warning => (
                   <p key={warning} className="term-correction-notice" role="status">{warning}</p>
                 ))}
-                {Math.abs(total - board.settings.minutes * 60) >
-                  board.settings.minutes * 60 * 0.15 && (
+                {offTarget && (
                   <div className="duration-warning">
                     <Clock3 size={15} />
                     현재 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 조정해 주세요.
                   </div>
                 )}
-                <div className="board-layout">
+                {boardMode === "script" ? (
+                  <ScriptView scenes={board.scenes} onEdit={editSceneAt} onOpen={index => { setActive(index); setBoardMode("scene"); }}
+                    language={viewLanguage} translation={{
+                      board, progress: translation.progress, error: translation.error, generator,
+                      onTranslate: scenes => viewLanguage !== "ko" && translation.translate(viewLanguage, scenes),
+                      onCancel: translation.cancel,
+                      onEditScene: (scene, patch) => viewLanguage !== "ko" && setBoard(b => b ? editLocalizedScene(b, viewLanguage, scene, patch) : b),
+                      onEditTitle: title => viewLanguage !== "ko" && setBoard(b => b ? editLocalizedTitle(b, viewLanguage, title) : b),
+                      onOpenConnection: () => setConnectionOpen(true),
+                    }} />
+                ) : <div className="board-layout">
                   <SceneList
                     scenes={board.scenes}
                     active={active}
@@ -510,6 +590,7 @@ export default function Studio() {
                       onChange={updateScene}
                       onMove={moveActiveScene}
                       onDelete={() => setModal("delete")}
+                      onNextReview={nextReview === undefined ? undefined : () => setActive(nextReview)}
                       onRegenerate={() => {
                         setDirection("");
                         setSceneSourceScope("citation");
@@ -522,20 +603,10 @@ export default function Studio() {
                       onOpenConnection={() => setConnectionOpen(true)}
                     />
                   )}
-                </div>
-                <div className="bottom-note">
-                  <Sparkles size={13} /> {scene?.generation?.mode === "ai" || (!scene?.generation && board?.mode === "ai") ? "AI" : "데모"} 초안입니다. 원문의 의미와 교육 대상에 맞는 표현인지
-                  확인한 후 사용해 주세요.
-                </div>
+                </div>}
               </>
             )
           )}
-          <footer className="page-footer">
-            <span>
-              EduFlow <span>Make knowledge flow.</span>
-            </span>
-            <span>교육 콘텐츠 스토리보드 스튜디오</span>
-          </footer>
         </main>
       </div>
       <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />

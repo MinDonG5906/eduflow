@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Check,
   CheckCircle2,
@@ -40,6 +41,7 @@ export function SceneEditor({
   onMove,
   onDelete,
   onRegenerate,
+  onNextReview,
   canRegenerate, settings, imageSettings, onImageSettingsChange, onOpenConnection,
 }: {
   scene: Scene;
@@ -52,6 +54,8 @@ export function SceneEditor({
   onMove: (delta: number) => void;
   onDelete: () => void;
   onRegenerate: () => void;
+  // Absent when no other scene still needs review.
+  onNextReview?: () => void;
   canRegenerate: boolean;
   settings: Settings;
   imageSettings: ImageSettings;
@@ -104,7 +108,9 @@ export function SceneEditor({
         </div>
       </div>
       <div className="scene-title-row">
-        <Input className="scene-title-input" aria-label="장면 제목" value={scene.title} onChange={event => onChange("title", event.target.value)} />
+        <Textarea className="scene-title-input" aria-label="장면 제목" rows={1} value={scene.title}
+          onKeyDown={event => { if (event.key === "Enter") event.preventDefault(); }}
+          onChange={event => onChange("title", event.target.value.replace(/\r?\n/g, " "))} />
         <label className="scene-duration-compact"><Clock3 size={14} aria-hidden="true" /><span className="sr-only">예상 시간</span>
           <Input aria-label="예상 시간" type="number" min={1} max={600} step={1} value={scene.duration} onChange={event => onChange("duration", normalizeDuration(event.target.value))} /><span>초</span>
         </label>
@@ -151,8 +157,7 @@ export function SceneEditor({
         </div>
       </SceneSection>
       <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
-      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
-        description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
+      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section">
         <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
       </SceneSection>
       <div className="scene-editor-footer">
@@ -163,13 +168,20 @@ export function SceneEditor({
         >
           <RotateCcw size={15} /> 이 장면 재생성
         </Button>
-        <Button
-          variant={scene.review ? "default" : "secondary"}
-          onClick={() => onChange("review", !scene.review)}
-        >
-          <Check size={15} />
-          {scene.review ? "검토 완료로 표시" : "검토 필요로 변경"}
-        </Button>
+        <div className="scene-review-actions">
+          {onNextReview && (
+            <Button variant="ghost" onClick={onNextReview}>
+              다음 검토 장면 <ArrowRight size={15} />
+            </Button>
+          )}
+          <Button
+            variant={scene.review ? "default" : "secondary"}
+            onClick={() => onChange("review", !scene.review)}
+          >
+            <Check size={15} />
+            {scene.review ? "검토 완료로 표시" : "검토 필요로 변경"}
+          </Button>
+        </div>
       </div>
     </section>
   );

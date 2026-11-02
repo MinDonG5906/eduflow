@@ -1,6 +1,7 @@
 import { generationResponseSchema, type GenerationInput } from "./generation-contract";
 import { targetSceneCount, type Board } from "./storyboard";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "./term-corrections";
+import { graphemes } from "./text-segment";
 
 // Human scoring items from docs/06_AI_EVAL.md. "case" items are scored once per
 // storyboard, "scene" items per scene, and "round" items once per evaluation round.
@@ -31,7 +32,7 @@ export type EvalReport = {
 };
 
 const compact = (value: string) => value.replace(/\s/g, "");
-const visibleLength = (value: string) => [...value.replace(/\s+/g, " ").trim()].length;
+const visibleLength = (value: string) => graphemes(value.replace(/\s+/g, " ").trim()).length;
 
 export function checkBoard(raw: unknown, input: GenerationInput): EvalReport {
   const parsed = generationResponseSchema.safeParse(raw);
@@ -55,11 +56,11 @@ export function checkBoard(raw: unknown, input: GenerationInput): EvalReport {
     detail: `합계 ${totalSeconds}초 / 목표 ${targetSeconds}초 (${totalSeconds >= targetSeconds ? "+" : "-"}${(drift * 100).toFixed(1)}%)`,
   });
 
-  // Server warnings use "N번 장면: ..."; PDF scenes always carry an "AI 해석" reminder, which is not a mismatch.
+  // Server warnings use "N번 장면: ...".
   const flagged = new Set<number>();
   for (const warning of board.generation?.warnings ?? []) {
     const match = /^(\d+)번 장면:/.exec(warning);
-    if (match && !warning.includes("AI 해석입니다")) flagged.add(Number(match[1]));
+    if (match) flagged.add(Number(match[1]));
   }
   // Re-check text citations independently so a server regression cannot hide them.
   if (!board.pdfSource) {
