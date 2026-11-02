@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { localizationTargets, type LocalizationTarget } from "./languages";
+import { localizationTargets, viewerLanguage, type LocalizationTarget } from "./languages";
 import type { Board, Scene } from "./storyboard";
 
 // Translations of the Korean master's viewer-facing text. Evidence, purpose and
@@ -58,10 +58,80 @@ export function localizationRequest(board: Board, language: LocalizationTarget, 
 }
 
 // Scenes may be translated in batches; a newer batch replaces only its own scenes.
+// Scenes deleted while a batch was running are dropped.
 export function applyLocalization(board: Board, language: LocalizationTarget, result: Localization): Board {
   const previous = board.localizations?.[language];
-  return { ...board, localizations: { ...board.localizations,
-    [language]: { ...result, scenes: { ...previous?.scenes, ...result.scenes } } } };
+  const current = new Set(board.scenes.map(scene => scene.id));
+  const scenes = Object.fromEntries(Object.entries({ ...previous?.scenes, ...result.scenes }).filter(([id]) => current.has(id)));
+  return { ...board, localizations: { ...board.localizations, [language]: { ...result, scenes } } };
+}
+
+// A planner's correction keeps the master it was translated from; checks rerun on the new text.
+export function editLocalizedScene(board: Board, language: LocalizationTarget, scene: Scene, patch: Partial<MasterText>): Board {
+  const localization = board.localizations?.[language], localized = localization?.scenes[scene.id];
+  if (!localization || !localized) return board;
+  const next = { ...localized, ...patch };
+  next.warnings = localizationWarnings(scene, next, language);
+  return { ...board, localizations: { ...board.localizations, [language]: { ...localization, scenes: { ...localization.scenes, [scene.id]: next } } } };
+}
+export function editLocalizedTitle(board: Board, language: LocalizationTarget, title: string): Board {
+  const localization = board.localizations?.[language];
+  return localization ? { ...board, localizations: { ...board.localizations, [language]: { ...localization, title } } } : board;
+}
+
+// Scenes still to translate: never translated, or the Korean master changed since.
+export function pendingScenes(board: Board, language: LocalizationTarget) {
+  return board.scenes.filter(scene => localizationState(board, language, scene) !== "ready");
+}
+
+// Keeps each request well under the 8,000-token output cap: the reply carries the
+// translation and a Korean back-translation, and Sinhala and Khmer take several
+// tokens per character. Limits are Korean source characters per request (estimates).
+export function translationBatches(scenes: Scene[], language: LocalizationTarget) {
+  const limit = language === "si" || language === "km" ? 1200 : language === "zh-Hans" ? 2000 : 3000;
+  const batches: string[][] = [];
+  let size = 0;
+  for (const scene of scenes) {
+    const length = scene.title.length + scene.narration.length + scene.subtitle.length;
+    const last = batches.at(-1);
+    if (last && last.length < 10 && size + length <= limit) { last.push(scene.id); size += length; }
+    else { batches.push([scene.id]); size = length; }
+  }
+  return batches;
+}
+
+const scripts: Record<string, RegExp> = {
+  Hangul: /\p{Script=Hangul}/u, Latin: /\p{Script=Latin}/u, Han: /\p{Script=Han}/u,
+  Sinhala: /\p{Script=Sinhala}/u, Khmer: /\p{Script=Khmer}/u,
+};
+// Khmer digits are the only native digits these languages commonly use.
+const numbers = (value: string) => value.replace(/[០-៩]/g, digit => String(digit.charCodeAt(0) - 0x17e0))
+  .match(/\d+(?:[.,]\d+)?/g)?.map(number => number.replace(",", ".")) ?? [];
+
+// Local checks only: no extra AI call. Each warning asks the planner to compare,
+// it does not prove the translation is right or wrong.
+export function localizationWarnings(master: MasterText, translated: MasterText & { backTranslation: MasterText }, language: LocalizationTarget) {
+  const warnings: string[] = [];
+  const target = viewerLanguage(language);
+  const body = `${translated.narration}\n${translated.subtitle}`;
+  // Korean glossary terms in parentheses are expected, so Hangul is ignored for other languages.
+  const letters = (body.match(/\p{L}/gu) ?? []).filter(letter => language === "ko-easy" || !scripts.Hangul.test(letter));
+  if (letters.length && letters.filter(letter => scripts[target.script].test(letter)).length / letters.length < .6)
+    warnings.push(`${target.label} 문자가 적습니다. 다른 언어로 쓰였는지 확인해 주세요.`);
+  const available = numbers(`${translated.title}\n${body}`);
+  const missing = numbers(`${master.title}\n${master.narration}\n${master.subtitle}`).filter(number => {
+    const index = available.indexOf(number);
+    if (index < 0) return true;
+    available.splice(index, 1);
+    return false;
+  });
+  if (missing.length) warnings.push(`원문의 숫자 ${[...new Set(missing)].join(", ")}이(가) 번역에 없습니다.`);
+  const lines = (value: string) => value.trim().split(/\r?\n/).length;
+  if (lines(master.subtitle) !== lines(translated.subtitle))
+    warnings.push(`자막 줄 수가 원문(${lines(master.subtitle)}줄)과 다릅니다.`);
+  if (language !== "ko-easy" && !translated.backTranslation.narration.trim())
+    warnings.push("역번역이 없어 한국어로 대조할 수 없습니다.");
+  return warnings;
 }
 
 export type LocalizationState = "missing" | "stale" | "ready";
@@ -70,3 +140,4 @@ export function localizationState(board: Board, language: LocalizationTarget, sc
   if (!localized) return "missing";
   return localized.basedOn === masterHash(scene) ? "ready" : "stale";
 }
+

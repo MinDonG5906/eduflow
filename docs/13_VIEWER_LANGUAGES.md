@@ -48,7 +48,7 @@
 | Phase 2 (완료) | 전체 대본 보기: 모든 장면의 나레이션·자막을 한 화면에서 읽고 고친다 |
 | Phase 3 (완료) | 언어 목록(`lib/languages.ts`), 글꼴 번들, `Intl.Segmenter` 줄바꿈, PDF·PNG 다국어 표시 (6장) |
 | Phase 4 (완료) | `/api/localize`(`eduflow-localization-v1`), 번역·역번역 생성, 위 3장의 코드 검사, 비용 장부 공유. 명세는 [AI 명세](03_AI_SPEC.md)의 번역 절 |
-| Phase 5 | 언어 탭, 원본·번역 나란히 편집, 원본 변경 시 '오래됨' 표시 |
+| Phase 5 (완료) | 대본 보기의 '시청자 언어' 선택, 한국어 원본·번역 나란히 편집, 역번역·경고 표시, 원본 수정 시 '원본 수정됨' 표시, 나눠서 번역·취소 |
 | Phase 6 | 언어별 PDF·PNG·Markdown, 이중 자막, SRT/VTT 자막 파일 |
 | Phase 7 | 다국어 평가 케이스, 문서·Windows 패키지 갱신 |
 

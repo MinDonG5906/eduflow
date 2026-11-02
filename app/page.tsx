@@ -39,11 +39,15 @@ import { defaultImageSettings } from "@/lib/scene-image";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
+import { useLocalization } from "@/hooks/use-localization";
+import { localizationTargets, viewerLanguage, viewerLanguages, type ViewerLanguage } from "@/lib/languages";
+import { editLocalizedScene, editLocalizedTitle, pendingScenes } from "@/lib/localization";
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 // Remembered per browser tab so a reload keeps the board view.
 const BOARD_MODE_KEY = "eduflow-board-mode";
+const VIEW_LANGUAGE_KEY = "eduflow-view-language";
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
@@ -65,6 +69,10 @@ export default function Studio() {
   // The board view only renders after the draft is restored on the client, so reading here cannot mismatch hydration.
   const [boardMode, setBoardModeState] = useState<"scene" | "script">(() => { try { return sessionStorage.getItem(BOARD_MODE_KEY) === "script" ? "script" : "scene"; } catch { return "scene"; } });
   const setBoardMode = (next: "scene" | "script") => { setBoardModeState(next); try { sessionStorage.setItem(BOARD_MODE_KEY, next); } catch {} };
+  const [viewLanguage, setViewLanguageState] = useState<ViewerLanguage>(() => {
+    try { const saved = sessionStorage.getItem(VIEW_LANGUAGE_KEY); return viewerLanguages.find(language => language.code === saved)?.code ?? "ko"; } catch { return "ko"; }
+  });
+  const setViewLanguage = (next: ViewerLanguage) => { setViewLanguageState(next); try { sessionStorage.setItem(VIEW_LANGUAGE_KEY, next); } catch {} };
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -127,6 +135,9 @@ export default function Studio() {
   function updateScene<K extends keyof Scene>(key: K, value: Scene[K]) {
     setBoard((b) => (b ? editScene(b, active, key, value) : b));
   }
+  const boardRef = useRef(board);
+  boardRef.current = board;
+  const translation = useLocalization(() => boardRef.current, setBoard);
   function editSceneAt<K extends keyof Scene>(index: number, key: K, value: Scene[K]) {
     setBoard((b) => (b ? editScene(b, index, key, value) : b));
   }
@@ -509,10 +520,20 @@ export default function Studio() {
                     </span>
                   </span>
                 </div>
+                <div className="board-view-controls">
                 <div className="segmented board-mode" role="group" aria-label="편집 보기">
                   {([["scene", "장면 편집"], ["script", "대본 보기"]] as const).map(([mode, label]) => (
                     <button key={mode} aria-pressed={boardMode === mode} className={boardMode === mode ? "active" : ""} onClick={() => setBoardMode(mode)}>{label}</button>
                   ))}
+                </div>
+                {boardMode === "script" && <label className="board-language">시청자 언어
+                  <select value={viewLanguage} onChange={event => setViewLanguage(event.target.value as ViewerLanguage)}>
+                    <option value="ko">한국어 (원본)</option>
+                    {localizationTargets.map(code => <option key={code} value={code}>
+                      {viewerLanguage(code).label} · {board.scenes.length - pendingScenes(board, code).length}/{board.scenes.length}
+                    </option>)}
+                  </select>
+                </label>}
                 </div>
                 {board.generation?.warnings.filter(warning => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map(warning => (
                   <p key={warning} className="term-correction-notice" role="status">{warning}</p>
@@ -524,7 +545,15 @@ export default function Studio() {
                   </div>
                 )}
                 {boardMode === "script" ? (
-                  <ScriptView scenes={board.scenes} onEdit={editSceneAt} onOpen={index => { setActive(index); setBoardMode("scene"); }} />
+                  <ScriptView scenes={board.scenes} onEdit={editSceneAt} onOpen={index => { setActive(index); setBoardMode("scene"); }}
+                    language={viewLanguage} translation={{
+                      board, progress: translation.progress, error: translation.error, generator,
+                      onTranslate: scenes => viewLanguage !== "ko" && translation.translate(viewLanguage, scenes),
+                      onCancel: translation.cancel,
+                      onEditScene: (scene, patch) => viewLanguage !== "ko" && setBoard(b => b ? editLocalizedScene(b, viewLanguage, scene, patch) : b),
+                      onEditTitle: title => viewLanguage !== "ko" && setBoard(b => b ? editLocalizedTitle(b, viewLanguage, title) : b),
+                      onOpenConnection: () => setConnectionOpen(true),
+                    }} />
                 ) : <div className="board-layout">
                   <SceneList
                     scenes={board.scenes}

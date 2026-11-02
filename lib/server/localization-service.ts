@@ -1,8 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { GenerationError, SERVER_TIMEOUT_MS } from "../generation-contract";
-import { viewerLanguage, type LocalizationTarget } from "../languages";
-import { LOCALIZATION_CONTRACT, masterHash, type Localization, type LocalizationRequest, type MasterText } from "../localization";
+import { viewerLanguage } from "../languages";
+import { LOCALIZATION_CONTRACT, localizationWarnings, masterHash, type Localization, type LocalizationRequest } from "../localization";
 import { defaults } from "../storyboard";
 import { abortable, type GenerationAdapter } from "./generation-service";
 
@@ -40,40 +40,6 @@ export function localizationTask(input: LocalizationRequest) {
   };
 }
 export type LocalizationTask = ReturnType<typeof localizationTask>;
-
-const scripts: Record<string, RegExp> = {
-  Hangul: /\p{Script=Hangul}/u, Latin: /\p{Script=Latin}/u, Han: /\p{Script=Han}/u,
-  Sinhala: /\p{Script=Sinhala}/u, Khmer: /\p{Script=Khmer}/u,
-};
-// Khmer digits are the only native digits these languages commonly use.
-const numbers = (value: string) => value.replace(/[០-៩]/g, digit => String(digit.charCodeAt(0) - 0x17e0))
-  .match(/\d+(?:[.,]\d+)?/g)?.map(number => number.replace(",", ".")) ?? [];
-
-// Local checks only: no extra AI call. Each warning asks the planner to compare,
-// it does not prove the translation is right or wrong.
-export function localizationWarnings(master: MasterText, translated: MasterText & { backTranslation: MasterText }, language: LocalizationTarget) {
-  const warnings: string[] = [];
-  const target = viewerLanguage(language);
-  const body = `${translated.narration}\n${translated.subtitle}`;
-  // Korean glossary terms in parentheses are expected, so Hangul is ignored for other languages.
-  const letters = (body.match(/\p{L}/gu) ?? []).filter(letter => language === "ko-easy" || !scripts.Hangul.test(letter));
-  if (letters.length && letters.filter(letter => scripts[target.script].test(letter)).length / letters.length < .6)
-    warnings.push(`${target.label} 문자가 적습니다. 다른 언어로 쓰였는지 확인해 주세요.`);
-  const available = numbers(`${translated.title}\n${body}`);
-  const missing = numbers(`${master.title}\n${master.narration}\n${master.subtitle}`).filter(number => {
-    const index = available.indexOf(number);
-    if (index < 0) return true;
-    available.splice(index, 1);
-    return false;
-  });
-  if (missing.length) warnings.push(`원문의 숫자 ${[...new Set(missing)].join(", ")}이(가) 번역에 없습니다.`);
-  const lines = (value: string) => value.trim().split(/\r?\n/).length;
-  if (lines(master.subtitle) !== lines(translated.subtitle))
-    warnings.push(`자막 줄 수가 원문(${lines(master.subtitle)}줄)과 다릅니다.`);
-  if (language !== "ko-easy" && !translated.backTranslation.narration.trim())
-    warnings.push("역번역이 없어 한국어로 대조할 수 없습니다.");
-  return warnings;
-}
 
 export async function runLocalization(input: LocalizationRequest, adapter: GenerationAdapter, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Localization> {
   if (adapter.mode !== "ai") throw new GenerationError("LOCALIZATION_AI_REQUIRED");

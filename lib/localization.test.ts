@@ -4,14 +4,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GenerationError } from "./generation-contract";
-import { applyLocalization, localizationRequest, localizationResponseSchema, localizationState, masterHash } from "./localization";
+import { applyLocalization, editLocalizedScene, localizationRequest, localizationResponseSchema, localizationState, localizationWarnings, masterHash, pendingScenes, translationBatches } from "./localization";
 import { defaults, generateDemo, sample } from "./storyboard";
 import { readDraft, serializeDraft } from "./studio-state";
 import { readAIConfig } from "./server/ai-config";
 import { createOpenAIAdapter, OPENAI_MODEL } from "./server/openai-adapter";
 import { demoAdapter } from "./server/demo-adapter";
 import type { GenerationAdapter } from "./server/generation-service";
-import { localizationTask, localizationWarnings, runLocalization } from "./server/localization-service";
+import { localizationTask, runLocalization } from "./server/localization-service";
 import { createLocalizeHandler } from "./server/localize-handler";
 import { providerTask } from "./server/provider-prompt";
 
@@ -149,3 +149,26 @@ test("the localize route checks the request, locality and the shared budget", as
   const tooMany = await post(localizationRequest(board, "vi"), { ...paid, countInputTokens: async () => 999999 });
   assert.equal((await tooMany.json()).code, "TOKEN_LIMIT_EXCEEDED");
 });
+
+test("pending scenes, batches and planner edits", async () => {
+  const result = await runLocalization(localizationRequest(board, "vi"), fakeAI(async () => translation()));
+  const localized = applyLocalization(board, "vi", result);
+  assert.equal(pendingScenes(localized, "vi").length, 0);
+  assert.equal(pendingScenes(localized, "km").length, board.scenes.length);
+
+  const scene = localized.scenes[0];
+  const edited = editLocalizedScene(localized, "vi", scene, { narration: "Không có số nào ở đây." });
+  assert.equal(edited.localizations!.vi!.scenes[scene.id].narration, "Không có số nào ở đây.");
+  assert.equal(localizationState(edited, "vi", scene), "ready", "a manual correction is not a stale translation");
+  assert.deepEqual(editLocalizedScene(localized, "si", scene, { narration: "x" }), localized, "nothing to edit before translating");
+
+  const removed = { ...localized, scenes: localized.scenes.slice(1) };
+  assert.ok(!(scene.id in applyLocalization(removed, "vi", result).localizations!.vi!.scenes), "deleted scenes are dropped");
+
+  const long = board.scenes.map(item => ({ ...item, narration: "가".repeat(700) }));
+  const sinhala = translationBatches(long, "si"), vietnamese = translationBatches(long, "vi");
+  assert.deepEqual(sinhala.flat(), long.map(item => item.id), "every scene once, in order");
+  assert.ok(sinhala.length > vietnamese.length, "complex scripts use smaller requests");
+  assert.ok(translationBatches(Array.from({ length: 25 }, (_, i) => ({ ...board.scenes[0], id: String(i), narration: "짧음" })), "vi").every(batch => batch.length <= 10));
+});
+
