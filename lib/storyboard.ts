@@ -2,6 +2,7 @@ import { z } from "zod";
 import { pdfSourceSchema, sourceNote } from "./pdf-source";
 import { visualRecommendationSchema } from "./knowledge-structure";
 import { knowledgeSearchStatusSchema, knowledgeUsageLabel } from "./knowledge";
+import { localizationsSchema } from "./localization";
 
 export const audienceOptions = [
   "산업현장 근무자",
@@ -118,6 +119,7 @@ export const boardSchema = z.object({
   generation: generationMetaSchema.optional(),
   pdfSource: pdfSourceSchema.optional(),
   imageSettings: z.object({ style: z.enum(["sketch", "illustration", "realistic"]), direction: z.string().max(600) }).optional(),
+  localizations: localizationsSchema.optional(),
 });
 export type Board = z.infer<typeof boardSchema>;
 export const requestSchema = z.object({

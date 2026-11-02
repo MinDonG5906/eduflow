@@ -32,7 +32,7 @@ export const PROVIDER_INSTRUCTION_SUFFIX = " sourceRequest가 있으면 업로�
 export function providerTask(context: GenerationContext) {
   const { instruction, responseSchema, ...task } = context.task;
   return {
-    instructions: instruction + PROVIDER_INSTRUCTION_SUFFIX,
+    instructions: instruction + ("kind" in context.task ? "" : PROVIDER_INSTRUCTION_SUFFIX),
     responseSchema: responseSchema as Record<string, unknown>,
     taskText: JSON.stringify({ task: promptTask(task),
       ...(context.pdf ? { document: { visualPages: task.pdfSource?.pages ?? [], visualPageLocations: pdfPageLocations(task.pdfSource?.pages ?? []) } } : {}),

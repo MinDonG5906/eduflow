@@ -9,6 +9,7 @@ import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
 import type { KnowledgeSearchStatus, RetrievedReference } from "../knowledge";
+import type { LocalizationTask } from "./localization-service";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -16,7 +17,7 @@ export type GenerationContext = {
   signal: AbortSignal;
   limits?: PaidGenerationLimits;
   pdf?: PdfAttachment;
-  task: ReturnType<typeof generationTask>;
+  task: ReturnType<typeof generationTask> | LocalizationTask;
   repair?: { issues: Issue[]; acceptedScenes: GeneratedScene[]; header: Header | null };
 };
 export type GenerationAdapter = {
@@ -30,7 +31,7 @@ export type GenerationAdapter = {
   generate: (input: GenerationInput, context: GenerationContext) => Promise<unknown>;
 };
 
-async function abortable<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
+export async function abortable<T>(signal: AbortSignal, operation: () => Promise<T>): Promise<T> {
   signal.throwIfAborted();
   return new Promise<T>((resolve, reject) => {
     const abort = () => { signal.removeEventListener("abort", abort); reject(signal.reason); };

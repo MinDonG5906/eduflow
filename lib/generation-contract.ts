@@ -68,6 +68,8 @@ export const errorDefinitions = {
   PDF_RENDER_TOO_LARGE: { status: 413, retryable: false, error: "선택한 페이지를 PDF 호환본으로 준비하는 처리 용량(50MB)을 넘었습니다. 보낼 페이지 수를 줄여 주세요. 기존 작업은 유지됩니다." },
   INVALID_PDF: { status: 400, retryable: false, error: "PDF가 손상되었거나 암호로 잠겨 있습니다. 확인 후 다시 선택해 주세요." },
   INVALID_PDF_PAGES: { status: 400, retryable: false, error: "선택한 페이지와 PDF가 일치하지 않습니다. 페이지를 다시 선택해 주세요." },
+  LOCALIZATION_INVALID_REQUEST: { status: 400, retryable: false, error: "번역할 제목과 장면을 확인해 주세요. 한 번에 최대 30개 장면까지 번역할 수 있습니다." },
+  LOCALIZATION_AI_REQUIRED: { status: 503, retryable: false, error: "번역은 실제 AI 연결이 필요합니다. 무료 데모에서는 지원하지 않습니다." },
   PDF_AI_REQUIRED: { status: 503, retryable: false, error: "PDF의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다. 무료 데모에서는 지원하지 않습니다." },
   KNOWLEDGE_NO_MATCH: { status: 422, retryable: false, error: "지식베이스에서 이 원고와 관련된 근거를 찾지 못했습니다. 자료를 등록하거나 원고 주제를 확인해 주세요. 기존 작업은 유지됩니다." },
   AI_DISABLED: { status: 503, retryable: false, error: "실제 AI 사용이 잠겨 있습니다. 서버 설정을 확인해 주세요. 기존 작업은 유지됩니다." },

@@ -222,6 +222,7 @@ test("empty or unavailable RAG still generates from the original through paid pr
           calls++;
           assert.equal(original.manuscript, input.manuscript);
           assert.deepEqual(context.task.supplementalSources, []);
+          assert.ok(!("kind" in context.task), "a generation request never carries a localization task");
           assert.ok(context.task.groundingGuidance.includes("내용만으로 스토리보드를 완성"));
           assert.ok(context.limits);
           return output();
