@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Image as ImageIcon, LoaderCircle, RotateCcw, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { Download, LoaderCircle, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,7 +125,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     {scene.image && <label className="studio-toggle image-reference-toggle"><span>현재 이미지 참고</span><input type="checkbox" role="switch" checked={useReference} disabled={busy} onChange={event => setUseReference(event.target.checked)} /></label>}
     {scene.image?.sourceType !== "generated" && scene.image && <label className="image-direction-field">이미지 출처<Input value={scene.image.sourceText} maxLength={300} disabled={busy} onChange={event => onChange({ ...scene.image!, sourceText: event.target.value })} /></label>}
   </div>;
-  return <SceneSection title="스토리보드" icon={ImageIcon} className="storyboard-image-section"
+  return <SceneSection title="스토리보드" className="storyboard-image-section"
     action={<InfoDialog title="스토리보드 안내" description="이미지 생성 비용과 편집 방법을 확인하세요.">
       <section><h4>생성 비용·전송 정보</h4>
         {status?.available ? <><p>한 번에 1장 · 호출당 최대 ${status.perImageCeilingUSD.toFixed(3)} · 공통 하루 $5·월 $10 한도입니다.</p>
@@ -161,7 +161,7 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
           </div>
           <div className="image-generate-actions">
             {busy && <Button variant="outline" onClick={() => { request.current?.abort(); lock.current = false; setBusy(false); setMessage("이미지 생성을 취소했습니다. 기존 이미지는 유지됩니다."); }}><X size={14} />취소</Button>}
-            <Button className="image-generate-button" disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : scene.image?.sourceType === "generated" ? <RotateCcw size={15} /> : <Sparkles size={15} />}{busy ? "생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "이미지 생성"}</Button>
+            <Button className="image-generate-button" disabled={!canGenerate} onClick={generate}>{busy ? <LoaderCircle className="image-spinner" size={15} /> : null}{busy ? "생성 중…" : scene.image?.sourceType === "generated" ? "이미지 다시 생성" : "이미지 생성"}</Button>
           </div>
         </div>
       </>} />

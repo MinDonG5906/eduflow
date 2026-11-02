@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { useCompositionAssets } from "@/hooks/use-composition-assets";
-import { Image as ImageIcon, Layers3, Captions, MessageSquareText } from "lucide-react";
+import { Layers3 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { Scene, VisualPlacement } from "@/lib/storyboard";
@@ -8,7 +8,7 @@ import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compos
 
 // Remembered per browser tab so moving between scenes keeps the same inspector tab.
 const TAB_KEY = "eduflow-composition-tab";
-const tabs = [{ id: "subtitle", label: "자막", icon: Captions }, { id: "narration", label: "나레이션", icon: MessageSquareText }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "image", label: "이미지 생성", icon: ImageIcon }];
+const tabs = [{ id: "subtitle", label: "자막" }, { id: "narration", label: "나레이션" }, { id: "visuals", label: "시각자료" }, { id: "image", label: "이미지 생성" }];
 function initialTab() {
   try { const saved = sessionStorage.getItem(TAB_KEY); if (tabs.some(item => item.id === saved)) return saved!; } catch {}
   return "subtitle";
@@ -85,7 +85,7 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
           const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
           if (next === null) return; event.preventDefault(); setTab(tabs[next].id);
           (event.currentTarget.parentElement?.children[next] as HTMLButtonElement)?.focus();
-        }}><item.icon size={15} />{item.label}{item.id === "visuals" && visuals.length > 0 && <span>{visuals.length}</span>}</button>)}
+        }}>{item.label}{item.id === "visuals" && visuals.length > 0 && <span>{visuals.length}</span>}</button>)}
       </div>
       <div className="composition-inspector-body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`} tabIndex={0}>
         {tab === "image" && generationSettings}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertCircle, BookOpen, Captions, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, Sparkles, X } from "lucide-react";
+import { AlertCircle, Captions, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,9 +44,6 @@ export function ProgressDialog({
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent showCloseButton={false} className="progress-dialog">
         <DialogHeader>
-          <div className="loading-icon">
-            <Sparkles size={26} />
-          </div>
           <DialogTitle>원고가 장면으로 바뀌는 중이에요</DialogTitle>
           <DialogDescription>
             입력한 원고에서 핵심 내용을 나누고 초안을 구성합니다.
@@ -134,17 +131,6 @@ export function StudioDialog({
     >
       <DialogContent className={modal === "export" ? "export-dialog" : ""}>
         <DialogHeader>
-          <div className="modal-icon">
-            {modal === "export" ? (
-              <Download size={22} />
-            ) : modal === "regenerate" ? (
-              <Sparkles size={22} />
-            ) : modal === "help" ? (
-              <BookOpen size={22} />
-            ) : (
-              <AlertCircle size={22} />
-            )}
-          </div>
           <DialogTitle>{text.title}</DialogTitle>
           <DialogDescription>{text.description}</DialogDescription>
         </DialogHeader>
@@ -188,7 +174,7 @@ export function StudioDialog({
                 취소
               </Button>
               <Button disabled={!canGenerate} onClick={onRegenerate}>
-                <Sparkles size={15} /> 교체하고 재생성
+                교체하고 재생성
               </Button>
             </div>
           </>
@@ -354,7 +340,6 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         </li>
       </ol>
       <div className="help-demo">
-        <Sparkles size={16} />
         <p>
           {generator?.mode === "ai"
             ? `${generator.label}로 초안을 생성합니다. 원고·설정·선택 장면·추가 지시가 ${generator.vendor}에 전송되며, 생성 결과는 현재 브라우저에 저장합니다. AI 결과는 원문과 대조한 뒤 사용해 주세요.`

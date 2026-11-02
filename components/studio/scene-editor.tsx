@@ -9,7 +9,6 @@ import {
   GraduationCap,
   MonitorPlay,
   PencilLine,
-  Quote,
   RotateCcw,
   Trash2,
 } from "lucide-react";
@@ -129,7 +128,7 @@ export function SceneEditor({
         </div>
       </details>
       <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} />
-      <SceneSection title="원문 근거" icon={Quote}>
+      <SceneSection title="원문 근거">
         <div className="scene-source-list">
           <article className="scene-source-card">
             <header className="scene-source-card-heading">
@@ -157,7 +156,7 @@ export function SceneEditor({
         </div>
       </SceneSection>
       <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
-      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section">
+      <SceneSection title="검토 메모" className="scene-review-section">
         <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
       </SceneSection>
       <div className="scene-editor-footer">

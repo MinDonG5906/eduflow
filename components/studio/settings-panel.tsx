@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowRight, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowRight, Plus, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,9 +47,6 @@ export function SettingsPanel({
     <section className="settings-panel panel">
       <div className="panel-title">
         <div>
-          <span className="section-icon">
-            <SlidersHorizontal size={18} />
-          </span>
           <h2>생성 설정</h2>
         </div>
         <button
@@ -219,9 +216,6 @@ export function GenerationBar({
     <>
       <div className="generation-bar">
         <div>
-          <span className="round-spark">
-            <Sparkles size={19} />
-          </span>
           <div>
             <strong>생성 조건</strong>
             <p>
@@ -249,7 +243,7 @@ export function GenerationBar({
           disabled={!canGenerate}
           onClick={onGenerate}
         >
-          <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
+          {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
         </Button>
         </div>
       </div>

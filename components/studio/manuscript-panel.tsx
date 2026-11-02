@@ -1,5 +1,4 @@
 import type { ReactNode, RefObject } from "react";
-import { BookOpen, FileText, PencilLine, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SourceFormat } from "@/lib/pdf-source";
 
@@ -39,9 +38,6 @@ export function ManuscriptPanel({
     <section className="manuscript-panel panel">
       <div className="panel-title">
         <div>
-          <span className="section-icon">
-            <FileText size={18} />
-          </span>
           <h2>원고 입력</h2>
           <span className="required">필수</span>
         </div>
@@ -51,15 +47,15 @@ export function ManuscriptPanel({
           onClick={onLoadSample}
           disabled={busy || importing || storageBlocked}
         >
-          <BookOpen size={15} /> 샘플 원고 사용
+          샘플 원고 사용
         </Button>
       </div>
       <div className="manuscript-tabs">
         <span>
-          <PencilLine size={14} /> 직접 입력
+          직접 입력
         </span>
         <button onClick={() => uploadRef.current?.click()} disabled={busy || importing || storageBlocked}>
-          <Upload size={14} /> {importing ? "문서 읽는 중…" : "파일 불러오기"}
+          {importing ? "문서 읽는 중…" : "파일 불러오기"}
         </button>
         {importing && <button onClick={onCancelImport}>불러오기 취소</button>}
         <input
@@ -98,13 +94,6 @@ export function ManuscriptPanel({
         />
         {!manuscript && !isPdf && (
           <div className="editor-empty">
-            <div className="empty-illustration">
-              <div />
-              <FileText size={29} />
-              <span>
-                <Plus size={13} />
-              </span>
-            </div>
             <small>파일을 여기에 놓아도 됩니다.</small>
           </div>
         )}

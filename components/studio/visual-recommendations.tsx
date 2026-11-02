@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Images } from "lucide-react";
 import { recommendationImageUrl, type VisualRecommendation } from "@/lib/knowledge-structure";
 import { KnowledgeSource } from "@/components/knowledge-source";
 import type { Scene } from "@/lib/storyboard";
@@ -14,7 +13,7 @@ function FigurePreview({ visual }: { visual: VisualRecommendation }) {
 }
 
 export function VisualRecommendations({ visuals, references }: { visuals: VisualRecommendation[]; references: NonNullable<Scene["references"]> }) {
-  return <SceneSection title="시각자료 추천" icon={Images}>
+  return <SceneSection title="시각자료 추천">
     {!visuals.length ? <p className="scene-section-empty">이 장면에 연결된 추천 자료가 없습니다.</p>
       : <div className="scene-source-list">{compositionVisuals({ visuals }).map((visual, index) => {
         const reference = references.find(reference => reference.documentId === visual.documentId && reference.visuals?.some(item => item.id === visual.id))

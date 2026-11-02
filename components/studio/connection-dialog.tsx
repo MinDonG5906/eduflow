@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, PlugZap } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -94,7 +94,6 @@ export function ConnectionDialog({ open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="connection-dialog">
         <DialogHeader>
-          <div className="modal-icon"><PlugZap size={22} /></div>
           <DialogTitle>모델 연결</DialogTitle>
           <DialogDescription>생성에 사용할 AI와 결제 방식을 고르세요. 설정은 이 PC의 EduFlow 서버에만 저장됩니다.</DialogDescription>
         </DialogHeader>
