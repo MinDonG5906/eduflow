@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, Clock3, Download, Sparkles } from "lucide-react";
+import { CircleHelp, Clock3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConnectionDialog } from "@/components/studio/connection-dialog";
 import { DocumentSource } from "@/components/studio/document-source";
@@ -544,17 +544,9 @@ export default function Studio() {
                     />
                   )}
                 </div>
-                <div className="bottom-note">
-                  <Sparkles size={13} /> {scene?.generation?.mode === "ai" || (!scene?.generation && board?.mode === "ai") ? "AI" : "데모"} 초안입니다. 원문의 의미와 교육 대상에 맞는 표현인지
-                  확인한 후 사용해 주세요.
-                </div>
               </>
             )
           )}
-          <footer className="page-footer">
-            <span>EduFlow</span>
-            <span>교육 콘텐츠 스토리보드 스튜디오</span>
-          </footer>
         </main>
       </div>
       <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />

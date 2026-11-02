@@ -14,7 +14,7 @@ function FigurePreview({ visual }: { visual: VisualRecommendation }) {
 }
 
 export function VisualRecommendations({ visuals, references }: { visuals: VisualRecommendation[]; references: NonNullable<Scene["references"]> }) {
-  return <SceneSection title="시각자료 추천" icon={Images} description="장면 제작에 참고할 표·그림입니다. 필요한 자료를 원본과 대조하세요.">
+  return <SceneSection title="시각자료 추천" icon={Images}>
     {!visuals.length ? <p className="scene-section-empty">이 장면에 연결된 추천 자료가 없습니다.</p>
       : <div className="scene-source-list">{compositionVisuals({ visuals }).map((visual, index) => {
         const reference = references.find(reference => reference.documentId === visual.documentId && reference.visuals?.some(item => item.id === visual.id))

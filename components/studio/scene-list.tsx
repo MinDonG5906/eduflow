@@ -1,4 +1,4 @@
-import { CheckCheck, Clock3, FileText, Plus, Settings2, ShieldCheck } from "lucide-react";
+import { CheckCheck, Clock3, FileText, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Scene } from "@/lib/storyboard";
 import { useSceneImageUrl } from "@/hooks/use-scene-image-url";
@@ -76,14 +76,6 @@ export function SceneList({
       <Button variant="outline" className="add-scene" onClick={onAdd}>
         <Plus size={15} /> 선택 장면 다음에 추가
       </Button>
-      <div className="scene-list-note">
-        <ShieldCheck size={15} />
-        <p>
-          원문 근거를 확인하고
-          <br />
-          검토를 완료해 주세요.
-        </p>
-      </div>
     </section>
   );
 }

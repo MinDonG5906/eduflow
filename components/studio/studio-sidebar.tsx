@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { BookOpen, ChevronRight, CircleHelp, FileText, LayoutGrid, Plus, ShieldCheck } from "lucide-react";
+import { BookOpen, ChevronRight, CircleHelp, FileText, LayoutGrid, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioView } from "./types";
 
@@ -78,9 +78,6 @@ export function StudioSidebar({
           </div>
           <span>EduFlow</span>
         </a>
-        <div className="workspace-label">
-          MY WORKSPACE <span>개인</span>
-        </div>
         <Button
           variant="outline"
           className="new-work"
@@ -89,7 +86,6 @@ export function StudioSidebar({
         >
           <Plus size={17} /> 새 스토리보드
         </Button>
-        <div className="nav-caption">스튜디오</div>
         <button
           className={`nav-item ${view === "input" ? "selected" : ""}`}
           aria-current={view === "input" ? "page" : undefined}
@@ -117,21 +113,9 @@ export function StudioSidebar({
           <BookOpen size={18} /> 지식베이스 관리 <ChevronRight size={14} />
         </a>
         <div className="sidebar-bottom">
-          <div className="privacy">
-            <ShieldCheck size={16} />
-            <span>내 브라우저에 안전하게 저장</span>
-          </div>
           <button onClick={onHelp}>
             <CircleHelp size={17} /> 도움말 및 안내 <ChevronRight size={14} />
           </button>
-          <div className="profile">
-            <div className="avatar">E</div>
-            <div>
-              <strong>나의 워크스페이스</strong>
-              <small>로컬 프로토타입</small>
-            </div>
-            <span className="status-dot" />
-          </div>
         </div>
       </aside>
       {open && (

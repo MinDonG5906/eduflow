@@ -69,7 +69,7 @@ export function KnowledgeSource({ references, label = "대조하기", context = 
         </div>
         <div className={location.filePage ? "source-reader" : "source-reader is-manuscript"}>
           {location.filePage && <div className="source-page-image"><img loading="lazy" alt={`${selected.title} 원본 ${selected.page}페이지`} src={`/api/knowledge/page?id=${encodeURIComponent(id)}&page=${location.filePage}`} /></div>}
-          <div className="source-transcript"><h3>지식베이스 근거 구절</h3><small>번호는 이 보기에서 구분한 순서입니다.</small><div className="source-passages" ref={viewport} tabIndex={0} aria-label="지식베이스 근거 구절 목록">
+          <div className="source-transcript"><h3>지식베이스 근거 구절</h3><div className="source-passages" ref={viewport} tabIndex={0} aria-label="지식베이스 근거 구절 목록">
             {matches.map((passage, index) => <p key={passage.id} data-knowledge-hit={Boolean(passage.match) || undefined} className={`source-passage${passage.match ? " is-hit" : ""}`}><span>{index + 1}</span><span>{passage.match ? <>{passage.text.slice(0, passage.match.start)}<mark>{passage.text.slice(passage.match.start, passage.match.end)}</mark>{passage.text.slice(passage.match.end)}</> : passage.text}</span></p>)}
             {!matches.length && <p>현재 확인할 수 있는 구절이 없습니다.</p>}
           </div></div>

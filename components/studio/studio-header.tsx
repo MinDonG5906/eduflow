@@ -1,4 +1,4 @@
-import { AlertCircle, Check, ChevronRight, CloudCheck, PanelLeftClose, PlugZap, X } from "lucide-react";
+import { AlertCircle, Check, CloudCheck, PanelLeftClose, PlugZap, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { GeneratorStatus, StudioView } from "./types";
 
@@ -30,9 +30,6 @@ export function StudioTopbar({
           <PanelLeftClose size={20} />
         </button>
         <b className="mobile-brand">EduFlow</b>
-        <span>워크스페이스</span>
-        <ChevronRight size={14} />
-        <strong>{view === "input" ? "새 스토리보드" : "스토리보드 편집"}</strong>
       </div>
       <div className="topbar-right">
         <span className="save-state">

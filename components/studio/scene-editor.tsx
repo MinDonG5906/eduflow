@@ -157,8 +157,7 @@ export function SceneEditor({
         </div>
       </SceneSection>
       <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
-      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
-        description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
+      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section">
         <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
       </SceneSection>
       <div className="scene-editor-footer">
