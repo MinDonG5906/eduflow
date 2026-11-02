@@ -228,15 +228,14 @@ export async function exportStoryboardPdf({
     // A. Priority 1: User directly attached image
     if (embeddedSceneImages.has(scene.id)) {
       image = embeddedSceneImages.get(scene.id);
-      if (scene.image?.sourceText?.trim()) {
+      if (scene.image?.sourceType === "generated") {
+        imageSourceText = `출처: AI 생성${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}`;
+      } else if (scene.image?.sourceText?.trim()) {
         imageSourceText = `출처: ${scene.image.sourceText.trim()}`;
       } else if (scene.image?.name) {
         imageSourceText = `출처: ${scene.image.name}`;
       } else {
         imageSourceText = "출처: 등록된 참고 이미지";
-      }
-      if (scene.image?.sourceType === "generated") {
-        imageSourceText = `AI 생성 스토리보드 (원본 증거 아님)${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}\n${imageSourceText}`;
       }
     }
     // B. Priority 2: PDF source document page screenshot

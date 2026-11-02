@@ -297,7 +297,7 @@ test("AI mode and generation records survive storage and exports while old/manua
   const board = await runGeneration(input, model);
   const draft = { ...input, board };
   assert.deepEqual(readDraft(serializeDraft(draft)), draft);
-  assert.ok(markdown(board).includes("AI 생성 초안"));
+  assert.ok(markdown(board).includes("생성 방식: AI 생성"));
   assert.ok(markdown(board).includes("fake-model-for-contract-test"));
   const old = generateDemo(sample, defaults);
   old.scenes[0].narration = "";

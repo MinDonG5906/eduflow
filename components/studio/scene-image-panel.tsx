@@ -88,10 +88,10 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
       const id = `generated-${crypto.randomUUID()}`;
       await saveSceneImage(id, blob); saved = id;
       if (!unchanged()) throw new Error("장면 내용이 변경되어 기존 이미지를 유지했습니다.");
-      latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성 스토리보드 · 원문과 대조 필요", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
+      latest.current.onChange({ id, sourceType: "generated", sourceText: "AI 생성", name: `scene-${scene.id}.png`, mimeType: result.mimeType,
         generated: { model: result.model, prompt: result.prompt, createdAt: result.createdAt, basedOn: result.basedOn } });
       saved = undefined;
-      setMessage("스토리보드 이미지를 저장했습니다. 원문과 대조한 뒤 사용하세요.");
+      setMessage("스토리보드 이미지를 저장했습니다.");
     } catch (e) {
       if (!controller.signal.aborted) setError(signal.aborted ? "이미지 생성 시간이 초과되었습니다. 기존 이미지는 유지됩니다." : e instanceof Error ? e.message : "이미지를 저장하지 못했습니다. 기존 이미지는 유지됩니다.");
     } finally {
