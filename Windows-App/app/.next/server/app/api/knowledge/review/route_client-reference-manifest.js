@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/knowledge/review/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"D:\\a\\eduflow\\eduflow\\app\\api\\knowledge\\review\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};

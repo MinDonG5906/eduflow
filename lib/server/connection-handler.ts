@@ -7,6 +7,7 @@ import { completeChatGPTSignIn, listChatGPTModels, signOutChatGPT, startChatGPTS
 import {
   CLAUDE_MODELS, PROVIDERS, experimentalClaudeSubscription, privateDirectory, publicConnection, readConnectionState,
   updateConnectionState,
+  imageGenerationVendor,
 } from "./connection-store";
 
 const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
@@ -21,6 +22,7 @@ function assertLoopback(request: Request) {
 
 const key = z.string().trim().min(10).max(1000).refine((value) => !/\s/.test(value));
 const actionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("setImageEnabled"), enabled: z.boolean(), consent: z.literal(true) }),
   z.object({ action: z.literal("select"), provider: z.enum(PROVIDERS) }),
   z.object({ action: z.literal("saveKey"), vendor: z.enum(["openai", "anthropic"]), key, consent: z.literal(true) }),
   z.object({ action: z.literal("removeKey"), vendor: z.enum(["openai", "anthropic"]) }),
@@ -60,6 +62,10 @@ export function createConnectionHandlers(options: { directory?: string; env?: Re
         const body = parsed.data;
         const update = (change: Parameters<typeof updateConnectionState>[0]) => updateConnectionState(change, directory(), env());
         switch (body.action) {
+          case "setImageEnabled":
+            if (body.enabled && !imageGenerationVendor(readConnectionState(directory(), env()), env())) throw new GenerationError("AI_NOT_CONFIGURED");
+            update((state) => ({ ...state, imageEnabled: body.enabled }));
+            break;
           case "select":
             if (body.provider === "claude-subscription" && !experimentalClaudeSubscription(env()))
               throw new GenerationError("AI_NOT_CONFIGURED");

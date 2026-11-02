@@ -6,3 +6,4 @@ node_modules/
 test-results/
 .DS_Store
 .eduflow-private/
+eval/results/

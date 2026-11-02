@@ -2,14 +2,10 @@ import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
-  BookOpen,
   Check,
   CheckCircle2,
   Clock3,
-  FileText,
   GraduationCap,
-  Layers3,
-  MessageSquareText,
   MonitorPlay,
   PencilLine,
   Quote,
@@ -20,47 +16,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EvidenceSource } from "@/components/evidence-source";
+import { KnowledgeSource } from "@/components/knowledge-source";
 import type { PdfSource } from "@/lib/pdf-source";
-import { fieldLabels, type Scene } from "@/lib/storyboard";
+import { type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
+import type { Settings } from "@/lib/storyboard";
+import type { ImageSettings } from "@/lib/scene-image";
+import { SceneImagePanel } from "./scene-image-panel";
+import { VisualRecommendations } from "./visual-recommendations";
+import { SceneSection } from "./scene-section";
+import { sourceLocationLabel } from "@/lib/source-location";
 
-// Purpose sits beside the preview; the rest are stacked below it.
-const textFields = [
-  "visual",
-  "assets",
-  "narration",
-  "subtitle",
-  "evidence",
-  "reviewReason",
-] as const;
-const fieldIcons = {
-  visual: MonitorPlay,
-  assets: Layers3,
-  narration: MessageSquareText,
-  subtitle: FileText,
-  evidence: Quote,
-  reviewReason: AlertCircle,
-} as const;
 const phaseLabels = { intro: "도입부", body: "정보전달부", outro: "마무리" } as const;
-
-function ScenePreview({ scene, index }: { scene: Scene; index: number }) {
-  return (
-    <div className="scene-preview" aria-label="장면 제목과 자막 배치 미리보기">
-      <div className="preview-topline">
-        <span>EDUFLOW / SCENE {String(index + 1).padStart(2, "0")}</span>
-        <MonitorPlay size={14} />
-      </div>
-      <div className="preview-copy">
-        <span className="preview-rule" />
-        <strong>{scene.title || "장면 제목을 입력하세요"}</strong>
-        <p>{scene.subtitle || "장면의 핵심 자막이 여기에 표시됩니다."}</p>
-      </div>
-      <div className="preview-bottomline">
-        <span>제목·자막 배치 예시</span><span>16:9 · {scene.duration}초</span>
-      </div>
-    </div>
-  );
-}
 
 export function SceneEditor({
   scene,
@@ -73,7 +40,7 @@ export function SceneEditor({
   onMove,
   onDelete,
   onRegenerate,
-  canRegenerate,
+  canRegenerate, settings, imageSettings, onImageSettingsChange, onOpenConnection,
 }: {
   scene: Scene;
   index: number;
@@ -86,7 +53,13 @@ export function SceneEditor({
   onDelete: () => void;
   onRegenerate: () => void;
   canRegenerate: boolean;
+  settings: Settings;
+  imageSettings: ImageSettings;
+  onImageSettingsChange: (settings: ImageSettings) => void;
+  onOpenConnection: () => void;
 }) {
+  const knowledgeReferences = [...new Map([...(scene.references ?? []), ...(scene.visualReferences ?? [])]
+    .map(reference => [reference.id, reference])).values()];
   return (
     <section className="scene-editor panel">
       <div className="scene-editor-head">
@@ -130,71 +103,58 @@ export function SceneEditor({
           </button>
         </div>
       </div>
-      <Input
-        className="scene-title-input"
-        aria-label="장면 제목"
-        value={scene.title}
-        onChange={(e) => onChange("title", e.target.value)}
-      />
-      <div className="scene-hero">
-        <ScenePreview scene={scene} index={index} />
-        <div className="scene-purpose">
-          <label>
-            <GraduationCap size={15} /> 장면 목적{" "}
-            {scene.edited.includes("purpose") && <small>수정됨</small>}
-          </label>
-          <Textarea
-            aria-label="장면 목적"
-            value={scene.purpose}
-            onChange={(e) => onChange("purpose", e.target.value)}
-          />
-          <label className="duration-label" htmlFor="duration">
-            <Clock3 size={14} /> 예상 시간
-          </label>
-          <div className="duration-input">
-            <Input
-              id="duration"
-              type="number"
-              min={1}
-              max={600}
-              step={1}
-              value={scene.duration}
-              onChange={(e) => onChange("duration", normalizeDuration(e.target.value))}
-            />
-            <span>초</span>
+      <div className="scene-title-row">
+        <Input className="scene-title-input" aria-label="장면 제목" value={scene.title} onChange={event => onChange("title", event.target.value)} />
+        <label className="scene-duration-compact"><Clock3 size={14} aria-hidden="true" /><span className="sr-only">예상 시간</span>
+          <Input aria-label="예상 시간" type="number" min={1} max={600} step={1} value={scene.duration} onChange={event => onChange("duration", normalizeDuration(event.target.value))} /><span>초</span>
+        </label>
+      </div>
+      <details className="scene-direction-details">
+        <summary>장면 목적·화면 설명</summary>
+        <div className="scene-direction-fields">
+          <div className="scene-field">
+            <label htmlFor="scene-purpose"><GraduationCap size={15} />장면 목적{scene.edited.includes("purpose") && <small>수정됨</small>}</label>
+            <Textarea id="scene-purpose" aria-label="장면 목적" value={scene.purpose} rows={2} onChange={event => onChange("purpose", event.target.value)} />
+          </div>
+          <div className="scene-field">
+            <label htmlFor="field-visual"><MonitorPlay size={15} />화면 설명{scene.edited.includes("visual") && <small>수정됨</small>}</label>
+            <Textarea id="field-visual" aria-label="화면 설명" value={scene.visual} rows={3} onChange={event => onChange("visual", event.target.value)} />
           </div>
         </div>
-      </div>
-      <div className="scene-fields">
-        {textFields.map((key) => {
-          const Icon = fieldIcons[key];
-          return (
-            <div key={key} className={`scene-field field-${key}`}>
-              <label htmlFor={`field-${key}`}>
-                <Icon size={15} />{" "}
-                {fieldLabels[key]}
-                {scene.edited.includes(key) && <small>수정됨</small>}
-              </label>
-              {key === "evidence" && <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />}
-              <Textarea
-                id={`field-${key}`}
-                value={scene[key]}
-                onChange={(e) => onChange(key, e.target.value)}
-                rows={key === "narration" ? 4 : 2}
-              />
+      </details>
+      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} />
+      <SceneSection title="원문 근거" icon={Quote}>
+        <div className="scene-source-list">
+          <article className="scene-source-card">
+            <header className="scene-source-card-heading">
+              <div><span className="scene-source-badge">원문</span><h4>{scene.pdfSource?.name ?? source?.name ?? "입력 원고"}</h4>
+                <p className="scene-source-meta">{sourceLocationLabel(scene.sourceId, scene.pdfSource?.name ?? source?.name)}</p>
+              </div>
+              <EvidenceSource key={scene.id} scene={scene} manuscript={manuscript} file={sourceFile} source={source} />
+            </header>
+            <div className="scene-source-editable">
+              <Textarea aria-label="원문 근거" value={scene.evidence} onChange={event => onChange("evidence", event.target.value)} rows={3} />
+              {scene.edited.includes("evidence") && <small className="scene-edited-note">직접 수정한 근거입니다.</small>}
             </div>
-          );
-        })}
-      </div>
-      {Boolean(scene.references?.length) && <div className="scene-references">
-        <h3><BookOpen size={15} /> 보강 자료 근거</h3>
-        <p>나레이션·자막에 활용한 외부 자료입니다. 원문 근거와 구분해 검토해 주세요.</p>
-        {scene.references!.map((reference) => <div className="scene-reference" key={reference.id}>
-          <strong>{reference.url ? <a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a> : reference.title}</strong>
-          <small>{reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "사용자 제공 자료"} · {reference.published}{reference.revision ? ` · ${reference.revision}` : ""}{reference.page ? ` · ${reference.page}페이지` : ""}</small>
-          <p>{reference.excerpt}</p>
-        </div>)}
-      </div>}
+          </article>
+          {knowledgeReferences.map(reference => <article className="scene-source-card" key={reference.id}>
+            <header className="scene-source-card-heading">
+              <div><span className="scene-source-badge is-knowledge">지식베이스</span><h4>{reference.title}</h4>
+                <p className="scene-source-meta">{reference.page ? `원본 ${reference.page}페이지` : "등록 본문"} · {reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "제공 자료"}{reference.published ? ` · ${reference.published}` : ""}{reference.revision ? ` · ${reference.revision}` : ""}</p>
+                <p className="scene-source-meta">{[scene.references?.some(item => item.id === reference.id) && "나레이션·자막 참고", scene.visualReferences?.some(item => item.id === reference.id) && "시각자료 참고"].filter(Boolean).join(" · ")}</p>
+              </div>
+              <KnowledgeSource references={[reference]} context={reference.title} />
+            </header>
+            <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
+          </article>)}
+          {!knowledgeReferences.length && <p className="scene-section-empty">이 장면에 연결된 지식베이스 근거가 없습니다.</p>}
+        </div>
+      </SceneSection>
+      <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
+      <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
+        description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
+        <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
+      </SceneSection>
       <div className="scene-editor-footer">
         <Button
           variant="outline"

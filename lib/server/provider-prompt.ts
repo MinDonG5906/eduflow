@@ -1,9 +1,33 @@
 import "server-only";
 import { GenerationError } from "../generation-contract";
-import { citedPdfPage, selectPdfPages } from "../pdf-source";
+import { citedPdfPage, pdfPageLocations, selectPdfPages } from "../pdf-source";
 import type { GenerationContext } from "./generation-service";
 import type { PdfAttachment } from "./pdf-input";
 import { preparePdfContent, type PdfContent } from "./pdf-content";
+import type { VisualRecommendation } from "../knowledge-structure";
+
+// The model selects a table using its retrieved row; full cells are retained only
+// in the application response for the preview, not repeated in every AI prompt.
+function promptVisual(visual: VisualRecommendation) {
+  return { ...visual, ...(visual.table ? { table: { id: visual.table.id, rows: visual.table.rows, cols: visual.table.cols } } : {}) };
+}
+
+export function promptKnowledgeSources<T extends { visuals?: VisualRecommendation[] }>(sources: T[]) {
+  return sources.map(source => ({ ...source, ...(source.visuals ? { visuals: source.visuals.map(promptVisual) } : {}) }));
+}
+
+export function promptTask<T extends Pick<GenerationContext["task"], "supplementalSources" | "selectedScene">>(task: T) {
+  const scene = task.selectedScene;
+  return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources),
+    ...(scene ? { selectedScene: { ...scene,
+      ...(scene.image ? { image: { ...scene.image, generated: scene.image.generated ? {
+        model: scene.image.generated.model, createdAt: scene.image.generated.createdAt, basedOn: scene.image.generated.basedOn,
+      } : undefined } } : {}),
+      ...(scene.references ? { references: promptKnowledgeSources(scene.references) } : {}),
+      ...(scene.visualReferences ? { visualReferences: promptKnowledgeSources(scene.visualReferences) } : {}),
+      ...(scene.visuals ? { visuals: scene.visuals.map(promptVisual) } : {}),
+    } } : {}) };
+}
 
 // Shared by every model connection so each one reads the same manuscript task,
 // supplemental references and PDF content.
@@ -11,6 +35,7 @@ export const PROVIDER_INSTRUCTION_SUFFIX = " sourceRequest가 있으면 업로�
 
 function documentForTask(document: PdfContent) {
   return { textPages: document.textPages, visualPages: document.visualPages,
+    visualPageLocations: pdfPageLocations(document.visualPages),
     layoutPages: document.layoutPages.map(page => ({ ...page,
       width: Math.round(page.width), height: Math.round(page.height),
       figures: page.figures.map(figure => ({ ...figure, bounds: figure.bounds.map(Math.round) })),
@@ -34,8 +59,11 @@ export function providerTask(context: GenerationContext, document?: PdfContent) 
   return {
     instructions: instruction + PROVIDER_INSTRUCTION_SUFFIX,
     responseSchema: responseSchema as Record<string, unknown>,
-    taskText: JSON.stringify({ task,
-      ...(document ? { document: documentForTask(document) } : {}),
+    taskText: JSON.stringify({ task: promptTask(task),
+      // Connections that send the PDF itself (Gemini) still get the selected page locations.
+      ...(document ? { document: documentForTask(document) }
+        : context.pdf ? { document: { visualPages: task.pdfSource?.pages ?? [], visualPageLocations: pdfPageLocations(task.pdfSource?.pages ?? []) } }
+        : {}),
       ...(context.repair ? { repair: context.repair } : {}) }),
   };
 }
@@ -100,6 +128,32 @@ const UNSUPPORTED = new Set([
   "$schema", "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
   "multipleOf", "minItems", "maxItems", "uniqueItems", "pattern",
 ]);
+
+// Gemini's responseJsonSchema accepts only these keywords (per the @google/genai 2.31
+// type docs); it rejects others such as $schema, minLength, maxLength and pattern.
+// maxItems is documented but a 20-scene cap on the scene objects made the live API
+// answer 400 INVALID_ARGUMENT (2026-10-27), so it is dropped too. The server still
+// validates every dropped limit with Zod after the response.
+const GEMINI_SUPPORTED = new Set([
+  "$id", "$defs", "$ref", "$anchor", "type", "format", "title", "description", "enum", "items", "prefixItems",
+  "minItems", "minimum", "maximum", "anyOf", "oneOf", "properties", "additionalProperties", "required",
+]);
+
+export function geminiJsonSchema(schema: unknown): Record<string, unknown> {
+  const clean = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(clean);
+    if (!node || typeof node !== "object") return node;
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (!GEMINI_SUPPORTED.has(key)) continue;
+      result[key] = (key === "properties" || key === "$defs") && value && typeof value === "object"
+        ? Object.fromEntries(Object.entries(value).map(([name, child]) => [name, clean(child)]))
+        : clean(value);
+    }
+    return result;
+  };
+  return clean(schema) as Record<string, unknown>;
+}
 
 export function claudeJsonSchema(schema: unknown): Record<string, unknown> {
   const clean = (node: unknown): unknown => {

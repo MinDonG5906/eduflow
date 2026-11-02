@@ -4,9 +4,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
+import { PDFParse } from "pdf-parse";
 import { chunkKnowledge } from "./knowledge";
 import { KnowledgeBase } from "./server/knowledge-base";
-import { addKnowledge, listKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
+import { addKnowledge, deleteKnowledge, listKnowledge, recheckKnowledge, searchKnowledgeRequest, updateKnowledge } from "./server/knowledge-handler";
+import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowledgePage } from "./server/knowledge-handler";
+import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
+import { createHash } from "node:crypto";
 
 test("persistent knowledge index retrieves original passages with source version and PDF page", () => {
   const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-"));
@@ -68,6 +72,45 @@ test("local knowledge API registers, searches and reversibly excludes a source",
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("deleting a registered PDF removes search chunks, review pages and its stored file", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-delete-"));
+  const url = "http://localhost:3001/api/knowledge";
+  const headers = { Origin: "http://localhost:3001", Host: "localhost:3001", "Content-Type": "application/json" };
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Oxygen monitoring before confined space entry");
+    pdf.addPage();
+    const bytes = Buffer.from(await pdf.save());
+    const base = new KnowledgeBase(directory);
+    const source = { title: "Confined space manual", origin: "official" as const, url: "https://example.org/manual",
+      published: "", revision: "" };
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    const pages = [
+      { page: 1, text: "Oxygen monitoring before confined space entry", method: "text" as const,
+        confidence: null, reviewReason: "", needsReview: false },
+      { page: 2, text: "Uncertain safety chart", method: "ocr" as const,
+        confidence: 50, reviewReason: "글자 판독이 불확실합니다.", needsReview: true },
+    ];
+    const document = base.addImported(source, hash, bytes, pages);
+    assert.equal(base.list()[0].pendingPages, 1);
+    assert.ok(base.search("Oxygen monitoring before confined space entry").length);
+    base.close();
+
+    const request = (id: string, requestHeaders = headers) => new Request(url, { method: "DELETE", headers: requestHeaders,
+      body: JSON.stringify({ id }) });
+    assert.equal((await deleteKnowledge(request(document.id, { ...headers, Origin: "https://example.org" }), directory)).status, 403);
+    assert.equal((await deleteKnowledge(request(document.id), directory)).status, 200);
+    assert.equal((await deleteKnowledge(request(document.id), directory)).status, 404);
+    const reopened = new KnowledgeBase(directory);
+    assert.deepEqual(reopened.list(), []);
+    assert.deepEqual(reopened.search("Oxygen monitoring before confined space entry"), []);
+    assert.deepEqual(reopened.reviewPages(document.id), []);
+    assert.equal(reopened.pdf(document.id), null);
+    assert.ok(reopened.addImported(source, hash, bytes, pages).id !== document.id);
+    reopened.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("large PDF registration can index selected original pages", async () => {
   const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-pages-"));
   try {
@@ -86,5 +129,123 @@ test("large PDF registration can index selected original pages", async () => {
     assert.equal(base.search("Fall protection anchorage inspection")[0]?.page, 2);
     assert.ok(base.search("Fall protection anchorage inspection").every((hit) => !hit.excerpt.includes("unrelated")));
     base.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("uncertain OCR page stays outside search until the user approves its extracted text", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-review-"));
+  const headers = { Origin: "http://localhost:3001", Host: "localhost:3001" };
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Fall protection anchorage inspection before elevated work begins");
+    pdf.addPage();
+    const bytes = Buffer.from(await pdf.save());
+    const analyzed = await analyzeKnowledgePdf(bytes, "", new AbortController().signal,
+      async () => ({ recognize: async () => ({ text: "Confined space requires oxygen measurement before work begins", confidence: 61 }), close: async () => {} }));
+    assert.equal(analyzed.pages[0].needsReview, false);
+    assert.equal(analyzed.pages[1].needsReview, true);
+    const base = new KnowledgeBase(directory);
+    const document = base.addImported({ title: "Safety manual", origin: "official", url: "https://example.org/manual",
+      published: "2026", revision: "1" }, createHash("sha256").update(bytes).digest("hex"), bytes, analyzed.pages);
+    assert.equal(document.pendingPages, 1);
+    assert.ok(base.search("Fall protection anchorage inspection").length);
+    assert.deepEqual(base.search("Confined space requires oxygen measurement"), []);
+    base.close();
+    const review = await listKnowledgeReview(new Request(`http://localhost:3001/api/knowledge/review?id=${document.id}`), directory);
+    assert.equal((await review.json()).pages[0].status, "pending");
+    const original = await readKnowledgePdf(new Request(`http://localhost:3001/api/knowledge/file?id=${document.id}`), directory);
+    assert.equal(original.status, 200);
+    assert.equal(Buffer.compare(Buffer.from(await original.arrayBuffer()), bytes), 0);
+    const image = await renderKnowledgePage(new Request(`http://localhost:3001/api/knowledge/page?id=${document.id}&page=2`), directory);
+    assert.equal(image.status, 200);
+    assert.equal(image.headers.get("content-type"), "image/png");
+    assert.ok(Buffer.from(await image.arrayBuffer()).subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")));
+    const approved = await reviewKnowledgePage(new Request("http://localhost:3001/api/knowledge/review", { method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: document.id, page: 2, action: "approve", text: "Confined space requires oxygen measurement before work begins" }),
+    }), directory);
+    assert.equal(approved.status, 200);
+    const reopened = new KnowledgeBase(directory);
+    assert.equal(reopened.list()[0].pendingPages, 0);
+    assert.equal(reopened.search("Confined space requires oxygen measurement")[0]?.page, 2);
+    reopened.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("low-confidence OCR cannot replace readable PDF title text just because it is longer", async () => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage().drawText("TBM activity stages");
+  const analyzed = await analyzeKnowledgePdf(Buffer.from(await pdf.save()), "", new AbortController().signal,
+    async () => ({ recognize: async () => ({ text: "Dx random AO 2 and misleading extra letters", confidence: 55 }),
+      close: async () => {} }));
+  assert.equal(analyzed.pages[0].text, "TBM activity stages");
+  assert.equal(analyzed.pages[0].method, "text");
+  assert.equal(analyzed.pages[0].needsReview, true);
+  assert.match(analyzed.pages[0].reviewReason, /빠진 글자/);
+});
+
+test("clear table cells are indexed with their row and column positions", async () => {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage();
+  for (const x of [40, 240, 440]) page.drawLine({ start: { x, y: 500 }, end: { x, y: 700 } });
+  for (const y of [500, 600, 700]) page.drawLine({ start: { x: 40, y }, end: { x: 440, y } });
+  page.drawText("Hazard", { x: 50, y: 650 });
+  page.drawText("Control", { x: 250, y: 650 });
+  page.drawText("Falling from height", { x: 50, y: 550 });
+  page.drawText("Use guardrails and harness", { x: 250, y: 550 });
+  const analyzed = await analyzeKnowledgePdf(Buffer.from(await pdf.save()), "", new AbortController().signal,
+    async () => { throw new Error("OCR must not run on a readable table"); });
+  assert.equal(analyzed.pages[0].needsReview, false);
+  assert.match(analyzed.pages[0].text, /행 2 \| 열 1: Falling from height \| 열 2: Use guardrails and harness/);
+});
+
+test("a single-column text box detected as a table does not require page review", async () => {
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage();
+  for (const x of [40, 440]) page.drawLine({ start: { x, y: 500 }, end: { x, y: 700 } });
+  for (const y of [500, 600, 700]) page.drawLine({ start: { x: 40, y }, end: { x: 440, y } });
+  page.drawText("Confined space requires oxygen measurement", { x: 50, y: 650 });
+  page.drawText("Ventilation and gas monitoring must continue", { x: 50, y: 550 });
+  const bytes = Buffer.from(await pdf.save());
+  const parser = new PDFParse({ data: new Uint8Array(bytes) });
+  try {
+    const detected = await parser.getTable();
+    assert.equal(detected.pages[0].tables[0][0].length, 1);
+  } finally { await parser.destroy(); }
+  const analyzed = await analyzeKnowledgePdf(bytes, "", new AbortController().signal,
+    async () => { throw new Error("OCR must not run on readable boxed text"); });
+  assert.equal(analyzed.pages[0].needsReview, false);
+  assert.match(analyzed.pages[0].text, /Confined space requires oxygen measurement/);
+});
+
+test("a previously pending page can be rechecked and indexed without manual approval", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-recheck-"));
+  try {
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText("Fall protection anchorage inspection before elevated work begins");
+    pdf.addPage().drawText("Confined space oxygen measurement before entry begins");
+    const bytes = Buffer.from(await pdf.save());
+    const base = new KnowledgeBase(directory);
+    const document = base.addImported({ title: "Earlier manual", origin: "official", url: "https://example.org/manual",
+      published: "", revision: "" }, createHash("sha256").update(bytes).digest("hex"), bytes,
+    [{ page: 1, text: "Earlier uncertain extraction", method: "ocr", confidence: 50,
+      reviewReason: "글자 판독이 불확실합니다.", needsReview: true },
+    { page: 2, text: "Earlier uncertain extraction", method: "ocr", confidence: 50,
+      reviewReason: "글자 판독이 불확실합니다.", needsReview: true }]);
+    assert.deepEqual(base.search("Fall protection anchorage inspection"), []);
+    base.resolvePage(document.id, 2, "approve", "Confined space oxygen measurement before entry begins");
+    base.close();
+    const response = await recheckKnowledge(new Request("http://localhost:3001/api/knowledge/recheck", {
+      method: "POST", headers: { Origin: "http://localhost:3001", Host: "localhost:3001", "Content-Type": "application/json" },
+      body: JSON.stringify({ id: document.id }),
+    }), directory);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { autoIndexed: 1, pendingPages: 0 });
+    const reopened = new KnowledgeBase(directory);
+    assert.equal(reopened.reviewPages(document.id)[0].status, "auto_indexed");
+    assert.equal(reopened.reviewPages(document.id)[1].status, "approved");
+    assert.equal(reopened.search("Fall protection anchorage inspection")[0]?.page, 1);
+    assert.equal(reopened.search("Confined space oxygen measurement")[0]?.page, 2);
+    reopened.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

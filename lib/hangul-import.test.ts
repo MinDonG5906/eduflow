@@ -10,7 +10,7 @@ import { DocumentImportError, importDocumentRequest } from "./server/document-im
 import { readDocumentUpload } from "./document-upload";
 import { pdfSourceSchema, selectPdfPages, sourceFormat, sourceUnit } from "./pdf-source";
 import { readPdfGenerationRequest } from "./server/pdf-input";
-import { defaults, generateDemo, markdown, sample, csv } from "./storyboard";
+import { defaults, generateDemo, markdown, sample } from "./storyboard";
 import { captureGeneration, readDraft, serializeDraft } from "./studio-state";
 
 const signal = () => new AbortController().signal;
@@ -153,7 +153,6 @@ test("selected Hangul pages alone reach generation input and retain page mapping
     const draft = { manuscript: "", settings: defaults, board, document };
     assert.deepEqual(readDraft(serializeDraft(draft)), draft);
     assert.ok(markdown(board).includes(`원본 ${sourceFormat(name)}: ${name}\n선택 페이지: 2`));
-    assert.ok(csv(board).includes(`"${name}","2"`));
   }
 });
 

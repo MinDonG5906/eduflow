@@ -19,7 +19,7 @@ export function useGeneratorStatus(onError: (message: string) => void): Generato
           if (!response.ok) throw new Error();
           const status = await response.json();
           if (!["ai", "demo"].includes(status.mode) || typeof status.available !== "boolean" || typeof status.label !== "string" ||
-              ![null, "OpenAI", "Anthropic"].includes(status.vendor)) throw new Error();
+              ![null, "OpenAI", "Anthropic", "Google"].includes(status.vendor)) throw new Error();
           setGenerator({ mode: status.mode, available: status.available, label: status.label, vendor: status.vendor });
         }).catch(() => { if (!signal.aborted) onError("생성 연결 상태를 확인하지 못했습니다. 화면을 새로고침해 주세요."); });
     };

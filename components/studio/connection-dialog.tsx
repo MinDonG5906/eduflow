@@ -12,8 +12,9 @@ type Action = Record<string, unknown> & { action: string };
 
 const providerText: Record<Provider, { title: string; detail: string }> = {
   demo: { title: "무료 데모", detail: "원문을 나누는 데모 · 외부 AI 전송 없음" },
-  "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $1·월 $5 한도" },
+  "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $5·월 $10 한도" },
   "anthropic-api": { title: "Claude API 키", detail: "Claude Console 키로 결제 · 같은 비용 한도" },
+  "gemini-api": { title: "Gemini (팀 키)", detail: "운영자가 서버에 넣은 팀 키 사용 · 키 입력 없이 바로 생성" },
   chatgpt: { title: "ChatGPT 로그인", detail: "Plus·Pro 플랜 사용량으로 생성" },
   "claude-subscription": { title: "Claude 구독 (개인 실험)", detail: "이 PC의 Claude Code 로그인 사용 · 기본 꺼짐" },
 };
@@ -48,7 +49,7 @@ function KeyForm({ vendor, saved, onSave, onRemove, busy }: {
       </label>
       <label className="connection-check">
         <input type="checkbox" checked={consent} disabled={busy} onChange={(e) => setConsent(e.target.checked)} />
-        <span>유료 호출에 동의합니다. 이 PC 기준 하루 $1·월 $5 한도 안에서만 호출합니다.</span>
+        <span>유료 호출에 동의합니다. 이 PC 기준 하루 $5·월 $10 한도 안에서만 호출합니다.</span>
       </label>
       <Button disabled={busy || key.trim().length < 10 || !consent}
         onClick={async () => { if (await onSave(key.trim())) { setKey(""); setConsent(false); } }}>
@@ -69,6 +70,7 @@ export function ConnectionDialog({ open, onOpenChange, onNotice }: {
   const [busy, setBusy] = useState(false);
   const [models, setModels] = useState<{ slug: string; name: string }[] | null>(null);
   const loopback = typeof window === "undefined" || window.location.hostname === "127.0.0.1";
+  const [imageConsent, setImageConsent] = useState(false);
 
   async function send(body: Action | null) {
     setBusy(true);
@@ -162,6 +164,22 @@ export function ConnectionDialog({ open, onOpenChange, onNotice }: {
               onRemove={() => change({ action: "removeKey", vendor: "anthropic" })} />
           </>}
 
+          {selected === "gemini-api" && (status.gemini.teamKey && status.gemini.model ? <>
+            <p className="connection-note">
+              <KeyRound size={14} /> 팀 키가 이 PC의 서버에 설정되어 있습니다 · 모델 {status.gemini.label}
+            </p>
+            <p className="connection-note">
+              키는 서버 설정 파일에만 있고 화면에는 나오지 않습니다. Google 무료 등급 키는 입력한 원고가 Google 제품
+              개선에 쓰일 수 있으니 공개해도 되는 자료로 사용해 주세요.
+            </p>
+          </> : (
+            <p className="connection-error" role="alert">
+              {status.gemini.teamKey
+                ? "서버의 EDUFLOW_GEMINI_MODEL이 지원하지 않는 모델입니다. 운영자에게 설정 확인을 요청해 주세요."
+                : "이 PC의 서버에 Gemini 팀 키가 없습니다. 운영자가 .env.local에 EDUFLOW_GEMINI_API_KEY를 넣고 서버를 다시 시작해야 합니다."}
+            </p>
+          ))}
+
           {selected === "chatgpt" && <div className="connection-fields">
             {status.chatgpt.signedIn ? <>
               <div className="connection-saved">
@@ -209,6 +227,16 @@ export function ConnectionDialog({ open, onOpenChange, onNotice }: {
               <span>위 내용을 이해했으며 본인 계정으로만 사용합니다.</span>
             </label>
           </div>}
+
+          <section className="connection-image-settings">
+            <h3>스토리보드 이미지 생성</h3>
+            <p className="connection-note">이미지 생성 연결: {status.sceneImages.vendor ?? "연결 필요"}. 기존 OpenAI 키 또는 Gemini 팀 키를 사용하며 글 생성 모델 선택은 유지합니다. 유료 호출은 하루 $5·월 $10 한도를 함께 사용합니다.</p>
+            {!status.sceneImages.vendor ? <p className="connection-note">위에서 OpenAI 키를 연결하거나 운영자가 Gemini 팀 키를 연결하면 사용할 수 있습니다.</p>
+              : status.sceneImages.enabled ? <><p className="connection-note" role="status">스토리보드 이미지 생성이 켜져 있습니다. 장면 편집에서 이미지를 생성하세요.</p>
+                <Button variant="outline" disabled={busy} onClick={() => change({ action: "setImageEnabled", enabled: false, consent: true })}>이미지 생성 끄기</Button></>
+              : <><label className="connection-check"><input type="checkbox" checked={imageConsent} disabled={busy} onChange={event => setImageConsent(event.target.checked)} />장면 내용·연결 근거·선택한 참고 이미지를 {status.sceneImages.vendor}로 전송하고 유료로 생성하는 데 동의합니다.</label>
+                <Button disabled={busy || !imageConsent} onClick={async () => { if (await change({ action: "setImageEnabled", enabled: true, consent: true })) setImageConsent(false); }}>스토리보드 이미지 생성 켜기</Button></>}
+          </section>
           {error && <p className="connection-error" role="alert">{error}</p>}
         </>}
       </DialogContent>

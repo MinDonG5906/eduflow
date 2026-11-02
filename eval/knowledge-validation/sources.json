@@ -1,0 +1,42 @@
+[
+  {
+    "id": "fall-net-2025", "filename": "fall-net-2025.pdf", "title": "추락방호망 설치 기술지원규정",
+    "url": "https://portal.kosha.or.kr/openapi/v1/file/down/FL00021379766/3",
+    "revision": "A-G-1-2025", "published": "2025-03", "pages": [7], "totalPages": 18,
+    "sha256": "adac02929d30d8cae251bc1fd57cacc3df6579d826bf3de85bcfdaf3be1dcd5f",
+    "purpose": "수치·단위·부정어와 그림 1의 본문·캡션 연결",
+    "reviewStatus": "선정 페이지 원본 이미지 확인. 정답 데이터 독립 검수 전."
+  },
+  {
+    "id": "ppe-2026", "filename": "ppe-2026.pdf", "title": "개인보호구의 사용 및 관리에 관한 기술지원규정",
+    "url": "https://portal.kosha.or.kr/openapi/v1/file/down/CTC2026012909222643246624/1",
+    "revision": "A-G-12-2026", "published": "2026-01", "pages": [6], "totalPages": 25,
+    "sha256": "d35d6957d1b97fce2102bf9b43df1f35a5cf0d08754727952ab9747e9ef38b9b",
+    "purpose": "작업명·보호구·보호대상 표의 셀 대응, 셀 내부 주석과 참조",
+    "reviewStatus": "선정 페이지 원본 이미지 확인. 정답 데이터 독립 검수 전."
+  },
+  {
+    "id": "grating-2026", "filename": "grating-2026.pdf", "title": "그레이팅 설치 등에 관한 기술지원규정",
+    "url": "https://portal.kosha.or.kr/openapi/v1/file/down/CTC2026012910001894276482/1",
+    "revision": "A-G-20-2026", "published": "2026-01", "pages": [5], "totalPages": 22,
+    "sha256": "f59892bd0f7b51a304a1623b0820ef337106570da01451f0c690cf0dc037603d",
+    "purpose": "여러 도해를 포함한 그림 1, 영문 부품명, 캡션 연결",
+    "reviewStatus": "선정 페이지 원본 이미지 확인. 정답 데이터 독립 검수 전."
+  },
+  {
+    "id": "roof-accident-2021", "filename": "roof-accident-2021.pdf", "title": "지붕재(칼라강판) 해체 중 떨어짐",
+    "url": "https://oshri.kosha.or.kr/kosha/data/regionalCase.do?articleNo=425353&attachNo=240203&mode=download",
+    "revision": "2021년 사고사례 · 판독 시험용", "published": "2021", "pages": [1], "totalPages": 1,
+    "sha256": "f80b66532acb287f2258f9a546916cb8300edcbc94e9721d7749952aa5651e34",
+    "purpose": "사진과 사고 개요의 연결, 표 안의 본문, 소수점 보존",
+    "reviewStatus": "원본 이미지 확인. 최신 법적 기준으로 사용하지 않음. 정답 데이터 독립 검수 전."
+  },
+  {
+    "id": "sif-guide-2023", "filename": "sif-guide-2023.pdf", "title": "대·중소기업 안전보건 상생협력사업 운영 매뉴얼 — SIF 가이드",
+    "url": "https://oshri.kosha.or.kr/kosha/data/healthandsafetyf.do?articleNo=441256&attachNo=250367&mode=download",
+    "revision": "2023년 8월 1차 개정 · 판독 시험용", "published": "2023-08", "pages": [11], "totalPages": 153,
+    "sha256": "daa9926fba739e55127328a1e0907583771f2c784303733e46f545778f874a5f",
+    "purpose": "두 인쇄 쪽이 한 PDF 페이지에 있는 배치, LOTO 사진·설명 대응, 읽기 순서",
+    "reviewStatus": "선정 페이지 원본 이미지 확인. 최신 법적 기준으로 사용하지 않음. 정답 데이터 독립 검수 전."
+  }
+]

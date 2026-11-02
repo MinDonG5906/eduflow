@@ -10,7 +10,7 @@ import { DocumentImportError, importDocumentRequest } from "./server/document-im
 import { readDocumentUpload } from "./document-upload";
 import { pdfSourceSchema, selectPdfPages, sourceNote } from "./pdf-source";
 import { readPdfGenerationRequest } from "./server/pdf-input";
-import { defaults, generateDemo, markdown, sample, csv } from "./storyboard";
+import { defaults, generateDemo, markdown, sample } from "./storyboard";
 import { readDraft, serializeDraft } from "./studio-state";
 
 const pptHeader = Buffer.from("d0cf11e0a1b11ae1", "hex");
@@ -149,6 +149,5 @@ test("selected PPT slides keep original numbers through generation input, draft 
   const draft = { manuscript: "", settings: defaults, board, document };
   assert.deepEqual(readDraft(serializeDraft(draft)), draft);
   assert.match(markdown(board), /원본 PPT: 교육.PPTX\n선택 슬라이드: 2/);
-  assert.ok(csv(board).includes('"교육.PPTX","2"'));
   assert.match(sourceNote({ name: "old.pdf", pages: [1] }), /원본 PDF: old.pdf\n선택 페이지: 1/);
 });

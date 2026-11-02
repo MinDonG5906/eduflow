@@ -7,7 +7,9 @@ export function editScene<K extends keyof Scene>(board: Board, index: number, ke
   return {
     ...board,
     scenes: board.scenes.map((s, i) =>
-      i === index ? { ...s, [key]: value, edited: Array.from(new Set([...s.edited, key])) } : s,
+      i === index ? { ...s, [key]: value,
+        ...(key === "image" && (value as Scene["image"])?.sourceType === "generated" ? { review: true } : {}),
+        edited: Array.from(new Set([...s.edited, key])) } : s,
     ),
   };
 }
@@ -33,5 +35,8 @@ export function removeScene(board: Board, index: number): Board | null {
 
 // A regenerated scene keeps the identity of the scene it replaces.
 export function replaceScene(board: Board, id: string, replacement: Scene): Board {
-  return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id } : s)) };
+  return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id,
+    ...(s.image && !replacement.image ? { image: s.image } : {}),
+    ...(s.visualPlacements ? { visualPlacements: s.visualPlacements } : {}),
+    ...(s.subtitleSettings ? { subtitleSettings: s.subtitleSettings } : {}) } : s)) };
 }
