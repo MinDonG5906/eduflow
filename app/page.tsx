@@ -7,6 +7,7 @@ import { ConnectionDialog } from "@/components/studio/connection-dialog";
 import { DocumentSource } from "@/components/studio/document-source";
 import { ManuscriptPanel } from "@/components/studio/manuscript-panel";
 import { SceneEditor } from "@/components/studio/scene-editor";
+import { ScriptView } from "@/components/studio/script-view";
 import { SceneList } from "@/components/studio/scene-list";
 import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel";
 import { ProgressDialog, StudioDialog, Toast } from "@/components/studio/studio-dialogs";
@@ -41,6 +42,9 @@ import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
+// Remembered per browser tab so a reload keeps the board view.
+const BOARD_MODE_KEY = "eduflow-board-mode";
+
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
   const [sourceDocument, setSourceDocument] = useState<SourceDocument | null>(null);
@@ -58,6 +62,9 @@ export default function Studio() {
   const [sceneSourceScope, setSceneSourceScope] = useState<"citation" | "selection">("citation");
   const [filename, setFilename] = useState("나의 스토리보드");
   const [reviewOnly, setReviewOnly] = useState(false);
+  // The board view only renders after the draft is restored on the client, so reading here cannot mismatch hydration.
+  const [boardMode, setBoardModeState] = useState<"scene" | "script">(() => { try { return sessionStorage.getItem(BOARD_MODE_KEY) === "script" ? "script" : "scene"; } catch { return "scene"; } });
+  const setBoardMode = (next: "scene" | "script") => { setBoardModeState(next); try { sessionStorage.setItem(BOARD_MODE_KEY, next); } catch {} };
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -119,6 +126,9 @@ export default function Studio() {
 
   function updateScene<K extends keyof Scene>(key: K, value: Scene[K]) {
     setBoard((b) => (b ? editScene(b, active, key, value) : b));
+  }
+  function editSceneAt<K extends keyof Scene>(index: number, key: K, value: Scene[K]) {
+    setBoard((b) => (b ? editScene(b, index, key, value) : b));
   }
   function loadSample() {
     setSourceDocument(null);
@@ -499,6 +509,11 @@ export default function Studio() {
                     </span>
                   </span>
                 </div>
+                <div className="segmented board-mode" role="group" aria-label="편집 보기">
+                  {([["scene", "장면 편집"], ["script", "대본 보기"]] as const).map(([mode, label]) => (
+                    <button key={mode} aria-pressed={boardMode === mode} className={boardMode === mode ? "active" : ""} onClick={() => setBoardMode(mode)}>{label}</button>
+                  ))}
+                </div>
                 {board.generation?.warnings.filter(warning => warning.startsWith(TERM_CORRECTION_NOTICE_PREFIX)).map(warning => (
                   <p key={warning} className="term-correction-notice" role="status">{warning}</p>
                 ))}
@@ -508,7 +523,9 @@ export default function Studio() {
                     현재 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 조정해 주세요.
                   </div>
                 )}
-                <div className="board-layout">
+                {boardMode === "script" ? (
+                  <ScriptView scenes={board.scenes} onEdit={editSceneAt} onOpen={index => { setActive(index); setBoardMode("scene"); }} />
+                ) : <div className="board-layout">
                   <SceneList
                     scenes={board.scenes}
                     active={active}
@@ -543,7 +560,7 @@ export default function Studio() {
                       onOpenConnection={() => setConnectionOpen(true)}
                     />
                   )}
-                </div>
+                </div>}
               </>
             )
           )}
