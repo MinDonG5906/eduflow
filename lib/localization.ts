@@ -116,6 +116,8 @@ const scripts: Record<string, RegExp> = {
 const numbers = (value: string) => value.replace(/[០-៩]/g, digit => String(digit.charCodeAt(0) - 0x17e0))
   .match(/\d+(?:[.,]\d+)?/g)?.map(number => number.replace(",", ".")) ?? [];
 
+const koreanInParentheses = /[(（]([^()（）]*\p{Script=Hangul}[^()（）]*)[)）]/gu;
+
 // Local checks only: no extra AI call. Each warning asks the planner to compare,
 // it does not prove the translation is right or wrong.
 export function localizationWarnings(master: MasterText, translated: MasterText & { backTranslation: MasterText }, language: LocalizationTarget) {
@@ -123,7 +125,7 @@ export function localizationWarnings(master: MasterText, translated: MasterText 
   const target = viewerLanguage(language);
   const body = `${translated.narration}\n${translated.subtitle}`;
   // Korean site terms in parentheses are expected; any other Korean left in the text counts against the target.
-  const checked = language === "ko-easy" ? body : body.replace(/[(（][^()（）]*\p{Script=Hangul}[^()（）]*[)）]/gu, "");
+  const checked = language === "ko-easy" ? body : body.replace(koreanInParentheses, "");
   const letters = checked.match(/\p{L}/gu) ?? [];
   const sourceHasText = /\p{L}/u.test(`${master.narration}${master.subtitle}`);
   if (sourceHasText && (!letters.length || letters.filter(letter => scripts[target.script].test(letter)).length / letters.length < .6))
@@ -136,6 +138,15 @@ export function localizationWarnings(master: MasterText, translated: MasterText 
     return false;
   });
   if (missing.length) warnings.push(`원문의 숫자 ${[...new Set(missing)].join(", ")}이(가) 번역에 없습니다.`);
+  // A Korean term written beside the translation, e.g. "(안전모)", must come from the master.
+  // Spaces are ignored and particles in the master still match: "안전모를" contains "안전모".
+  if (language !== "ko-easy") {
+    const source = `${master.title}${master.narration}${master.subtitle}`.replace(/\s/g, "");
+    const added = [...new Set([...`${translated.title}\n${body}`.matchAll(koreanInParentheses)]
+      .flatMap(match => match[1].split(/[·,，、/]/))
+      .map(term => term.trim()).filter(term => /\p{Script=Hangul}/u.test(term) && !source.includes(term.replace(/\s/g, ""))))];
+    if (added.length) warnings.push(`원문에 없는 한국어 용어 ${added.slice(0, 5).join(", ")}이(가) 번역에 있습니다.`);
+  }
   const lines = (value: string) => value.trim().split(/\r?\n/).length;
   if (lines(master.subtitle) !== lines(translated.subtitle))
     warnings.push(`자막 줄 수가 원문(${lines(master.subtitle)}줄)과 다릅니다.`);

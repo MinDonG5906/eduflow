@@ -64,6 +64,18 @@ test("local checks flag wrong script, missing numbers and changed subtitle lines
   assert.deepEqual(localizationWarnings(master, khmer, "km"), [], "Khmer digits count as the same numbers");
 });
 
+test("a Korean term beside the translation must come from the master", () => {
+  const master = { title: "추락 방지", narration: "높이 2m 이상에서는 안전대를 걸고 안전모를 씁니다.", subtitle: "안전대 착용" };
+  const back = { title: "추락 방지", narration: "2m 이상에서 안전대를 거세요.", subtitle: "안전대 착용" };
+  const ok = { title: "Phòng chống ngã", narration: "Từ 2m trở lên, móc dây an toàn và đội mũ (안전대·안전모).", subtitle: "Đeo dây an toàn (안 전 대)", backTranslation: back };
+  assert.deepEqual(localizationWarnings(master, ok, "vi"), [], "particles, spaces and joined terms still match");
+  const invented = { ...ok, narration: "Từ 2m trở lên, móc dây an toàn (안전대) và đeo găng tay (안전장갑).", subtitle: "佩戴安全带（안전대, 보안경）" };
+  const warnings = localizationWarnings(master, invented, "zh-Hans");
+  assert.ok(warnings.some(warning => warning.includes("원문에 없는 한국어 용어 안전장갑, 보안경")));
+  assert.ok(!localizationWarnings(master, { ...master, narration: "안전대(추락 방지 장비)를 거세요.", backTranslation: back }, "ko-easy")
+    .some(warning => warning.includes("원문에 없는")), "easy Korean may explain words in parentheses");
+});
+
 test("translations map back to scene ids and record the master they were made from", async () => {
   const request = localizationRequest(board, "vi");
   const result = await runLocalization(request, fakeAI(async (_, context) => {
