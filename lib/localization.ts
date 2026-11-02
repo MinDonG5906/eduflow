@@ -151,3 +151,18 @@ export function localizationState(board: Board, language: LocalizationTarget, sc
   return localized.basedOn === masterHash(scene) ? "ready" : "stale";
 }
 
+
+export type SubtitleMode = "translated" | "dual";
+// The board as viewers see it in one language: the title, narration and subtitles
+// are replaced; evidence and production notes stay Korean. "dual" puts the Korean
+// subtitle under the translation. Callers check pendingScenes before exporting.
+export function localizedBoard(board: Board, language: LocalizationTarget, mode: SubtitleMode = "translated"): Board {
+  const localization = board.localizations?.[language];
+  if (!localization) return board;
+  return { ...board, title: localization.title || board.title, scenes: board.scenes.map(scene => {
+    const localized = localization.scenes[scene.id];
+    if (!localized) return scene;
+    return { ...scene, title: localized.title || scene.title, narration: localized.narration,
+      subtitle: mode === "dual" && scene.subtitle.trim() ? `${localized.subtitle}\n${scene.subtitle}` : localized.subtitle };
+  }) };
+}

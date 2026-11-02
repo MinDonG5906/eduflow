@@ -273,13 +273,13 @@ export const fieldLabels: Record<string, string> = {
   reviewReason: "검토 사유",
   edited: "수정한 필드",
 };
-export function markdown(board: Board) {
+export function markdown(board: Board, language?: string) {
   const generation = board.generation;
   const modes = new Set(board.scenes.map((scene) => scene.generation?.mode ?? board.mode));
   const label = modes.size > 1 ? "AI·데모 장면 포함" : modes.has("ai") ? "AI 생성" : "원문 발췌 데모";
   const pdfNote = board.pdfSource ? sourceNote(board.pdfSource) : "";
   return pdfNote + (
-    `# ${board.title}\n\n생성 방식: ${label}\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}${generation.knowledge ? `\n${knowledgeUsageLabel(generation.knowledge)}\n${generation.knowledgeSources?.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n") ?? ""}` : ""}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
+    `# ${board.title}\n\n생성 방식: ${label}\n\n${language ? `시청자 언어: ${language}\n\n` : ""}${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}${generation.knowledge ? `\n${knowledgeUsageLabel(generation.knowledge)}\n${generation.knowledgeSources?.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n") ?? ""}` : ""}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
       board.settings,
     )
       .map(

@@ -1,4 +1,5 @@
-import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, Sparkles, X } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, BookOpen, Captions, CheckCircle2, ChevronDown, ChevronRight, Copy, Download, FileText, Film, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Board } from "@/lib/storyboard";
-import type { ExportFormat, GeneratorStatus, StudioModal } from "./types";
+import { localizationTargets, viewerLanguage, type ViewerLanguage } from "@/lib/languages";
+import { pendingScenes, type SubtitleMode } from "@/lib/localization";
+import type { ExportFormat, ExportOptions as ExportChoice, GeneratorStatus, StudioModal } from "./types";
 
 export function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   if (!message) return null;
@@ -108,7 +111,7 @@ export function StudioDialog({
   canGenerate: boolean;
   filename: string;
   onFilenameChange: (value: string) => void;
-  onExport: (format: ExportFormat) => void;
+  onExport: (format: ExportFormat, options: ExportChoice) => void;
   direction: string;
   onDirectionChange: (value: string) => void;
   isPdf: boolean;
@@ -217,14 +220,44 @@ function ExportOptions({
   reviewCount: number;
   filename: string;
   onFilenameChange: (value: string) => void;
-  onExport: (format: ExportFormat) => void;
+  onExport: (format: ExportFormat, options: ExportChoice) => void;
 }) {
+  const [language, setLanguage] = useState<ViewerLanguage>("ko");
+  const [subtitles, setSubtitles] = useState<SubtitleMode>("translated");
+  // A language exports only when every scene has a current translation.
+  const missing = (code: Exclude<ViewerLanguage, "ko">) => pendingScenes(board, code).length;
+  const choice = { language, subtitles };
+  const translated = language !== "ko";
   return (
     <>
       <div className="export-summary">
         <Film size={19} />
-        <span>{board.title}</span>
+        <span>{translated ? board.localizations?.[language]?.title || board.title : board.title}</span>
         <small>{board.scenes.length}개 장면</small>
+      </div>
+      <div className="export-language">
+        <label className="form-field">
+          언어
+          <div className="select-wrap">
+            <select value={language} onChange={(e) => setLanguage(e.target.value as ViewerLanguage)}>
+              <option value="ko">한국어 (원본)</option>
+              {localizationTargets.map(code => <option key={code} value={code} disabled={missing(code) > 0}>
+                {viewerLanguage(code).label}{missing(code) > 0 ? ` · ${missing(code)}개 장면 번역 필요` : ""}
+              </option>)}
+            </select>
+            <ChevronDown size={15} />
+          </div>
+        </label>
+        {translated && <label className="form-field">
+          자막
+          <div className="select-wrap">
+            <select value={subtitles} onChange={(e) => setSubtitles(e.target.value as SubtitleMode)}>
+              <option value="translated">{viewerLanguage(language).label}만</option>
+              <option value="dual">{viewerLanguage(language).label} + 한국어</option>
+            </select>
+            <ChevronDown size={15} />
+          </div>
+        </label>}
       </div>
       <label className="form-field">
         파일명
@@ -235,7 +268,7 @@ function ExportOptions({
         />
       </label>
       <div className="export-options">
-        <button onClick={() => onExport("pdf")}>
+        <button onClick={() => onExport("pdf", choice)}>
           <div>
             <FileText size={22} />
           </div>
@@ -245,7 +278,27 @@ function ExportOptions({
           </span>
           <Download size={17} />
         </button>
-        <button onClick={() => onExport("md")}>
+        <button onClick={() => onExport("srt", choice)}>
+          <div>
+            <Captions size={22} />
+          </div>
+          <span>
+            <strong>자막 파일 (SRT)</strong>
+            <small>장면 시간에 맞춘 자막, 영상 편집 프로그램용</small>
+          </span>
+          <Download size={17} />
+        </button>
+        <button onClick={() => onExport("vtt", choice)}>
+          <div>
+            <Captions size={22} />
+          </div>
+          <span>
+            <strong>자막 파일 (WebVTT)</strong>
+            <small>웹 영상 플레이어용</small>
+          </span>
+          <Download size={17} />
+        </button>
+        <button onClick={() => onExport("md", choice)}>
           <div>
             <FileText size={22} />
           </div>
@@ -255,7 +308,7 @@ function ExportOptions({
           </span>
           <Download size={17} />
         </button>
-        <button onClick={() => onExport("copy")}>
+        <button onClick={() => onExport("copy", choice)}>
           <div>
             <Copy size={22} />
           </div>

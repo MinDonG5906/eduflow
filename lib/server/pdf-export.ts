@@ -201,8 +201,11 @@ export async function exportStoryboardPdf({
   attachedPdfSource,
   sceneImages,
   compositionAssets,
+  language,
 }: {
   board: Board;
+  // Set when the board is a translation: its label and the Korean master text per scene.
+  language?: { label: string; master: Record<string, { narration: string; subtitle: string }> };
   pdfBuffer?: Uint8Array;
   attachedPdfSource?: PdfSource;
   sceneImages?: Map<string, Uint8Array>;
@@ -313,8 +316,12 @@ export async function exportStoryboardPdf({
       ...section("장면 목적", scene.purpose, type, leftWidth),
     ];
     const rightRows = [
-      ...section("자막", scene.subtitle, type, rightWidth),
-      ...section("내레이션", scene.narration, type, rightWidth),
+      ...section(language ? `자막 (${language.label})` : "자막", scene.subtitle, type, rightWidth),
+      ...section(language ? `내레이션 (${language.label})` : "내레이션", scene.narration, type, rightWidth),
+      ...(language ? [
+        ...section("한국어 자막", language.master[scene.id]?.subtitle ?? "", type, rightWidth),
+        ...section("한국어 내레이션", language.master[scene.id]?.narration ?? "", type, rightWidth),
+      ] : []),
       ...section("연출 가이드", scene.visual, type, rightWidth),
       ...section("시각 자료 제안", scene.assets, type, rightWidth),
       ...section("원문 근거", (scene.sourceId ? "("+scene.sourceId+") " : "")+scene.evidence, type, rightWidth),
@@ -346,7 +353,7 @@ export async function exportStoryboardPdf({
   if(!doc.getPageCount()) doc.addPage([PAGE_WIDTH,PAGE_HEIGHT]);
   for (const [i,page] of doc.getPages().entries()) {
     page.drawLine({start:{x:MARGIN_X,y:32},end:{x:PAGE_WIDTH-MARGIN_X,y:32},color:lineColor,thickness:0.6});
-    await type.draw(page,"대상: "+board.settings.audience+"  /  총 예상 시간: "+totalDuration+"초",{x:MARGIN_X,y:19,size:8,color:body});
+    await type.draw(page,"대상: "+board.settings.audience+(language?"  /  언어: "+language.label:"")+"  /  총 예상 시간: "+totalDuration+"초",{x:MARGIN_X,y:19,size:8,color:body});
     const number=(i+1)+" / "+doc.getPageCount();page.drawText(number,{x:PAGE_WIDTH-MARGIN_X-fonts.regular.widthOfTextAtSize(number,8),y:19,size:8,font:fonts.regular,color:body});
   }
   return doc.save();

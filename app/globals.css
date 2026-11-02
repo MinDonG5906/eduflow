@@ -466,6 +466,7 @@ textarea.scene-title-input { min-height: 40px; padding-block: 4px; line-height: 
 .export-summary > span { flex: 1; overflow-wrap: anywhere; }
 .export-summary small { white-space: nowrap; color: var(--body); }
 .export-options { display: grid; gap: 10px; }
+.export-language { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .export-options > button { display: flex; align-items: center; gap: 14px; padding: 16px; text-align: left; border: 1px solid var(--hairline-strong); border-radius: 8px; background: var(--canvas); }
 .export-options > button:hover { background: var(--canvas-soft); border-color: var(--ink); }
 .export-options > button > div { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; background: var(--surface); }

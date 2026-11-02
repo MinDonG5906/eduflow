@@ -13,7 +13,7 @@ import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel
 import { ProgressDialog, StudioDialog, Toast } from "@/components/studio/studio-dialogs";
 import { ErrorBanner, StudioStepper, StudioTopbar } from "@/components/studio/studio-header";
 import { StudioSidebar } from "@/components/studio/studio-sidebar";
-import type { ExportFormat, StudioModal, StudioView } from "@/components/studio/types";
+import type { ExportFormat, ExportOptions, StudioModal, StudioView } from "@/components/studio/types";
 import { useDraftStorage } from "@/hooks/use-draft-storage";
 import { canStartGeneration } from "@/lib/generation-availability";
 import { useGeneratorStatus } from "@/hooks/use-generator-status";
@@ -41,7 +41,8 @@ import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
 import { useLocalization } from "@/hooks/use-localization";
 import { localizationTargets, viewerLanguage, viewerLanguages, type ViewerLanguage } from "@/lib/languages";
-import { editLocalizedScene, editLocalizedTitle, pendingScenes } from "@/lib/localization";
+import { editLocalizedScene, editLocalizedTitle, localizedBoard, pendingScenes } from "@/lib/localization";
+import { srt, vtt } from "@/lib/subtitles";
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
@@ -339,13 +340,26 @@ export default function Studio() {
       setError("저장 원본을 내려받지 못했습니다. 기존 저장 데이터는 계속 보호됩니다. 브라우저 다운로드 권한을 확인해 주세요.");
     }
   }
-  async function exportBoard(format: ExportFormat) {
+  async function exportBoard(format: ExportFormat, { language, subtitles }: ExportOptions) {
     if (!board) return;
+    const translated = language !== "ko";
+    if (translated && pendingScenes(board, language).length) return notify("번역되지 않은 장면이 있어 내보낼 수 없어요.");
+    const target = translated ? localizedBoard(board, language, subtitles) : board;
+    const label = translated ? viewerLanguage(language).label : undefined;
+    const name = translated ? `${filename}-${language}` : filename;
     try {
+      if (format === "srt" || format === "vtt") {
+        downloadText(format === "srt" ? srt(target) : vtt(target), format === "srt" ? "application/x-subrip;charset=utf-8" : "text/vtt;charset=utf-8", exportFilename(name, format));
+        notify(`${format === "srt" ? "SRT" : "WebVTT"} 자막 파일을 내보냈어요.`);
+        return;
+      }
       if (format === "pdf") {
         notify("PDF 스토리보드를 생성하고 있어요...");
         const formData = new FormData();
-        formData.set("board", JSON.stringify(board));
+        formData.set("board", JSON.stringify(target));
+        if (label) formData.set("language", JSON.stringify({ label,
+          // Dual subtitles already carry the Korean lines; an empty section is left out.
+          master: Object.fromEntries(board.scenes.map(scene => [scene.id, { narration: scene.narration, subtitle: subtitles === "dual" ? "" : scene.subtitle }])) }));
         if (pdfReady && pdf.selected && sourceDocument?.selectedPages?.length) {
           formData.set("pdf", pdf.selected, "selected-pages.pdf");
           formData.set("pdfSource", JSON.stringify({ name: sourceDocument.name, pages: sourceDocument.selectedPages }));
@@ -371,18 +385,18 @@ export default function Studio() {
           throw new Error(errData.error || "PDF 생성에 실패했습니다.");
         }
         const blob = await response.blob();
-        downloadBlob(blob, exportFilename(filename, "pdf"));
+        downloadBlob(blob, exportFilename(name, "pdf"));
         notify("PDF 스토리보드를 내보냈어요.");
         setModal(null);
         return;
       }
-      const content = markdown(board);
+      const content = markdown(target, label);
       if (format === "copy") {
         await navigator.clipboard.writeText(content);
         notify("전체 스토리보드를 복사했어요.");
         return;
       }
-      downloadText(content, "text/markdown;charset=utf-8", exportFilename(filename, format));
+      downloadText(content, "text/markdown;charset=utf-8", exportFilename(name, format));
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
     } catch (e) {
       setModal(null);
