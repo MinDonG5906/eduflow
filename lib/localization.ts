@@ -8,15 +8,17 @@ export const LOCALIZATION_CONTRACT = "eduflow-localization-v1" as const;
 export const MAX_LOCALIZED_SCENES = 30;
 
 export type MasterText = Pick<Scene, "title" | "narration" | "subtitle">;
-// FNV-1a over the master text, so client and server agree without async crypto.
-export function masterHash({ title, narration, subtitle }: MasterText) {
+// FNV-1a, so client and server agree without async crypto.
+function fnv(value: unknown) {
   let hash = 0x811c9dc5;
-  for (const char of JSON.stringify([title, narration, subtitle])) {
+  for (const char of JSON.stringify(value)) {
     hash ^= char.codePointAt(0)!;
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
 }
+export const masterHash = ({ title, narration, subtitle }: MasterText) => fnv([title, narration, subtitle]);
+export const titleHash = (title: string) => fnv(title);
 
 const textFields = { title: z.string().max(400), narration: z.string().max(30000), subtitle: z.string().max(3000) };
 export const localizedSceneSchema = z.object({
@@ -33,6 +35,8 @@ export const localizationSchema = z.object({
   promptVersion: z.string().min(1).max(100),
   createdAt: z.string().datetime(),
   title: z.string().max(400),
+  // The Korean title the translated title was made from. Absent in early drafts.
+  titleBasedOn: z.string().regex(/^[0-9a-f]{8}$/).optional(),
   scenes: z.record(z.string(), localizedSceneSchema),
 });
 export type Localization = z.infer<typeof localizationSchema>;
@@ -58,19 +62,23 @@ export function localizationRequest(board: Board, language: LocalizationTarget, 
 }
 
 // Scenes may be translated in batches; a newer batch replaces only its own scenes.
-// Scenes deleted while a batch was running are dropped.
+// Scenes deleted while a batch was running are dropped. The translated title is
+// replaced only when the Korean title changed, so a planner's edit survives re-translation.
 export function applyLocalization(board: Board, language: LocalizationTarget, result: Localization): Board {
   const previous = board.localizations?.[language];
   const current = new Set(board.scenes.map(scene => scene.id));
   const scenes = Object.fromEntries(Object.entries({ ...previous?.scenes, ...result.scenes }).filter(([id]) => current.has(id)));
-  return { ...board, localizations: { ...board.localizations, [language]: { ...result, scenes } } };
+  const keepTitle = previous?.titleBasedOn !== undefined && previous.titleBasedOn === result.titleBasedOn;
+  return { ...board, localizations: { ...board.localizations, [language]: { ...result, title: keepTitle ? previous.title : result.title, scenes } } };
 }
 
 // A planner's correction keeps the master it was translated from; checks rerun on the new text.
+// The back-translation of an edited field no longer describes it, so it is cleared.
 export function editLocalizedScene(board: Board, language: LocalizationTarget, scene: Scene, patch: Partial<MasterText>): Board {
   const localization = board.localizations?.[language], localized = localization?.scenes[scene.id];
   if (!localization || !localized) return board;
-  const next = { ...localized, ...patch };
+  const next = { ...localized, ...patch,
+    backTranslation: { ...localized.backTranslation, ...Object.fromEntries(Object.keys(patch).map(key => [key, ""])) } };
   next.warnings = localizationWarnings(scene, next, language);
   return { ...board, localizations: { ...board.localizations, [language]: { ...localization, scenes: { ...localization.scenes, [scene.id]: next } } } };
 }
@@ -114,9 +122,11 @@ export function localizationWarnings(master: MasterText, translated: MasterText 
   const warnings: string[] = [];
   const target = viewerLanguage(language);
   const body = `${translated.narration}\n${translated.subtitle}`;
-  // Korean glossary terms in parentheses are expected, so Hangul is ignored for other languages.
-  const letters = (body.match(/\p{L}/gu) ?? []).filter(letter => language === "ko-easy" || !scripts.Hangul.test(letter));
-  if (letters.length && letters.filter(letter => scripts[target.script].test(letter)).length / letters.length < .6)
+  // Korean site terms in parentheses are expected; any other Korean left in the text counts against the target.
+  const checked = language === "ko-easy" ? body : body.replace(/[(（][^()（）]*\p{Script=Hangul}[^()（）]*[)）]/gu, "");
+  const letters = checked.match(/\p{L}/gu) ?? [];
+  const sourceHasText = /\p{L}/u.test(`${master.narration}${master.subtitle}`);
+  if (sourceHasText && (!letters.length || letters.filter(letter => scripts[target.script].test(letter)).length / letters.length < .6))
     warnings.push(`${target.label} 문자가 적습니다. 다른 언어로 쓰였는지 확인해 주세요.`);
   const available = numbers(`${translated.title}\n${body}`);
   const missing = numbers(`${master.title}\n${master.narration}\n${master.subtitle}`).filter(number => {
@@ -129,8 +139,8 @@ export function localizationWarnings(master: MasterText, translated: MasterText 
   const lines = (value: string) => value.trim().split(/\r?\n/).length;
   if (lines(master.subtitle) !== lines(translated.subtitle))
     warnings.push(`자막 줄 수가 원문(${lines(master.subtitle)}줄)과 다릅니다.`);
-  if (language !== "ko-easy" && !translated.backTranslation.narration.trim())
-    warnings.push("역번역이 없어 한국어로 대조할 수 없습니다.");
+  if (language !== "ko-easy" && (["narration", "subtitle"] as const).some(field => translated[field].trim() && !translated.backTranslation[field].trim()))
+    warnings.push("역번역이 없는 부분이 있어 한국어로 대조할 수 없습니다. 다시 번역하면 확인할 수 있습니다.");
   return warnings;
 }
 

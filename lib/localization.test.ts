@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GenerationError } from "./generation-contract";
-import { applyLocalization, editLocalizedScene, localizationRequest, localizationResponseSchema, localizationState, localizationWarnings, masterHash, pendingScenes, translationBatches } from "./localization";
+import { applyLocalization, editLocalizedScene, editLocalizedTitle, localizationRequest, localizationResponseSchema, localizationState, localizationWarnings, masterHash, pendingScenes, translationBatches } from "./localization";
 import { defaults, generateDemo, sample } from "./storyboard";
 import { readDraft, serializeDraft } from "./studio-state";
 import { readAIConfig } from "./server/ai-config";
@@ -90,7 +90,7 @@ test("a later batch replaces only its own scenes", async () => {
   const one = localizationRequest(board, "vi", [board.scenes[2].id]);
   const second = await runLocalization(one, fakeAI(async () => ({ title: "Tiêu đề mới", scenes: [{ ...translation(one).scenes[0], title: "Cảnh mới" }] })));
   const merged = applyLocalization(applyLocalization(board, "vi", first), "vi", second).localizations!.vi!;
-  assert.equal(merged.title, "Tiêu đề mới");
+  assert.equal(merged.title, "Trung hòa carbon từ cuộc sống hằng ngày", "the Korean title did not change, so its translation is kept");
   assert.equal(merged.scenes[board.scenes[2].id].title, "Cảnh mới");
   assert.equal(merged.scenes[board.scenes[0].id].title, "Cảnh 1");
 });
@@ -170,5 +170,47 @@ test("pending scenes, batches and planner edits", async () => {
   assert.deepEqual(sinhala.flat(), long.map(item => item.id), "every scene once, in order");
   assert.ok(sinhala.length > vietnamese.length, "complex scripts use smaller requests");
   assert.ok(translationBatches(Array.from({ length: 25 }, (_, i) => ({ ...board.scenes[0], id: String(i), narration: "짧음" })), "vi").every(batch => batch.length <= 10));
+});
+
+test("review fixes: edited title survives re-translation unless the Korean title changed", async () => {
+  const first = await runLocalization(localizationRequest(board, "vi"), fakeAI(async () => translation()));
+  const edited = editLocalizedTitle(applyLocalization(board, "vi", first), "vi", "Tiêu đề do người lập kế hoạch sửa");
+  const one = localizationRequest(edited, "vi", [board.scenes[0].id]);
+  const again = await runLocalization(one, fakeAI(async () => ({ ...translation(one), title: "Tiêu đề mới của mô hình" })));
+  assert.equal(applyLocalization(edited, "vi", again).localizations!.vi!.title, "Tiêu đề do người lập kế hoạch sửa");
+  const retitled = { ...edited, title: "새 콘텐츠 제목" };
+  const fresh = await runLocalization(localizationRequest(retitled, "vi"), fakeAI(async () => ({ ...translation(), title: "Tiêu đề mới" })));
+  assert.equal(applyLocalization(retitled, "vi", fresh).localizations!.vi!.title, "Tiêu đề mới", "a changed Korean title brings a new translation");
+});
+
+test("review fixes: editing a translation clears its now-outdated back-translation", async () => {
+  const localized = applyLocalization(board, "vi", await runLocalization(localizationRequest(board, "vi"), fakeAI(async () => translation())));
+  const scene = localized.scenes[0];
+  const edited = editLocalizedScene(localized, "vi", scene, { narration: "Câu đã sửa." }).localizations!.vi!.scenes[scene.id];
+  assert.equal(edited.backTranslation.narration, "");
+  assert.notEqual(edited.backTranslation.subtitle, "", "untouched fields keep theirs");
+  assert.ok(edited.warnings.some(warning => warning.includes("역번역이 없는 부분")));
+});
+
+test("review fixes: empty master fields stay empty and missing text is rejected", async () => {
+  const blank = { ...board, scenes: board.scenes.map((scene, i) => i === 0 ? { ...scene, narration: "", subtitle: "" } : scene) };
+  const request = localizationRequest(blank, "vi");
+  const answer = translation(request);
+  answer.scenes[0] = { ...answer.scenes[0], narration: "", subtitle: "" };
+  const result = await runLocalization(request, fakeAI(async () => answer));
+  assert.equal(result.scenes[blank.scenes[0].id].narration, "");
+  const invented = translation(request);
+  assert.equal((await runLocalization(request, fakeAI(async () => invented))).scenes[blank.scenes[0].id].subtitle, "", "text the master lacks is dropped");
+  const incomplete = translation(request); incomplete.scenes[1].narration = "";
+  await assert.rejects(runLocalization(request, fakeAI(async () => incomplete)), coded("INVALID_OUTPUT"));
+});
+
+test("review fixes: a reply left in Korean is flagged; parenthesized Korean terms are not", () => {
+  const master = { title: "안전모", narration: "현장에 들어가기 전에 안전모를 쓰세요.", subtitle: "안전모 착용" };
+  const back = { title: "", narration: "안전모를 쓰세요.", subtitle: "안전모" };
+  assert.ok(localizationWarnings(master, { ...master, backTranslation: back }, "vi").some(warning => warning.includes("베트남어 문자가 적습니다")));
+  const translated = { title: "Mũ bảo hộ", narration: "Hãy đội mũ bảo hộ (안전모) trước khi vào công trường.", subtitle: "Đội mũ bảo hộ (안전모)", backTranslation: back };
+  assert.ok(!localizationWarnings(master, translated, "vi").some(warning => warning.includes("문자가 적습니다")));
+  assert.ok(!localizationWarnings(master, { ...translated, narration: "佩戴安全帽（안전모）。", subtitle: "佩戴安全帽（안전모）" }, "zh-Hans").some(warning => warning.includes("문자가 적습니다")), "full-width parentheses too");
 });
 

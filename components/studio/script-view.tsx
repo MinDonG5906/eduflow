@@ -81,10 +81,10 @@ function ScriptRow({ scene, index, onEdit, onOpen, translation }: {
           {translation.localized.warnings.length > 0 && <ul className="script-warnings" role="status">
             {translation.localized.warnings.map(warning => <li key={warning}><AlertTriangle size={12} />{warning}</li>)}
           </ul>}
-          {translation.language !== "ko-easy" && <details className="script-back-translation" lang="ko">
+          {translation.language !== "ko-easy" && (translation.localized.backTranslation.narration || translation.localized.backTranslation.subtitle) && <details className="script-back-translation" lang="ko">
             <summary>역번역</summary>
-            <p>{translation.localized.backTranslation.narration}</p>
-            <p className="is-caption">{translation.localized.backTranslation.subtitle}</p>
+            {translation.localized.backTranslation.narration && <p>{translation.localized.backTranslation.narration}</p>}
+            {translation.localized.backTranslation.subtitle && <p className="is-caption">{translation.localized.backTranslation.subtitle}</p>}
           </details>}
         </> : <p className="script-empty">—</p>}
       </div>
