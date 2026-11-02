@@ -4,15 +4,16 @@ import { Image as ImageIcon, Layers3, Captions, MessageSquareText } from "lucide
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { Scene, VisualPlacement } from "@/lib/storyboard";
-import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, compositionVisuals, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
+import { clampVisualPlacement, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, compositionVisuals, relayoutVisualPlacements, setVisualUsage, resizeVisualPlacement, sceneVisualPlacements, type CompositionLayout } from "@/lib/scene-composition";
 
 export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSettingsChange, onTextChange, generationSettings }: {
   onTextChange: (field: "subtitle" | "narration" | "assets", value: string) => void; generationSettings: ReactNode;
   scene: Scene; preview?: string; busy: boolean; onChange: (placements: VisualPlacement[]) => void; onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
 }) {
   const id = useId();
-  const [tab, setTab] = useState("image");
-  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "subtitle", label: "자막", icon: Captions }, { id: "narration", label: "나레이션", icon: MessageSquareText }];
+  const [activeTab, setTab] = useState("image");
+  const tab = activeTab === "subtitle" || activeTab === "narration" ? "script" : activeTab;
+  const tabs = [{ id: "image", label: "이미지 생성", icon: ImageIcon }, { id: "visuals", label: "시각자료", icon: Layers3 }, { id: "script", label: "자막·나레이션", icon: Captions }];
   const [firstCaption, ...followingCaptions] = scene.subtitle.replace(/\r/g, "").split("\n");
   const secondCaption = followingCaptions.join("\n");
   const visuals = compositionVisuals(scene), placements = sceneVisualPlacements(scene);
@@ -88,31 +89,38 @@ export function SceneComposition({ scene, preview, busy, onChange, onSubtitleSet
             <label>추천 시각자료<select aria-label="배치할 추천 시각자료" value={selected} disabled={busy} onChange={event => setSelected(event.target.value)}>
               {visuals.map((visual, i) => <option key={visual.id} value={visual.id}>{i + 1} · {visual.kind === "table" ? "표" : "그림"} · {visual.title}</option>)}
             </select></label>
-            <label className="studio-toggle"><span>자료 표시</span><input type="checkbox" role="switch" aria-label="선택 자료 스토리보드에 표시" checked={Boolean(active)} disabled={busy} onChange={event => onChange(event.target.checked
-              ? [...placements, defaultVisualPlacements(scene).find(item => item.visualId === selected)!] : placements.filter(item => item.visualId !== selected))} /></label>
+            <label className="studio-toggle"><span>자료 표시</span><input type="checkbox" role="switch" aria-label="선택 자료 스토리보드에 표시" checked={Boolean(active)} disabled={busy} onChange={event => onChange(setVisualUsage(scene, selected, event.target.checked))} /></label>
           </div>
           <div className="composition-toolbar">
-            <label>전체 자료 배치<select aria-label="자료 빠른 배치" value="" disabled={busy} onChange={event => onChange(defaultVisualPlacements(scene, event.target.value as CompositionLayout))}>
+            <label>전체 자료 배치<select aria-label="자료 빠른 배치" value="" disabled={busy} onChange={event => onChange(relayoutVisualPlacements(scene, event.target.value as CompositionLayout))}>
               <option value="" disabled>배치 선택</option>{Object.entries(compositionLayouts).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </select></label>
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(defaultVisualPlacements(scene))}>추천 배치</Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => onChange(relayoutVisualPlacements(scene))}>추천 배치</Button>
           </div>
         </div> : <div className="composition-no-assets"><Layers3 size={24} /><strong>연결된 추천 자료가 없습니다</strong><span>장면에 추천된 사진·표가 생기면 여기에 표시됩니다.</span></div>}
         </div>}
-        {tab === "narration" && <label className="composition-text-field">나레이션{scene.edited.includes("narration") && <small>수정됨</small>}<Textarea aria-label="나레이션" value={scene.narration} rows={6} disabled={busy} placeholder="이 장면에서 전달할 나레이션을 작성하세요." onChange={event => onTextChange("narration", event.target.value)} /></label>}
-        {tab === "subtitle" && <div className="composition-subtitle-controls">
-          <div className="composition-control-row">
+        {tab === "script" && <div className="composition-script-editor">
+          <div className="composition-script-narration">
+            <div className="composition-script-heading"><label htmlFor={`${id}-narration`}><MessageSquareText size={16} aria-hidden="true" />나레이션</label>{scene.edited.includes("narration") && <span className="edited-tag">수정됨</span>}</div>
+            <Textarea id={`${id}-narration`} aria-label="나레이션" value={scene.narration} rows={8} disabled={busy} placeholder="이 장면에서 전달할 나레이션을 작성하세요." onChange={event => onTextChange("narration", event.target.value)} />
+          </div>
+          <section className="composition-script-captions" aria-labelledby={`${id}-caption-heading`}>
+            <div className="composition-script-heading"><h4 id={`${id}-caption-heading`}><Captions size={16} aria-hidden="true" />자막</h4>{scene.edited.includes("subtitle") && <span className="edited-tag">수정됨</span>}</div>
+            <div className="composition-subtitle-controls">
+              <label>자막 1<Textarea aria-label="자막 1" rows={2} value={firstCaption} disabled={busy} placeholder="장면의 핵심 내용" onChange={event => onTextChange("subtitle", `${event.target.value.replace(/\n/g, " ")}\n${secondCaption}`)} /></label>
+              <label>자막 2<Textarea aria-label="자막 2" rows={2} value={secondCaption} disabled={busy} placeholder="이어지는 설명이나 행동 안내" onChange={event => onTextChange("subtitle", `${firstCaption}\n${event.target.value}`)} /></label>
+            </div>
+            <div className="composition-caption-display">
             <label>자막 위치<select aria-label="스토리보드 자막 위치" value={scene.subtitleSettings?.position ?? "auto"} disabled={busy || scene.subtitleSettings?.enabled === false} onChange={event => onSubtitleSettingsChange({ enabled: scene.subtitleSettings?.enabled !== false, position: event.target.value as "auto" | "top" | "bottom" })}>
               <option value="auto">자동 배치</option><option value="bottom">화면 아래</option><option value="top">화면 위</option>
             </select></label>
             <label className="studio-toggle"><span>자막 표시</span><input type="checkbox" role="switch" aria-label="스토리보드 자막 표시" checked={scene.subtitleSettings?.enabled !== false} disabled={busy} onChange={event => onSubtitleSettingsChange({ enabled: event.target.checked, position: scene.subtitleSettings?.position ?? "auto" })} /></label>
-          </div>
-          <label>자막 1<Textarea aria-label="자막 1" rows={1} value={firstCaption} disabled={busy} placeholder="장면의 핵심 내용" onChange={event => onTextChange("subtitle", `${event.target.value.replace(/\n/g, " ")}\n${secondCaption}`)} /></label>
-          <label>자막 2<Textarea aria-label="자막 2" rows={1} value={secondCaption} disabled={busy} placeholder="이어지는 설명이나 행동 안내" onChange={event => onTextChange("subtitle", `${firstCaption}\n${event.target.value}`)} /></label>
-          {subtitle?.truncated && <p role="status" className="image-notice">자막이 길어 미리보기에서 일부를 줄였습니다. PDF 자막 항목에는 전체 문장이 유지됩니다.</p>}
+            </div>
+            {subtitle?.truncated && <p role="status" className="image-notice">자막이 길어 미리보기에서 일부를 줄였습니다. PDF 자막 항목에는 전체 문장이 유지됩니다.</p>}
+          </section>
         </div>}
       </div>
     </div>
-    {sources.missing.length > 0 && <p role="status" className="image-notice">추천 사진 일부를 불러오지 못했습니다. 아래 시각자료 추천에서 원본을 확인해 주세요.</p>}
+    {sources.missing.length > 0 && <p role="status" className="image-notice">추천 사진 일부를 불러오지 못했습니다. 아래 참고 시각자료 추천에서 원본을 확인해 주세요.</p>}
   </div>;
 }

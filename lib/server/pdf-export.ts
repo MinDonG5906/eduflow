@@ -1,12 +1,14 @@
+import { sceneReferenceLocations } from "../reference-location";
+import { sceneMemo } from "../scene-memo";
+import { evidenceReviewText } from "../evidence-review";
 import "server-only";
 import { access, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { PDFDocument, rgb, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import type { Board } from "../storyboard";
-import { citedPdfPage, sourceUnit, type PdfSource } from "../pdf-source";
+import type { PdfSource } from "../pdf-source";
 import { officeFontCandidates } from "./office-fonts";
-import { renderPdfPages } from "./pdf-render";
 import { compositionBackgroundRect, compositionStickers, type CompositionAssets } from "../scene-composition";
 import { createCompositionAssetLoader } from "./composition-assets";
 import { GlobalFonts } from "@napi-rs/canvas";
@@ -147,8 +149,6 @@ function drawRows(page: PDFPage, rows: Row[], x: number, top: number, bottom: nu
 }
 export async function exportStoryboardPdf({
   board,
-  pdfBuffer,
-  attachedPdfSource,
   sceneImages,
   compositionAssets,
 }: {
@@ -162,28 +162,7 @@ export async function exportStoryboardPdf({
   const fonts = await loadKoreanFonts(doc);
   const loadAssets = createCompositionAssetLoader();
 
-  // 1. Prepare PDF page screenshots if pdfBuffer is supplied
-  const pageImageMap = new Map<number, PDFImage>();
-  let imageRenderError: string | null = null;
-
-  if (pdfBuffer && pdfBuffer.byteLength > 0) {
-    try {
-      const renderedScreenshots = await renderPdfPages(pdfBuffer, undefined, true);
-      for (let i = 0; i < renderedScreenshots.length; i++) {
-        try {
-          const embedded = await doc.embedPng(renderedScreenshots[i]);
-          pageImageMap.set(i + 1, embedded);
-        } catch (embedError) {
-          console.warn(`Failed to embed PNG for page ${i + 1}:`, embedError);
-        }
-      }
-    } catch (err) {
-      console.warn("PDF screenshot rendering failed, proceeding with fallback copy:", err);
-      imageRenderError = "문서 미리보기 이미지를 가져오지 못했습니다.";
-    }
-  }
-
-  // 2. Prepare embedded images for each scene (directly attached sceneImages take precedence)
+  // Only scene images are backgrounds, matching the editor composition.
   const embeddedSceneImages = new Map<string, PDFImage>();
   if (sceneImages && sceneImages.size > 0) {
     for (const [sceneId, imgBuf] of sceneImages.entries()) {
@@ -225,7 +204,7 @@ export async function exportStoryboardPdf({
     let image: PDFImage | undefined;
     let imageSourceText = "";
 
-    // A. Priority 1: User directly attached image
+    // Generated or uploaded scene image; otherwise render the editor title card.
     if (embeddedSceneImages.has(scene.id)) {
       image = embeddedSceneImages.get(scene.id);
       if (scene.image?.sourceText?.trim()) {
@@ -239,23 +218,6 @@ export async function exportStoryboardPdf({
         imageSourceText = `AI 생성 스토리보드 (원본 증거 아님)${scene.image.generated ? ` · ${scene.image.generated.model}` : ""}\n${imageSourceText}`;
       }
     }
-    // B. Priority 2: PDF source document page screenshot
-    else {
-      const pdfSource = attachedPdfSource;
-      if (pdfSource && pdfBuffer) {
-        const pageNum = citedPdfPage(pdfSource, scene);
-        if (pageNum !== null) {
-          const position = pdfSource.pages.indexOf(pageNum);
-          if (position !== -1) {
-            image = pageImageMap.get(position + 1);
-            imageSourceText = `출처: 원본 ${pageNum}${sourceUnit(pdfSource.name)}`;
-          }
-        }
-      }
-    }
-
-
-    if (!image && imageRenderError) imageSourceText = "원본 참고 이미지를 표시하지 못했습니다. 제목 카드로 표시합니다.";
     const overlay = await doc.embedPng(await renderCompositionOverlay(scene, assets, !image));
     const leftRows = [
       ...section("이미지 출처", imageSourceText, fonts, leftWidth),
@@ -269,8 +231,9 @@ export async function exportStoryboardPdf({
       ...section("연출 가이드", scene.visual, fonts, rightWidth),
       ...section("시각 자료 제안", scene.assets, fonts, rightWidth),
       ...section("원문 근거", (scene.sourceId ? "("+scene.sourceId+") " : "")+scene.evidence, fonts, rightWidth),
-      ...section("보강 자료", (scene.references??[]).map(r=>r.title+"\n"+r.excerpt+(r.url?"\n"+r.url:"")).join("\n\n"), fonts, rightWidth),
-      ...section("검토 사유", scene.reviewReason || "", fonts, rightWidth, scene.review),
+      ...section("보강 자료", sceneReferenceLocations(scene), fonts, rightWidth),
+      ...section("문장별 근거 분류와 검토", evidenceReviewText(scene), fonts, rightWidth),
+      ...section("검토 메모", sceneMemo(scene), fonts, rightWidth),
     ];
     let part = 0;
     do {
@@ -280,8 +243,8 @@ export async function exportStoryboardPdf({
       page.drawRectangle({x:MARGIN_X,y:top-28,width:CONTENT_WIDTH,height:28,color:rgb(240/255,240/255,243/255)});
       const phase = scene.phase ? {intro:"도입부",body:"정보전달부",outro:"마무리"}[scene.phase] : "";
       page.drawText("SCENE "+String(idx+1).padStart(2,"0")+"   "+phase+(part?" / 이어짐 "+part:""),{x:MARGIN_X+12,y:top-18,size:10,font:fonts.bold,color:ink});
-      const status=scene.duration+"초  /  "+(scene.review?"검토 필요":"검토 완료");
-      page.drawText(status,{x:PAGE_WIDTH-MARGIN_X-12-fonts.bold.widthOfTextAtSize(status,10),y:top-18,size:10,font:fonts.bold,color:scene.review?warning:rgb(36/255,112/255,68/255)});
+      const status=scene.duration+"초";
+      page.drawText(status,{x:PAGE_WIDTH-MARGIN_X-12-fonts.bold.widthOfTextAtSize(status,10),y:top-18,size:10,font:fonts.bold,color:ink});
       const bodyTop=top-44;
       page.drawText("화면 / 참고 이미지",{x:MARGIN_X,y:bodyTop-10,size:10,font:fonts.bold,color:ink});
       const frameTop=bodyTop-24, frameHeight=leftWidth*9/16, frameY=frameTop-frameHeight;

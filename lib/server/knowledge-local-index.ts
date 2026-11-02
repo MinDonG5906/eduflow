@@ -1,4 +1,5 @@
 import "server-only";
+import { portableSearchIdentity } from "./knowledge-portability";
 import { chmodSync, closeSync, constants, existsSync, lstatSync, mkdirSync, openSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -65,7 +66,7 @@ export function localEmbedding(directory: string): Embed {
 export class LocalSearchIndex implements SearchIndex {
   readonly identity: string;
   constructor(private directory: string, private embed: Embed = localEmbedding(directory)) {
-    this.identity = contentHash(`local-v1\n${resolve(directory)}\n${EMBEDDING_MODEL}\n${EMBEDDING_REVISION}\nq8-mean128-112`);
+    this.identity = portableSearchIdentity(directory, EMBEDDING_MODEL, EMBEDDING_REVISION) ?? contentHash(`local-v1\n${resolve(directory)}\n${EMBEDDING_MODEL}\n${EMBEDDING_REVISION}\nq8-mean128-112`);
   }
   private open() {
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });

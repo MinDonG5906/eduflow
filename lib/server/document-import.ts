@@ -1,6 +1,7 @@
 import "server-only";
 import { MAX_DOCUMENT_CHARS, documentSchema, type SourceDocument } from "../documents";
 import { DocumentImportError } from "./document-import-error";
+import { pdfResources } from "./pdf-resources";
 import { convertPresentation } from "./presentation-import";
 import { convertHangul } from "./hangul-import";
 import { isHangul, isPresentation } from "../pdf-source";
@@ -56,7 +57,7 @@ export async function extractDocument(name: string, data: Buffer): Promise<Sourc
     } else if (extension === "pdf") {
       if (!data.subarray(0, 1024).includes(Buffer.from("%PDF-"))) throw new DocumentImportError("올바른 PDF 파일이 아닙니다.");
       const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: new Uint8Array(data), isEvalSupported: false });
+      const parser = new PDFParse({ ...pdfResources, data: new Uint8Array(data), isEvalSupported: false });
       try {
         pages = (await parser.getInfo()).total;
         if (pages > 200) throw new DocumentImportError("PDF는 최대 200페이지까지 읽을 수 있습니다. 필요한 부분을 나눠 올려 주세요.", 413);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { boundsSchema, knowledgeTableSchema, knowledgeVisionWireSchema, makeKnowledgeStructure } from "./knowledge-structure";
 import type { KnowledgeMetadata } from "./knowledge";
+import type { SourceDiagnostic } from "./server/knowledge-source-format";
 
 export const validationCandidateSchema = z.object({
   text: z.string().max(20000),
@@ -20,8 +21,9 @@ export type ValidationCandidate = z.infer<typeof validationCandidateSchema>;
 export type ValidationVerdict = z.infer<typeof validationVerdictSchema>;
 export type ValidationPage = {
   page: number; status: "pending" | "held" | "passed" | "processed" | "skipped";
+  skippedFailure?: { at: string; reason: string };
   attempts: { at: string; parserCommit?: string; initial?: string; parsed?: string;
-    candidate?: ValidationCandidate; verdict?: ValidationVerdict; reasons: string[]; imageHash?: string; model?: string;
+    candidate?: ValidationCandidate; sourceDiagnostic?: SourceDiagnostic; verdict?: ValidationVerdict; reasons: string[]; imageHash?: string; model?: string;
     policy?: "single-pass"; errorCode?: string; phase?: "render" | "parse" | "correct" | "verify"; calls?: number }[];
 };
 export type ValidationRun = {
@@ -37,7 +39,25 @@ export type ValidationRun = {
 };
 
 export type ValidationJob = { runId: string; state: "queued" | "processing" | "waiting" | "paused" | "complete" | "blocked";
-  updatedAt: string; nextAt: number; reason: string };
+  updatedAt: string; nextAt: number; reason: string; retrySince?: string };
+
+export const VALIDATION_RETRYABLE_ERRORS = ["CHECK_FAILED", "TIMEOUT", "PROVIDER_UNAVAILABLE", "INVALID_OUTPUT", "OUTPUT_TRUNCATED", "AI_REFUSED", "TOKEN_LIMIT_EXCEEDED"];
+export function exhaustedValidationPage(page: ValidationPage, retrySince?: string) {
+  const last = page.attempts.at(-1);
+  if (page.status !== "held" || !last?.errorCode || last.candidate) return false;
+  // Budget/authentication failures and user cancellation are not unreadable pages.
+  const retryable = VALIDATION_RETRYABLE_ERRORS;
+  const calls = page.attempts.reduce((sum, attempt) => sum + (attempt.calls ?? 0), 0);
+  return last.errorCode === "PAGE_CALL_LIMIT" && calls >= 3 || retryable.includes(last.errorCode) &&
+    (calls >= 3 || page.attempts.filter(attempt => retryable.includes(attempt.errorCode ?? "") && (!retrySince || attempt.at >= retrySince)).length >= 3);
+}
+
+export function validationCompletionReason(run: ValidationRun) {
+  const failed = run.pages.filter(page => page.status === "skipped" && page.skippedFailure).length;
+  const empty = run.pages.filter(page => page.status === "skipped" && !page.skippedFailure).length;
+  return [run.pages.some(isProcessedPage) ? "자동 판독·저장 완료" : "처리 완료 · 검색에 저장된 페이지 없음",
+    ...(failed ? [`판독 실패로 건너뜀 ${failed}쪽`] : []), ...(empty ? [`추출 내용 없음 ${empty}쪽`] : [])].join(" · ");
+}
 export function validationCounts(run: ValidationRun) {
   const counts = { passed: 0, pending: 0, waiting: 0, retrying: 0, exceptions: 0 };
   for (const page of run.pages) {

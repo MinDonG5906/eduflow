@@ -51,7 +51,9 @@ export function readDraft(raw: string): Draft {
   else if (legacy === "실무자/전문가") draft.settings.audience = "산업현장 근무자";
   // Remove the retired hard-coded note citations without discarding the storyboard text.
   for (const scene of draft.board?.scenes ?? []) {
-    const retained = scene.references?.filter((reference) => reference.id.startsWith("knowledge:"));
+    if (scene.memo === undefined && scene.edited.includes("reviewReason")) scene.memo = scene.reviewReason;
+    const retained = scene.references?.filter((reference) => reference.id.startsWith("knowledge:") ||
+      (reference.documentId && reference.id.startsWith(`${reference.documentId}:ragflow:`)));
     if (scene.references?.length && retained?.length !== scene.references.length) {
       scene.references = retained;
       scene.review = true;

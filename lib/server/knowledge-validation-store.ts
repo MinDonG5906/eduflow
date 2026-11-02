@@ -60,7 +60,8 @@ export class ValidationStore {
     const run = this.get(id); if (!run || run.quarantine) throw new Error("자동 처리할 자료를 확인해 주세요.");
     const previous = this.job(id);
     if (previous && ["queued", "processing", "waiting", "complete"].includes(previous.state)) return previous;
-    const job: ValidationJob = { runId: id, state: "queued", updatedAt: new Date().toISOString(), nextAt: 0, reason: "자동 처리 대기" };
+    const now = new Date().toISOString();
+    const job: ValidationJob = { runId: id, state: "queued", updatedAt: now, retrySince: now, nextAt: 0, reason: "자동 처리 대기" };
     this.putJob(job); return job;
   }
   workerAlive(now = Date.now()) { return Number(this.db.prepare("SELECT until FROM worker WHERE id=1").get()?.until) > now; }

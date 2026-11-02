@@ -8,7 +8,7 @@ import { DocumentSource } from "@/components/studio/document-source";
 import { ManuscriptPanel } from "@/components/studio/manuscript-panel";
 import { SceneEditor } from "@/components/studio/scene-editor";
 import { SceneList } from "@/components/studio/scene-list";
-import { GenerationBar, SettingsPanel } from "@/components/studio/settings-panel";
+import { GenerationActions, SettingsPanel } from "@/components/studio/settings-panel";
 import { ProgressDialog, StudioDialog, Toast } from "@/components/studio/studio-dialogs";
 import { ErrorBanner, StudioStepper, StudioTopbar } from "@/components/studio/studio-header";
 import { StudioSidebar } from "@/components/studio/studio-sidebar";
@@ -17,13 +17,13 @@ import { useDraftStorage } from "@/hooks/use-draft-storage";
 import { canStartGeneration } from "@/lib/generation-availability";
 import { useGeneratorStatus } from "@/hooks/use-generator-status";
 import { usePdfSelection } from "@/hooks/use-pdf-selection";
-import { useBusyProgress, useNotice } from "@/hooks/use-timed-state";
+import { useNotice } from "@/hooks/use-timed-state";
+import { acceptTransferredEvidence, undoEvidenceDecision, useEvidenceDecision, useEvidenceDecisions } from "@/lib/evidence-review";
 import { editScene, insertSceneAfter, MAX_SCENES, moveScene, removeScene, replaceScene } from "@/lib/board-edit";
 import { downloadBlob, downloadText, exportFilename } from "@/lib/download";
 import {
   defaults,
-  sample,
-  markdown,
+  plainText,
   requestSchema,
   type Board,
   type Scene,
@@ -38,6 +38,7 @@ import { defaultImageSettings } from "@/lib/scene-image";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "@/lib/term-corrections";
 import { readDocumentUpload } from "@/lib/document-upload";
 import { citedPdfPage, sourceFormat, sourceUnit } from "@/lib/pdf-source";
+import { IS_DEMO_PACKAGE } from "@/lib/demo-mode";
 
 export default function Studio() {
   const [manuscript, setManuscript] = useState("");
@@ -55,7 +56,6 @@ export default function Studio() {
   const [direction, setDirection] = useState("");
   const [sceneSourceScope, setSceneSourceScope] = useState<"citation" | "selection">("citation");
   const [filename, setFilename] = useState("나의 스토리보드");
-  const [reviewOnly, setReviewOnly] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -77,7 +77,7 @@ export default function Studio() {
         setSettings(parsed.settings);
         setSourceDocument(parsed.document ?? null);
         setBoard(parsed.board);
-        setView(parsed.board ? "board" : "input");
+        setView(!IS_DEMO_PACKAGE && parsed.board ? "board" : "input");
         if (removedExample)
           setNotice("이전 훈민정음 예제 결과를 정리했어요. 현재 원고·첨부 자료·설정은 유지됩니다.");
       },
@@ -87,7 +87,6 @@ export default function Studio() {
   const { ready, storageBlocked } = draft;
   const pdf = usePdfSelection(sourceDocument?.fileId, setError);
   const [notice, setNotice] = useNotice();
-  const [progress, setProgress] = useBusyProgress(busy);
 
   const isPdf = Boolean(sourceDocument && (sourceDocument.kind === "pdf" || /\.pdf$/i.test(sourceDocument.name)));
   const documentUnit = sourceUnit(sourceDocument?.name ?? "");
@@ -97,9 +96,8 @@ export default function Studio() {
   const scene = board?.scenes[active];
   const citedPage = isPdf && sourceDocument ? citedPdfPage({ name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] }, scene) : null;
   const total = board?.scenes.reduce((n, s) => n + s.duration, 0) || 0;
-  const reviewCount = board?.scenes.filter((s) => s.review).length || 0;
   const documentPending = !isPdf && sourceDocument && sourceDocument.query.trim() !== (sourceDocument.appliedQuery ?? "");
-  const canGenerate = canStartGeneration({ generator, isPdf, valid, ready, busy, importing, documentPending: Boolean(documentPending), keyword, storageBlocked });
+  const canGenerate = Boolean(sourceDocument) && canStartGeneration({ generator, isPdf, valid, ready, busy, importing, documentPending: Boolean(documentPending), keyword, storageBlocked });
   const notify = (text: string) => setNotice(text);
 
   useEffect(() => () => {
@@ -112,12 +110,6 @@ export default function Studio() {
 
   function updateScene<K extends keyof Scene>(key: K, value: Scene[K]) {
     setBoard((b) => (b ? editScene(b, active, key, value) : b));
-  }
-  function loadSample() {
-    setSourceDocument(null);
-    pdf.clear();
-    setManuscript(sample);
-    notify("탄소중립 교육 원고를 불러왔어요. 자유롭게 수정해 보세요.");
   }
   async function importFile(file?: File) {
     if (!file || importInFlight.current || busy || storageBlocked) return;
@@ -184,6 +176,7 @@ export default function Studio() {
   }
   async function generate(regenerate = false, retry?: GenerationJob) {
     if (inFlight.current || importInFlight.current || storageBlocked || !generator?.available) return;
+    if (!retry && !regenerate && !sourceDocument) return;
     if (!retry && (!valid || documentPending || (isPdf && generator.mode !== "ai") || (regenerate && !scene))) return;
     const job = retry ?? captureGeneration({
       manuscript,
@@ -200,7 +193,6 @@ export default function Studio() {
     inFlight.current = true;
     setError("");
     setBusy(true);
-    setProgress(12);
     setModal(null);
     const controller = new AbortController();
     requestRef.current = controller;
@@ -234,11 +226,9 @@ export default function Studio() {
       } else {
         setBoard(result);
         setActive(0);
-        setReviewOnly(false);
         setFilename(result.title);
         notify("스토리보드 초안이 준비됐어요. 장면별로 검토해 보세요.");
       }
-      setProgress(100);
       setView("board");
       setDirection("");
     } catch (e) {
@@ -270,7 +260,6 @@ export default function Studio() {
     }
     setBoard(insertSceneAfter(board, active));
     setActive(active + 1);
-    setReviewOnly(false);
   }
   function moveActiveScene(delta: number) {
     const next = board && moveScene(board, active, delta);
@@ -318,10 +307,6 @@ export default function Studio() {
         notify("PDF 스토리보드를 생성하고 있어요...");
         const formData = new FormData();
         formData.set("board", JSON.stringify(board));
-        if (pdfReady && pdf.selected && sourceDocument?.selectedPages?.length) {
-          formData.set("pdf", pdf.selected, "selected-pages.pdf");
-          formData.set("pdfSource", JSON.stringify({ name: sourceDocument.name, pages: sourceDocument.selectedPages }));
-        }
         // Attach scene reference images from IndexedDB
         const imageIds = board.scenes
           .map((s) => s.image?.id)
@@ -348,18 +333,18 @@ export default function Studio() {
         setModal(null);
         return;
       }
-      const content = markdown(board);
+      const content = plainText(board);
       if (format === "copy") {
         await navigator.clipboard.writeText(content);
         notify("전체 스토리보드를 복사했어요.");
         return;
       }
-      downloadText(content, "text/markdown;charset=utf-8", exportFilename(filename, format));
+      downloadText("\uFEFF" + content, "text/plain;charset=utf-8", exportFilename(filename, format));
       notify(`${format.toUpperCase()} 파일을 내보냈어요.`);
     } catch (e) {
       setModal(null);
       fail(format === "copy"
-        ? "복사할 수 없습니다. 브라우저의 클립보드 권한을 확인하거나 Markdown 파일로 내려받아 주세요."
+        ? "복사할 수 없습니다. 브라우저의 클립보드 권한을 확인하거나 TXT 파일로 내려받아 주세요."
         : format === "pdf"
           ? (e instanceof Error ? e.message : "PDF 내보내기에 실패했습니다.")
           : "내보내기에 실패했습니다. 브라우저의 다운로드 권한을 확인해 주세요.");
@@ -417,18 +402,16 @@ export default function Studio() {
               <div className="input-layout">
                 <ManuscriptPanel
                   manuscript={manuscript}
-                  onManuscriptChange={setManuscript}
                   isPdf={isPdf}
-                  documentFormat={documentFormat}
-                  documentUnit={documentUnit}
                   valid={valid}
                   busy={busy}
                   importing={importing}
                   storageBlocked={storageBlocked}
                   uploadRef={uploadRef}
-                  onLoadSample={loadSample}
                   onImport={importFile}
                   onCancelImport={() => importRequestRef.current?.abort()}
+                  generationAction={!isPdf && <GenerationActions isPdf={false} documentFormat={documentFormat}
+                    canGenerate={canGenerate} generator={generator} onOpenConnection={() => setConnectionOpen(true)} onGenerate={() => generate()} />}
                   documentSource={sourceDocument && (
                     <DocumentSource
                       document={sourceDocument}
@@ -443,6 +426,8 @@ export default function Studio() {
                       onReupload={() => uploadRef.current?.click()}
                       onFindPart={findDocumentPart}
                       onUseWhole={useWholeDocument}
+                      generationAction={isPdf && <GenerationActions isPdf documentFormat={documentFormat}
+                        canGenerate={canGenerate} generator={generator} onOpenConnection={() => setConnectionOpen(true)} onGenerate={() => generate()} />}
                     />
                   )}
                 />
@@ -456,17 +441,7 @@ export default function Studio() {
                   notify={notify}
                 />
               </div>
-              <GenerationBar
-                settings={settings}
-                isPdf={isPdf}
-                documentFormat={documentFormat}
-                documentUnit={documentUnit}
-                canGenerate={canGenerate}
-                storageBlocked={storageBlocked}
-                generator={generator}
-                onOpenConnection={() => setConnectionOpen(true)}
-                onGenerate={() => generate()}
-              />
+
             </>
           ) : (
             board && (
@@ -493,9 +468,6 @@ export default function Studio() {
                     scenes={board.scenes}
                     active={active}
                     onSelect={setActive}
-                    reviewOnly={reviewOnly}
-                    onToggleReviewOnly={() => setReviewOnly(!reviewOnly)}
-                    reviewCount={reviewCount}
                     onAdd={addScene}
                   />
                   {scene && (
@@ -507,6 +479,19 @@ export default function Studio() {
                       manuscript={manuscript}
                       sourceFile={pdf.selected}
                       source={isPdf && sourceDocument ? { name: sourceDocument.name, pages: sourceDocument.selectedPages ?? [] } : undefined}
+                      onAcceptEvidence={key => setBoard(current => current ? { ...current,
+                        scenes: current.scenes.map(item => item.id === scene.id ? acceptTransferredEvidence(item, key) : item) } : current)}
+                      onUseDecision={key => setBoard(current => current ? { ...current,
+                        scenes: current.scenes.map(item => item.id === scene.id ? useEvidenceDecision(item, key) : item) } : current)}
+                      onUndoDecision={key => {
+                        const updated = undoEvidenceDecision(scene, key);
+                        setBoard(current => current ? { ...current, scenes: current.scenes.map(item => item.id === scene.id ? undoEvidenceDecision(item, key) : item) } : current);
+                        notify(["narration", "subtitle", "visual", "assets"].some(field => updated[field as keyof Scene] !== scene[field as keyof Scene])
+                          ? "적용을 취소하고 추가된 문장을 되돌렸습니다. 생성 이미지는 유지됩니다."
+                          : "적용을 취소했습니다. 기존 문장과 생성 이미지는 유지됩니다.");
+                      }}
+                      onUseDecisions={keys => setBoard(current => current ? { ...current,
+                        scenes: current.scenes.map(item => item.id === scene.id ? useEvidenceDecisions(item, keys) : item) } : current)}
                       onChange={updateScene}
                       onMove={moveActiveScene}
                       onDelete={() => setModal("delete")}
@@ -540,12 +525,11 @@ export default function Studio() {
       </div>
       <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
       <Toast message={notice} onClose={() => setNotice("")} />
-      <ProgressDialog open={busy} progress={progress} generator={generator} onCancel={() => requestRef.current?.abort()} />
+      <ProgressDialog open={busy} onCancel={() => requestRef.current?.abort()} />
       <StudioDialog
         modal={modal}
         onClose={() => setModal(null)}
         board={board}
-        reviewCount={reviewCount}
         generator={generator}
         canGenerate={canGenerate}
         filename={filename}

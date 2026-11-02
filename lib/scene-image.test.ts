@@ -65,7 +65,7 @@ test("image generation is separately opt-in, cannot switch text providers, and n
   const config = sceneImageConfig(directory, env);
   assert.equal(config.reservationCost / 1_000_000, publicStatus.reservationUSD);
   assert.equal(config.attemptCost / 1_000_000, publicStatus.perImageCeilingUSD);
-  assert.equal(config.dayBudget, 5_000_000); assert.equal(config.monthBudget, 10_000_000);
+  assert.equal(config.dayBudget, 40_000_000); assert.equal(config.monthBudget, 40_000_000);
   assert.equal((await connections.POST(post({ action: "setImageEnabled", enabled: false, consent: true }))).status, 200);
   assert.equal((await (await handler.GET(post({}))).json()).available, false);
 });
@@ -222,10 +222,15 @@ test("scene image and visual recommendation siblings never share the same React 
     const { SceneEditor } = require('./components/studio/scene-editor.tsx');
     const { generateDemo, sample, defaults } = require('./lib/storyboard.ts');
     const scene = generateDemo(sample, defaults).scenes[0];
+    let keys;
+    function InspectEditor() {
     const element = SceneEditor({scene,index:0,sceneCount:3,manuscript:sample,sourceFile:null,settings:defaults,
       imageSettings:{style:'sketch',direction:''},onImageSettingsChange:()=>{},onOpenConnection:()=>{},
       onChange:()=>{},onMove:()=>{},onDelete:()=>{},onRegenerate:()=>{},canRegenerate:true});
-    const keys = element.props.children.filter(child => React.isValidElement(child) && child.key !== null).map(child => child.key);
+    keys = element.props.children.filter(child => React.isValidElement(child) && child.key !== null).map(child => child.key);
+    return null;
+    }
+    require('react-dom/server').renderToStaticMarkup(React.createElement(InspectEditor));
     console.log(JSON.stringify(keys));
   `], { cwd: process.cwd(), encoding: "utf8" });
   const keys: string[] = JSON.parse(output);

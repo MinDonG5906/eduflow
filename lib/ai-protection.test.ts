@@ -52,6 +52,35 @@ function fakeAI(generate?: GenerationAdapter["generate"]): GenerationAdapter {
   };
 }
 
+test("the evidence judge shares generation's request/day/month reservation and token ceiling", async (t) => {
+  for (const overLimit of [false, true]) {
+    const directory = temporary(t), policy = config();
+    const underlying = fakeAI();
+    let counted = 0, generated = 0;
+    const protectedRun = protectPaidGeneration(localRequest(), { ...underlying,
+      countInputTokens: (_, context) => { counted++; return context.verification && overLimit ? policy.maxInputTokens + 1 : 10; },
+      generate: async (request, context) => {
+        generated++;
+        return context.verification ? { verdicts: [] } : underlying.generate(request, context);
+      },
+    }, { config: policy, directory });
+    const passage = generateDemo(input.manuscript, input.settings).scenes[1].narration;
+    try {
+      const board = await runGeneration(input, protectedRun.adapter, { references: [{ id: "knowledge:budget",
+        documentId: crypto.randomUUID(), title: "탄소중립 자료", excerpt: passage.slice(0, 1500),
+        origin: "internal", url: "", published: "", revision: "" }] });
+      assert.ok(board.scenes.every(scene => !scene.references?.length));
+    } finally { protectedRun.finish(); }
+    assert.equal(counted, 2, "verification payload is counted separately");
+    assert.equal(generated, overLimit ? 1 : 2);
+    const ledger = inspect(directory);
+    assert.equal(ledger.reservations.length, 1);
+    assert.equal(ledger.reservations[0].attempts, generated);
+    assert.equal(ledger.reservations[0].active, 0);
+    assert.ok(ledger.budgets.every(row => row.amount === generated * policy.attemptCost));
+  }
+});
+
 test("paid calls are disabled by default and incomplete/unsafe configuration fails without leaking secrets", () => {
   assert.throws(() => readAIConfig({}), coded("AI_DISABLED"));
   for (const override of [
@@ -68,15 +97,15 @@ test("paid calls are disabled by default and incomplete/unsafe configuration fai
 
 test("shared daily and monthly caps apply without personal budget settings and cannot be raised by them", () => {
   const defaults = config({ EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined });
-  assert.equal(defaults.dayBudget, 5_000_000);
-  assert.equal(defaults.monthBudget, 10_000_000);
+  assert.equal(defaults.dayBudget, 40_000_000);
+  assert.equal(defaults.monthBudget, 40_000_000);
   const raised = config({ EDUFLOW_AI_DAY_BUDGET_USD: "100", EDUFLOW_AI_MONTH_BUDGET_USD: "200" });
   assert.equal(raised.dayBudget, defaults.dayBudget);
   assert.equal(raised.monthBudget, defaults.monthBudget);
   const lower = config({ EDUFLOW_AI_DAY_BUDGET_USD: "0.5", EDUFLOW_AI_MONTH_BUDGET_USD: "2" });
   assert.equal(lower.dayBudget, 500_000);
   assert.equal(lower.monthBudget, 2_000_000);
-  assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "6" }), coded("AI_NOT_CONFIGURED"));
+  assert.throws(() => config({ EDUFLOW_AI_REQUEST_BUDGET_USD: "21" }), coded("AI_NOT_CONFIGURED"));
 });
 
 test("110000 input tokens fit the configured repair budget while 110001 are blocked before generation", async (t) => {
@@ -88,8 +117,8 @@ test("110000 input tokens fit the configured repair budget while 110001 are bloc
   assert.equal(policy.maxInputTokens, 110000);
   assert.equal(policy.attemptCost, 118500);
   assert.equal(policy.reservationCost, 237000);
-  assert.equal(policy.dayBudget, 5000000);
-  assert.equal(policy.monthBudget, 10000000);
+  assert.equal(policy.dayBudget, 10000000);
+  assert.equal(policy.monthBudget, 20000000);
   assert.throws(() => config({ EDUFLOW_AI_MAX_INPUT_TOKENS: "110001" }), coded("AI_NOT_CONFIGURED"));
   const underfunded = new LocalAIBudget(temporary(t)); t.after(() => underfunded.close());
   assert.throws(() => underfunded.reserve({ ...policy, requestBudget: 200000 }), coded("BUDGET_EXCEEDED"));
@@ -119,7 +148,7 @@ test("110000 input tokens fit the configured repair budget while 110001 are bloc
 test("separate member PCs each receive the shared budget and preserve their own usage", (t) => {
   const firstDirectory = temporary(t), secondDirectory = temporary(t);
   const policy = config({
-    EDUFLOW_AI_DAY_BUDGET_USD: undefined, EDUFLOW_AI_MONTH_BUDGET_USD: undefined,
+    EDUFLOW_AI_DAY_BUDGET_USD: "5", EDUFLOW_AI_MONTH_BUDGET_USD: "10",
     EDUFLOW_AI_REQUEST_BUDGET_USD: "2", EDUFLOW_AI_MAX_INPUT_TOKENS: "100000",
     EDUFLOW_AI_INPUT_USD_PER_MILLION: "2", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "4",
     EDUFLOW_AI_MAX_OUTPUT_TOKENS: "100000", EDUFLOW_AI_REQUESTS_PER_HOUR: "100",

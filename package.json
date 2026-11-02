@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --conditions=react-server --import tsx --test lib/*.test.ts",
     "setup:hwp": "node scripts/setup-hwp-converter.mjs",
-    "eval": "node --conditions=react-server --import tsx scripts/eval-generation.ts"
+    "eval": "node --conditions=react-server --import tsx scripts/eval-generation.ts",
+    "demo:package": "node --conditions=react-server --import tsx scripts/package-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.3.0",

@@ -20,6 +20,7 @@ import { generationTask } from "./generation-contract";
 import { readKnowledgeLocation } from "./server/knowledge-handler";
 import { knowledgeLocationUrl } from "./knowledge";
 import { readDraft, serializeDraft } from "./studio-state";
+import { visualVerdicts } from "./fixtures/grounding-judge";
 
 const table: KnowledgeTable = { id: "checklist", rows: 3, cols: 4, cells: [
   { row: 1, col: 1, rowSpan: 1, colSpan: 1, text: "단계" },
@@ -251,15 +252,18 @@ test("only cited references contribute visuals, preserved through board storage 
   const references = [{ id: "knowledge:test:1", documentId, ...meta, url: "", excerpt: source().blocks[0].text, page: 42, visuals }];
   const board = generateDemo(sample, defaults);
   const output = { title: board.title, summary: board.summary, objectives: board.objectives, scenes: board.scenes.map(scene => ({
-    sceneNo: board.scenes.indexOf(scene) + 1, title: scene.title, purpose: scene.purpose, visual: scene.visual, assets: scene.assets,
-    narration: scene.narration, subtitle: scene.subtitle, duration: scene.duration, evidence: scene.evidence, sourceId: scene.sourceId,
-    referenceIds: board.scenes.indexOf(scene) === 1 ? [references[0].id] : [],
+    sceneNo: board.scenes.indexOf(scene) + 1, title: scene.title, purpose: scene.purpose,
+    visual: board.scenes.indexOf(scene) === 1 ? references[0].excerpt : scene.visual, assets: scene.assets,
+    narration: board.scenes.indexOf(scene) === 1 ? references[0].excerpt : scene.narration,
+    subtitle: scene.subtitle, duration: scene.duration, evidence: scene.evidence, sourceId: scene.sourceId,
+    referenceIds: [],
   })) };
-  const generated = await runGeneration({ manuscript: sample, settings: defaults }, { mode: "ai", model: "mock", promptVersion: "test", generate: async () => output }, { references });
+  const generated = await runGeneration({ manuscript: sample, settings: defaults }, { mode: "ai", model: "mock", promptVersion: "test",
+    generate: async (_, context) => context.verification ? visualVerdicts(context.verification) : output }, { references });
   assert.equal(generated.scenes[0].visuals?.length, 0); assert.equal(generated.scenes[1].visuals?.length, 1);
   const restored = boardSchema.parse(JSON.parse(JSON.stringify(generated)));
   assert.equal(restored.scenes[1].visuals?.[0].page, 42);
-  assert.ok(markdown(restored).includes("시각자료 추천")); assert.ok(markdown(restored).includes(visuals[0].figureId));
+  assert.ok(markdown(restored).includes("참고 시각자료 추천")); assert.ok(markdown(restored).includes(visuals[0].figureId));
 });
 
 test("visual-only source selection recommends verified pictures without inventing narration citations", async () => {
@@ -272,15 +276,15 @@ test("visual-only source selection recommends verified pictures without inventin
   ];
   const demo = generateDemo(sample, defaults);
   const output = { title: demo.title, summary: demo.summary, objectives: demo.objectives, scenes: demo.scenes.map((scene, index) => ({
-    sceneNo: index + 1, title: scene.title, purpose: scene.purpose, visual: scene.visual, assets: scene.assets,
-    narration: scene.narration, subtitle: scene.subtitle, duration: scene.duration, evidence: scene.evidence, sourceId: scene.sourceId,
-    referenceIds: [], visualReferenceIds: index === 1 ? ["knowledge:visual", "knowledge:visual", "knowledge:text", "knowledge:forged"] : [],
+    sceneNo: index + 1, title: scene.title, purpose: scene.purpose, visual: index === 1 ? references[0].excerpt : scene.visual, assets: scene.assets,
+    narration: index === 1 ? references[0].excerpt : scene.narration, subtitle: scene.subtitle, duration: scene.duration, evidence: scene.evidence, sourceId: scene.sourceId,
+    referenceIds: [], visualReferenceIds: [],
   })) };
   const input = { manuscript: sample, settings: defaults };
   assert.ok(generationTask(input, references).visualGuidance.includes("새 사실의 보강 여부와 무관"));
   const generated = await runGeneration(input, { mode: "ai", model: "mock", promptVersion: "test", generate: async (_, context) => {
     assert.deepEqual(context.task.supplementalSources, references);
-    return output;
+    return context.verification ? visualVerdicts(context.verification) : output;
   } }, { references });
   assert.deepEqual(generated.generation?.knowledge, { retrievedCount: 2, documentCount: 1 });
   assert.equal(generated.generation?.knowledgeSources?.length, 2);
@@ -289,7 +293,8 @@ test("visual-only source selection recommends verified pictures without inventin
   assert.equal(generated.scenes[1].visualReferences?.length, 1);
   assert.equal(generated.scenes[1].visuals?.length, 1);
   assert.equal(generated.scenes[0].visuals?.length, 0);
-  assert.ok(generated.generation?.warnings.some(warning => warning.includes("확인되지 않은")));
+  assert.deepEqual(generated.generation?.repairedScenes, []);
+  assert.equal(generated.generation?.attempts, 1);
   const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board: generated })).board!;
   assert.deepEqual(restored.scenes[1].visualReferences, generated.scenes[1].visualReferences);
   assert.deepEqual(restored.scenes[1].generation?.knowledge, generated.generation?.knowledge);

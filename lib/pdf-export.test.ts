@@ -72,7 +72,8 @@ const sampleBoard: Board = {
       subtitle: "환자의 반응을 살피고, 즉시 119 신고와 AED를 요청하세요.",
       duration: 60,
       review: true,
-      reviewReason: "압박 깊이(5cm) 문구 추가 필요",
+      reviewReason: "",
+      memo: "압박 깊이(5cm) 문구 추가 필요",
       edited: ["narration"],
       phase: "body",
       image: {
@@ -214,26 +215,31 @@ test("browser draft serialization preserves scene image metadata across refresh"
   assert.equal(restoredScene3.image, undefined);
 });
 
-test("PDF export maps scene citations against the attached selection and rejects different documents", async (t) => {
+test("PDF export without a scene image uses the editor composition even with an attached source PDF", async (t) => {
   const original = await PDFDocument.create();
-  original.addPage([400, 200]).drawRectangle({ x: 0, y: 0, width: 400, height: 200, color: rgb(1, 0, 0) });
   original.addPage([200, 400]).drawRectangle({ x: 0, y: 0, width: 200, height: 400, color: rgb(0, 0, 1) });
   const pdfBuffer = await original.save();
-  const attachedPdfSource = { name: "manual.pdf", pages: [22, 24] };
+  const attachedPdfSource = { name: "manual.pdf", pages: [24] };
   const board: Board = { ...sampleBoard, pdfSource: attachedPdfSource, scenes: [{ ...sampleBoard.scenes[0],
-    image: undefined, sourceId: "pdf-page:24", pdfSource: { name: "manual.pdf", pages: [24] } }] };
+    image: undefined, sourceId: "pdf-page:24", pdfSource: attachedPdfSource }] };
   const draw = t.mock.method(PDFPage.prototype, "drawImage");
+  const embed = t.mock.method(PDFDocument.prototype, "embedPng");
   const result = await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource });
-  const sourceDraws = () => draw.mock.calls.filter(call => call.arguments[0].height > call.arguments[0].width);
-  assert.equal(sourceDraws().length, 1);
-  const selectedImage = sourceDraws()[0].arguments[0];
-  assert.ok(selectedImage.height > selectedImage.width, "citation must use second attached page, not first scene-selected page");
-  const parser = new PDFParse({ data: result });
-  try { assert.ok((await parser.getText()).text.includes("원본 24페이지")); }
-  finally { await parser.destroy(); }
+  assert.equal(embed.mock.calls.length, 1, "only the editor composition should be embedded");
+  const withSource = embed.mock.calls[0].arguments[0];
+  assert.equal(draw.mock.calls.length, 1);
+  assert.equal(draw.mock.calls[0].arguments[0].width, 1600);
+  assert.equal(draw.mock.calls[0].arguments[0].height, 900);
 
-  await exportStoryboardPdf({ board, pdfBuffer, attachedPdfSource: { ...attachedPdfSource, name: "different.pdf" } });
-  assert.equal(sourceDraws().length, 1, "a different attached document cannot become this scene's source image");
+  await exportStoryboardPdf({ board });
+  assert.equal(embed.mock.calls.length, 2);
+  assert.deepEqual(embed.mock.calls[1].arguments[0], withSource, "attaching a source PDF must not change the visible composition");
+  const parser = new PDFParse({ data: result });
+  try {
+    const text = (await parser.getText()).text;
+    assert.ok(text.includes("pdf-page:24"), "source citation remains available as text");
+    assert.ok(!text.includes("출처: 원본 24페이지"), "source PDF must not be described as the scene background");
+  } finally { await parser.destroy(); }
 });
 
 test("PDF export API validates origin, size, JSON and attached page metadata before rendering", async () => {
@@ -258,7 +264,7 @@ test("long production fields and image sources survive unlimited continuation pa
   const board = structuredClone(sampleBoard);
   board.scenes = [board.scenes[0]];
   const scene = board.scenes[0];
-  const fields = ["title", "purpose", "subtitle", "narration", "visual", "assets", "evidence", "reviewReason"] as const;
+  const fields = ["title", "purpose", "subtitle", "narration", "visual", "assets", "evidence", "memo"] as const;
   scene.review = true;
   for (const field of fields) scene[field] = ("긴 제작 정보는 생략 없이 다음 페이지에 이어서 표시합니다. ").repeat(field === "title" ? 4 : 25) + field + "END";
   scene.image!.sourceText = "https://example.com/" + "long-source/".repeat(80) + "SOURCEEND";
@@ -269,7 +275,11 @@ test("long production fields and image sources survive unlimited continuation pa
   const parser = new PDFParse({data:pdf});
   try {
     const text = (await parser.getText()).text.replace(/\s/g, "");
-    for (const marker of [...fields.map(f=>f+"END"),"SOURCEEND","REFERENCEEND"]) assert.ok(text.includes(marker),marker);
+    for (const marker of [...fields.map(f=>f+"END"),"SOURCEEND"]) assert.ok(text.includes(marker),marker);
+    assert.ok(text.includes("페이지정보없음"));
+    assert.ok(text.includes("발췌시작:"));
+    assert.ok(text.includes("https://example.com/reference"));
+    assert.ok(!text.includes("REFERENCEEND"), "long source excerpts are replaced by locators");
   } finally { await parser.destroy(); }
 });
 

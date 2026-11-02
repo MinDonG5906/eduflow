@@ -25,47 +25,15 @@ export function Toast({ message, onClose }: { message: string; onClose: () => vo
   );
 }
 
-export function ProgressDialog({
-  open,
-  progress,
-  generator,
-  onCancel,
-}: {
-  open: boolean;
-  progress: number;
-  generator: GeneratorStatus;
-  onCancel: () => void;
-}) {
-  const ai = generator?.mode === "ai";
+export function ProgressDialog({ open, onCancel }: { open: boolean; onCancel: () => void }) {
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent showCloseButton={false} className="progress-dialog">
+      <DialogContent showCloseButton={false} className="progress-dialog" aria-describedby={undefined}>
         <DialogHeader>
-          <div className="loading-icon">
-            <Sparkles size={26} />
-          </div>
-          <DialogTitle>원고가 장면으로 바뀌는 중이에요</DialogTitle>
-          <DialogDescription>
-            입력한 원고에서 핵심 내용을 나누고 초안을 구성합니다.
-          </DialogDescription>
+          <span className="generation-spinner" aria-hidden="true" />
+          <DialogTitle>스토리보드 생성 중</DialogTitle>
         </DialogHeader>
-        <div className={`progress-track ${ai ? "ai-pending" : ""}`}>
-          <div style={{ width: `${progress}%` }} />
-        </div>
-        <div className="progress-label">
-          <span>
-            {ai ? "원문으로 장면을 생성하고, 지식베이스에서 찾은 관련 자료가 있으면 함께 활용합니다" : progress < 35
-              ? "원고의 흐름을 살펴보고 있어요"
-              : progress < 70
-                ? "장면별 내용을 구성하고 있어요"
-                : "원문 근거와 필수 항목을 확인하고 있어요"}
-          </span>
-          <span>{ai ? "생성 대기 중" : `${progress}%`}</span>
-        </div>
-        <p>{ai ? `${generator?.label}로 생성 중 · 최대 90초 · 취소해도 이미 시작한 호출은 비용이나 플랜 사용량에 반영될 수 있습니다` : "원문 발췌 데모 · 외부 AI 전송 없음"}</p>
-        <Button variant="ghost" onClick={onCancel}>
-          생성 취소
-        </Button>
+        <Button variant="ghost" onClick={onCancel}>생성 취소</Button>
       </DialogContent>
     </Dialog>
   );
@@ -83,7 +51,6 @@ export function StudioDialog({
   modal,
   onClose,
   board,
-  reviewCount,
   generator,
   canGenerate,
   filename,
@@ -103,7 +70,6 @@ export function StudioDialog({
   modal: StudioModal;
   onClose: () => void;
   board: Board | null;
-  reviewCount: number;
   generator: GeneratorStatus;
   canGenerate: boolean;
   filename: string;
@@ -148,7 +114,6 @@ export function StudioDialog({
         {modal === "export" && board && (
           <ExportOptions
             board={board}
-            reviewCount={reviewCount}
             filename={filename}
             onFilenameChange={onFilenameChange}
             onExport={onExport}
@@ -208,13 +173,11 @@ export function StudioDialog({
 
 function ExportOptions({
   board,
-  reviewCount,
   filename,
   onFilenameChange,
   onExport,
 }: {
   board: Board;
-  reviewCount: number;
   filename: string;
   onFilenameChange: (value: string) => void;
   onExport: (format: ExportFormat) => void;
@@ -245,13 +208,13 @@ function ExportOptions({
           </span>
           <Download size={17} />
         </button>
-        <button onClick={() => onExport("md")}>
+        <button onClick={() => onExport("txt")}>
           <div>
             <FileText size={22} />
           </div>
           <span>
-            <strong>Markdown</strong>
-            <small>문서로 정리하고 자유롭게 편집</small>
+            <strong>TXT 텍스트 파일</strong>
+            <small>메모장에서 열고 자유롭게 편집</small>
           </span>
           <Download size={17} />
         </button>
@@ -261,15 +224,12 @@ function ExportOptions({
           </div>
           <span>
             <strong>전체 내용 복사</strong>
-            <small>Markdown 형식으로 클립보드에 복사</small>
+            <small>일반 텍스트로 클립보드에 복사</small>
           </span>
           <ChevronRight size={17} />
         </button>
       </div>
-      <p className="export-note">
-        <AlertCircle size={14} />
-        검토 필요 장면 {reviewCount}개가 포함됩니다.
-      </p>
+
     </>
   );
 }
@@ -281,7 +241,7 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         <li>
           <strong>원고를 준비하세요</strong>
           <p>
-            PDF·PPT·HWP/HWPX를 불러오면 AI에 보낼 페이지·슬라이드를 먼저 선택합니다. PPT와 한글 파일은 이 PC에서 PDF로 변환하며, 미리보기에서 글꼴·배치를 확인해 주세요. 선택한 부분의 표·그림으로 생성하며 별도 원고는 필수가 아닙니다. Word(.docx)·TXT 또는 직접 입력 원고는 공백 제외 100자 이상 준비해 주세요.
+            PDF·PPT·HWP/HWPX를 불러오면 AI에 보낼 페이지·슬라이드를 먼저 선택합니다. PPT와 한글 파일은 이 PC에서 PDF로 변환하며, 미리보기에서 글꼴·배치를 확인해 주세요. 선택한 부분의 표·그림으로 생성하며 별도 원고는 필수가 아닙니다. Word(.docx)·TXT는 공백 제외 100자 이상의 교육 내용이 담긴 파일을 불러와 주세요.
           </p>
         </li>
         <li>
@@ -291,13 +251,13 @@ function HelpContent({ generator }: { generator: GeneratorStatus }) {
         <li>
           <strong>장면을 검토하고 다듬으세요</strong>
           <p>
-            모든 필드를 수정하고, 장면을 추가·삭제·이동할 수 있어요. 원문 근거를 확인한 뒤
-            검토 완료로 표시하세요.
+            모든 필드를 수정하고, 장면을 추가·삭제·이동할 수 있어요. 원문 근거와 적용 조건을
+            확인하며 내용을 다듬으세요.
           </p>
         </li>
         <li>
           <strong>제작을 위해 내보내세요</strong>
-          <p>PDF 스토리보드 또는 Markdown으로 내려받거나 전체 내용을 복사하세요.</p>
+          <p>PDF 스토리보드 또는 TXT 파일로 내려받거나 전체 내용을 복사하세요.</p>
         </li>
       </ol>
       <div className="help-demo">

@@ -6,6 +6,9 @@ import type { PdfAttachment } from "./pdf-input";
 import { indexPdfSource } from "./pdf-source-index";
 import { searchHybridKnowledge } from "./knowledge-hybrid-search";
 import { citedPdfPage } from "../pdf-source";
+import { educationUnits, rankCandidates } from "../grounding";
+import { groundingFailure } from "./grounding-failure";
+import type { GroundingFailure } from "../grounding-failure";
 
 export type KnowledgeSearchContext = { pdf?: PdfAttachment; signal: AbortSignal };
 export type KnowledgeRetriever = (input: GenerationInput, context: KnowledgeSearchContext) => RetrievedReference[] | Promise<RetrievedReference[]>;
@@ -13,9 +16,10 @@ export type KnowledgeRetriever = (input: GenerationInput, context: KnowledgeSear
 /** RAG is optional enrichment; cancellation still stops the entire request. */
 export async function retrieveGenerationKnowledge(input: GenerationInput, context: KnowledgeSearchContext,
   retrieve?: KnowledgeRetriever, timeoutMs = 10000,
-): Promise<{ references: RetrievedReference[]; status: KnowledgeSearchStatus }> {
+): Promise<{ references: RetrievedReference[]; status: KnowledgeSearchStatus; failure?: GroundingFailure }> {
   if (context.signal.aborted) throw new GenerationError("CANCELLED");
   if (!retrieve) return { references: [], status: "not_used" };
+  const started = Date.now();
   const controller = new AbortController();
   const cancel = () => controller.abort();
   context.signal.addEventListener("abort", cancel, { once: true });
@@ -32,9 +36,10 @@ export async function retrieveGenerationKnowledge(input: GenerationInput, contex
     ]);
     if (context.signal.aborted) throw new GenerationError("CANCELLED");
     return { references, status: references.length ? "retrieved" : "no_match" };
-  } catch {
+  } catch (error) {
     if (context.signal.aborted) throw new GenerationError("CANCELLED");
-    return { references: [], status: "unavailable" };
+    return { references: [], status: "unavailable", failure: groundingFailure("source_search", error, started,
+      controller.signal.aborted ? { timeoutMs } : {}) };
   } finally {
     clearTimeout(timer);
     context.signal.removeEventListener("abort", cancel);
@@ -61,6 +66,8 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
   const topic = input.sourceRequest?.trim() || input.settings.keywords.join(" ") ||
     (!input.pdfSource && input.manuscript.trim() ? manuscriptSource(input.manuscript).title : "");
   return {
+    units: educationUnits(input.scene ? [input.scene.title, input.scene.narration, input.scene.subtitle].join("\n")
+      : [input.manuscript, ...pageTexts].join("\n")),
     // Put the current scene and explicit request ahead of a long manuscript:
     // visual search has a bounded term budget.
     query: [...(input.scene ? [input.scene.title, input.scene.purpose, input.scene.visual, input.scene.assets, input.scene.narration] : []),
@@ -71,8 +78,25 @@ export async function generationKnowledgeQuery(input: GenerationInput, context: 
   };
 }
 
-export async function searchGenerationKnowledge(input: GenerationInput, context: KnowledgeSearchContext) {
-  const { query, topic } = await generationKnowledgeQuery(input, context);
+export async function searchGenerationKnowledge(input: GenerationInput, context: KnowledgeSearchContext, search = searchHybridKnowledge) {
+  const { query, topic, units } = await generationKnowledgeQuery(input, context);
   context.signal.throwIfAborted();
-  return searchHybridKnowledge(query, topic, undefined, context.signal);
+  // Bound local searches; spread the sample across the full selection instead of losing its ending.
+  const selected = units.length <= 12 ? units : Array.from({ length: 12 }, (_, i) => units[Math.round(i * (units.length - 1) / 11)]);
+  const groups: RetrievedReference[][] = [];
+  for (const unit of selected) {
+    context.signal.throwIfAborted();
+    const results = await search(`${unit.text} ${unit.heading}`, "", undefined, context.signal, undefined, 24);
+    groups.push(rankCandidates(unit.text, results, 2, unit.heading).map(({ reference }) => ({ ...reference, unitIds: [unit.id] })));
+  }
+  if (!selected.length) return search(query, topic, undefined, context.signal);
+  const candidates = new Map<string, RetrievedReference>();
+  for (let rank = 0; rank < 2; rank++) for (const group of groups) {
+    const ref = group[rank];
+    if (!ref) continue;
+    const existing = candidates.get(ref.id);
+    if (existing) existing.unitIds = [...new Set([...(existing.unitIds ?? []), ...(ref.unitIds ?? [])])];
+    else if (candidates.size < 12) candidates.set(ref.id, ref);
+  }
+  return [...candidates.values()];
 }

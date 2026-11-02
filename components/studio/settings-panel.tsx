@@ -1,8 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
-import { ArrowRight, BookOpen, Plus, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Plus, RotateCcw, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import type { SourceFormat } from "@/lib/pdf-source";
 import { audienceOptions, defaults, type Settings } from "@/lib/storyboard";
 import { SelectField } from "./select-field";
@@ -14,7 +13,6 @@ export function SettingsPanel({
   keyword,
   setKeyword,
   busy,
-  generator,
   notify,
 }: {
   settings: Settings;
@@ -164,109 +162,42 @@ export function SettingsPanel({
           )}
         </div>
         <div className="settings-divider" />
-        <div className="knowledge-settings">
-          <BookOpen size={16} />
-          <span>원문을 바탕으로 생성하고 지식베이스로 보강합니다. 관련 자료가 없거나 검색할 수 없어도 원문으로 생성합니다.</span>
-          <a href="/knowledge">지식베이스 관리</a>
-        </div>
-        <div className="settings-divider" />
         <SelectField
           label="출력 언어"
           value={settings.language}
           options={["한국어", "영어"]}
           onChange={(v) => setting("language", v as Settings["language"])}
         />
-        <details className="additional">
-          <summary>
-            <Plus size={14} /> 추가 요청 <span>선택</span>
-          </summary>
-          <label className="sr-only" htmlFor="instructions">
-            추가 요청
-          </label>
-          <Textarea
-            id="instructions"
-            maxLength={500}
-            value={settings.instructions}
-            onChange={(e) => setting("instructions", e.target.value)}
-            placeholder="예: 실천 방법을 중심으로 구성해 주세요."
-          />
-          <small>
-            {settings.instructions.length} / 500자 · {generator?.mode === "ai" ? "AI 생성에 반영" : "데모에서는 제작 메모로 반영"}
-          </small>
-        </details>
       </fieldset>
     </section>
   );
 }
 
-export function GenerationBar({
-  settings,
-  isPdf,
-  documentFormat,
-  documentUnit,
-  canGenerate,
-  storageBlocked,
-  generator,
-  onGenerate,
-  onOpenConnection,
+export function GenerationActions({
+  isPdf, documentFormat, canGenerate, generator, onGenerate, onOpenConnection,
 }: {
-  settings: Settings;
   isPdf: boolean;
   documentFormat: SourceFormat;
-  documentUnit: string;
   canGenerate: boolean;
-  storageBlocked: boolean;
   generator: GeneratorStatus;
   onGenerate: () => void;
   onOpenConnection: () => void;
 }) {
   const needsAiConnection = isPdf && Boolean(generator) && (generator?.mode !== "ai" || !generator.available);
-  return (
-    <>
-      <div className="generation-bar">
-        <div>
-          <span className="round-spark">
-            <Sparkles size={19} />
-          </span>
-          <div>
-            <strong>생성 조건</strong>
-            <p>
-              {settings.audience} <span>·</span> {settings.minutes}분 <span>·</span>{" "}
-              {settings.count === "auto" ? "장면 수 자동" : `${settings.count}개 장면`}{" "}
-              <span>·</span> {settings.tone}
-            </p>
-          </div>
-        </div>
-        <div className="generation-actions">
-          {needsAiConnection && (
-            <div className="generation-connection">
-              <p id="generation-connection-hint" role="status">
-                {generator?.mode === "demo"
-                  ? `${documentFormat} 생성은 실제 AI 연결이 필요해 데모 모드에서는 사용할 수 없습니다.`
-                  : "AI 연결이 준비되지 않아 생성할 수 없습니다. 연결 설정을 확인해 주세요."}
-                {" "}첨부 자료와 선택한 페이지는 연결 후에도 유지됩니다.
-              </p>
-              <Button variant="outline" onClick={onOpenConnection}>AI 연결하기</Button>
-            </div>
-          )}
-        <Button
-          aria-describedby={needsAiConnection ? "generation-connection-hint" : undefined}
-          className="generate-button"
-          disabled={!canGenerate}
-          onClick={onGenerate}
-        >
-          <Sparkles size={17} /> {isPdf ? `선택한 ${documentFormat}로 생성` : "스토리보드 생성"} <ArrowRight size={17} />
-        </Button>
-        </div>
-      </div>
-      <div className="bottom-note">
-        <ShieldCheck size={13} />
-        <span>{storageBlocked ? "기존 저장 원본을 보호하는 동안 자동 저장이 중지됩니다." : "작업은 이 브라우저에 자동 저장됩니다."}</span>
-        <span className="note-dot">·</span>
-        <span>
-          {generator?.mode === "ai" ? isPdf ? `생성 시 선택한 ${documentUnit}의 텍스트·표·그림과 추가 설명·설정·제작 요청을 ${generator.vendor}에 전송합니다. 선택본은 이 브라우저에 저장됩니다.` : `생성 시 선택한 원고·설정·제작 요청을 ${generator.vendor}에 전송합니다. 파일 읽기와 제목·본문 검색은 이 PC에서 처리합니다.` : generator ? "원문 발췌 데모입니다. 외부 AI로 전송하지 않습니다. PDF·PPT·한글의 표·그림을 읽는 생성은 실제 AI 연결이 필요합니다." : "생성 연결을 확인하고 있습니다."}
-        </span>
-      </div>
-    </>
-  );
+  return <div className="prompt-generation-actions">
+    {needsAiConnection && <div className="generation-connection">
+      <p id="generation-connection-hint" role="status">
+        {generator?.mode === "demo"
+          ? `${documentFormat} 생성은 실제 AI 연결이 필요해 데모 모드에서는 사용할 수 없습니다.`
+          : "AI 연결이 준비되지 않아 생성할 수 없습니다. 연결 설정을 확인해 주세요."}
+      </p>
+      <Button variant="outline" onClick={onOpenConnection}>AI 연결하기</Button>
+    </div>}
+    <Button aria-describedby={needsAiConnection ? "generation-connection-hint" : undefined}
+      aria-label={isPdf ? `생성하기: 선택한 ${documentFormat}` : undefined}
+      title={isPdf ? `선택한 ${documentFormat}로 생성` : undefined}
+      className={isPdf ? "generate-button prompt-send-button" : "generate-button"} disabled={!canGenerate} onClick={onGenerate}>
+      {isPdf ? <>생성하기 <ArrowUp size={18} aria-hidden="true" /></> : <><Sparkles size={17} /> 스토리보드 생성 <ArrowRight size={17} /></>}
+    </Button>
+  </div>;
 }

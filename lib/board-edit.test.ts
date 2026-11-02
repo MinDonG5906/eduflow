@@ -54,3 +54,23 @@ test("export filenames replace reserved characters and fall back when empty", ()
   assert.equal(exportFilename(' 안전/교육:1*?"<>| ', "md"), "안전_교육_1______.md");
   assert.equal(exportFilename("   ", "pdf"), "스토리보드.pdf");
 });
+
+test("user memo starts blank and survives editing, storage and regeneration without automatic notices", async () => {
+  const { sceneMemo } = await import("./scene-memo");
+  const { readDraft, serializeDraft } = await import("./studio-state");
+  const { markdown } = await import("./storyboard");
+  let board = generateDemo(sample, defaults);
+  assert.equal(sceneMemo(board.scenes[0]), "");
+  assert.equal(sceneMemo(newScene()), "");
+  board = editScene(board, 0, "memo", "발표 전에 현장 사진 추가");
+  const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board })).board!;
+  const regenerated = replaceScene(restored, restored.scenes[0].id, newScene());
+  assert.equal(sceneMemo(regenerated.scenes[0]), "발표 전에 현장 사진 추가");
+  assert.match(markdown(regenerated), /발표 전에 현장 사진 추가/);
+  assert.doesNotMatch(markdown(regenerated), /직접 추가한 장면입니다|원문 발췌 기반 데모입니다/);
+  const legacy = editScene(board, 1, "reviewReason", "기존에 직접 쓴 메모");
+  const migrated = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board: legacy })).board!;
+  assert.equal(sceneMemo(migrated.scenes[1]), "기존에 직접 쓴 메모");
+  const cleared = editScene(migrated, 1, "memo", "");
+  assert.equal(sceneMemo(cleared.scenes[1]), "");
+});

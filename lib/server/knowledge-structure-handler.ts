@@ -2,6 +2,7 @@ import "server-only";
 import { join } from "node:path";
 import { z } from "zod";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { pdfResources } from "./pdf-resources";
 import { GenerationError } from "../generation-contract";
 import { knowledgeTableSchema, makeKnowledgeStructure, preserveKnowledgeReview, tableBlocks } from "../knowledge-structure";
 import { assertLocalAIRequest } from "./ai-config";
@@ -68,7 +69,7 @@ export function createKnowledgeStructureHandlers(options: { directory?: string; 
         const source = snapshot(action.id);
         if (!source.pdf) return missing();
         if (action.action === "prepare") {
-          const loading = getDocument({ data: new Uint8Array(source.pdf), isEvalSupported: false, verbosity: 0 });
+          const loading = getDocument({ ...pdfResources, data: new Uint8Array(source.pdf), isEvalSupported: false, verbosity: 0 });
           let updated = 0;
           try {
             const document = await loading.promise;
@@ -100,7 +101,7 @@ export function createKnowledgeStructureHandlers(options: { directory?: string; 
         if (action.action === "analyze") {
           if (current.analyzed) return ok({ cached: true });
           if (!current.figureCandidates) {
-            const loading = getDocument({ data: new Uint8Array(source.pdf), isEvalSupported: false, verbosity: 0 });
+            const loading = getDocument({ ...pdfResources, data: new Uint8Array(source.pdf), isEvalSupported: false, verbosity: 0 });
             try { current.figureCandidates = await knowledgeFigureCandidates(await (await loading.promise).getPage(current.filePage)); }
             finally { await loading.destroy(); }
           }

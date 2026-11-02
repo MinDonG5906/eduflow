@@ -3,13 +3,14 @@ import { PDFDocument } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { GenerationError } from "../generation-contract";
 import { MAX_AI_PDF_BYTES } from "../pdf-source";
+import { pdfResources } from "./pdf-resources";
 
 // Render only the supplied selection, for local previews or compatibility PDF
 // preparation. Images are never attached separately to the provider request.
 export async function renderPdfPages(data: Uint8Array, signal?: AbortSignal, preview = false) {
   signal?.throwIfAborted();
   const document = await PDFDocument.load(data, { updateMetadata: false });
-  const parser = new PDFParse({ data: new Uint8Array(data), isEvalSupported: false });
+  const parser = new PDFParse({ ...pdfResources, data: new Uint8Array(data), isEvalSupported: false });
   const images: Uint8Array[] = [];
   let bytes = data.byteLength;
   try {

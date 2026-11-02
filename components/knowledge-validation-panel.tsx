@@ -89,6 +89,7 @@ export function KnowledgeValidationPanel({ documents, onChange, onBusyChange }: 
       {visible.map(run => {
         const counts = validationCounts(run), state = jobs.find(j => j.runId === run.id);
         const checked = run.pages.filter(page => ["passed", "processed", "skipped"].includes(page.status)).length;
+        const failedPages = run.pages.filter(page => page.status === "skipped" && page.skippedFailure).map(page => page.page);
         const running = !!state && ["queued", "processing", "waiting"].includes(state.state);
         const canResume = !run.quarantine && (!state && run.status !== "published" || state && ["paused", "blocked"].includes(state.state));
         const status = run.quarantine ? "검색 제외" : run.status === "published" ? counts.exceptions ? "일부 저장" : "저장 완료" : state?.state === "complete" ? "처리 완료 · 검색 제외" : state ? jobLabel[state.state] : "처리 전";
@@ -96,6 +97,7 @@ export function KnowledgeValidationPanel({ documents, onChange, onBusyChange }: 
           <div className="kb-simple-document"><h3>{run.metadata.title}</h3>
             <div className="kb-simple-progress"><span className={`kb-status ${state?.state === "blocked" ? "warning" : ""}`}>{status}</span><span>{checked} / {run.pages.length}쪽 처리</span></div>
             {checked < run.pages.length && <progress aria-label={`${run.metadata.title} 처리 진행`} value={checked} max={run.pages.length} />}
+            {failedPages.length > 0 && <p className="kb-hint">판독 실패로 건너뜀 {failedPages.length}쪽 ({failedPages.join(", ")}쪽) · 검색 제외</p>}
             {state?.state === "waiting" && <p className="kb-hint">{state.reason}{state.nextAt > Date.now() ? ` · ${new Date(state.nextAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })} 재개 예정` : ""}</p>}
             {state?.state === "blocked" && <p className="kb-alert warning">{state.reason}</p>}
           </div>

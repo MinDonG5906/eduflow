@@ -4,6 +4,7 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { BookOpen, ChevronRight, CircleHelp, FileText, LayoutGrid, Plus, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { StudioView } from "./types";
+import { IS_DEMO_PACKAGE } from "@/lib/demo-mode";
 
 export function StudioSidebar({
   open,
@@ -116,6 +117,7 @@ export function StudioSidebar({
         <a className="nav-item" href="/knowledge">
           <BookOpen size={18} /> 지식베이스 관리 <ChevronRight size={14} />
         </a>
+        {!IS_DEMO_PACKAGE && <a className="nav-item" href="/demo"><FileText size={18} /> 데모 전달 <ChevronRight size={14} /></a>}
         <div className="sidebar-bottom">
           <div className="privacy">
             <ShieldCheck size={16} />

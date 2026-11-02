@@ -1,7 +1,12 @@
+import { activeVisuals, activeVisualReferences } from "./scene-composition";
+import { referenceLocation, sceneReferenceLocations } from "./reference-location";
+import { sceneMemo } from "./scene-memo";
 import { z } from "zod";
 import { pdfSourceSchema, sourceNote } from "./pdf-source";
 import { visualRecommendationSchema } from "./knowledge-structure";
-import { knowledgeSearchStatusSchema, knowledgeUsageLabel } from "./knowledge";
+import { evidenceReviewText } from "./evidence-review";
+import { groundingSchema } from "./grounding";
+import { MAX_KNOWLEDGE_REFERENCE_ID_CHARS, knowledgeSearchStatusSchema, knowledgeUsageLabel } from "./knowledge";
 
 export const audienceOptions = [
   "산업현장 근무자",
@@ -42,13 +47,13 @@ export const generationRecordSchema = z.object({
   mode: z.enum(["demo", "ai"]),
   knowledge: z.object({
     status: knowledgeSearchStatusSchema.optional(),
-    retrievedCount: z.number().int().min(0).max(6),
-    documentCount: z.number().int().min(0).max(6),
+    retrievedCount: z.number().int().min(0).max(100),
+    documentCount: z.number().int().min(0).max(100),
   }).optional(),
 });
 export const scenePhaseSchema = z.enum(["intro", "body", "outro"]);
 export const sceneReferenceSchema = z.object({
-  id: z.string().max(100),
+  id: z.string().max(MAX_KNOWLEDGE_REFERENCE_ID_CHARS),
   title: z.string().max(160),
   url: z.string().max(500),
   excerpt: z.string().max(1500),
@@ -59,6 +64,8 @@ export const sceneReferenceSchema = z.object({
   page: z.number().int().positive().optional(),
   blockIds: z.array(z.string().max(120)).max(50).optional(),
   visuals: z.array(visualRecommendationSchema).max(10).optional(),
+  context: z.object({ documentTitle: z.string().max(160), sectionTitle: z.string().max(300), tableHeaders: z.array(z.string().max(4000)).max(50), surroundingText: z.string().max(1800).optional() }).optional(),
+  unitIds: z.array(z.string().max(80)).max(20).optional(),
 });
 export const sceneImageSchema = z.object({
   id: z.string(),
@@ -91,11 +98,13 @@ export const sceneSchema = z.object({
   duration: z.number().int().min(1).max(600),
   review: z.boolean(),
   reviewReason: z.string(),
+  memo: z.string().optional(),
   edited: z.array(z.string()),
   generation: generationRecordSchema.optional(),
   pdfSource: pdfSourceSchema.optional(),
   phase: scenePhaseSchema.optional(),
   references: z.array(sceneReferenceSchema).max(6).optional(),
+  grounding: groundingSchema.optional(),
   image: sceneImageSchema.optional(),
   visualReferences: z.array(sceneReferenceSchema).max(6).optional(),
   visuals: z.array(visualRecommendationSchema).max(20).optional(),
@@ -106,7 +115,7 @@ export type Scene = z.infer<typeof sceneSchema>;
 export const generationMetaSchema = generationRecordSchema.extend({
   repairedScenes: z.array(z.number().int().min(1).max(20)).max(20),
   warnings: z.array(z.string().max(300)).max(30),
-  knowledgeSources: z.array(sceneReferenceSchema).max(6).optional(),
+  knowledgeSources: z.array(sceneReferenceSchema).max(100).optional(),
 });
 export const boardSchema = z.object({
   title: z.string(),
@@ -269,34 +278,39 @@ export const fieldLabels: Record<string, string> = {
   narration: "나레이션",
   subtitle: "자막",
   duration: "예상 시간(초)",
-  review: "검토 필요",
-  reviewReason: "검토 사유",
+  memo: "검토 메모",
   edited: "수정한 필드",
 };
-export function markdown(board: Board) {
+export function markdown(board: Board) { return formatBoardText(board, true); }
+export function plainText(board: Board) { return formatBoardText(board, false); }
+
+function formatBoardText(board: Board, useMarkdown: boolean) {
+  const heading = (level: number, title: string) => useMarkdown ? `${"#".repeat(level)} ${title}` : title;
+  const bullet = useMarkdown ? "- " : "• ";
+  const quote = useMarkdown ? "> " : "";
   const generation = board.generation;
   const modes = new Set(board.scenes.map((scene) => scene.generation?.mode ?? board.mode));
   const label = modes.size > 1 ? "AI·데모 장면 포함" : modes.has("ai") ? "AI 생성 초안" : "원문 발췌 기반 데모";
   const pdfNote = board.pdfSource ? sourceNote(board.pdfSource) : "";
   return pdfNote + (
-    `# ${board.title}\n\n> ${label} · 제작 전 검토 필요\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `- 검토 안내: ${warning}`).join("\n")}${generation.knowledge ? `\n${knowledgeUsageLabel(generation.knowledge)}\n${generation.knowledgeSources?.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n") ?? ""}` : ""}\n\n` : ""}## 콘텐츠 개요\n\n${board.summary}\n\n### 학습 목표\n${board.objectives.map((s) => `- ${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n### 생성 조건\n${Object.entries(
+    `${heading(1, board.title)}\n\n${quote}${label}\n\n${generation ? `생성 모델: ${generation.model}\n프롬프트 버전: ${generation.promptVersion}\n생성 시각: ${generation.createdAt}\n${generation.warnings.map((warning) => `${bullet}검토 안내: ${warning}`).join("\n")}${generation.knowledge ? `\n${knowledgeUsageLabel(generation.knowledge)}\n${generation.knowledgeSources?.map(reference => referenceLocation(reference)).join("\n\n") ?? ""}` : ""}\n\n` : ""}${heading(2, "콘텐츠 개요")}\n\n${board.summary}\n\n${heading(3, "학습 목표")}\n${board.objectives.map((s) => `${bullet}${s}`).join("\n")}\n\n전체 예상 시간: ${board.scenes.reduce((a, s) => a + s.duration, 0)}초\n\n${heading(3, "생성 조건")}\n${Object.entries(
       board.settings,
     )
       .map(
         ([k, v]) =>
-          `- ${{ audience: "학습 대상", difficulty: "난이도", minutes: "목표 길이(분)", count: "장면 수", tone: "톤앤매너", keywords: "강조 키워드", language: "출력 언어", instructions: "추가 요청" }[k]}: ${Array.isArray(v) ? v.join(", ") : v}`,
+          `${bullet}${{ audience: "학습 대상", difficulty: "난이도", minutes: "목표 길이(분)", count: "장면 수", tone: "톤앤매너", keywords: "강조 키워드", language: "출력 언어", instructions: "추가 요청" }[k]}: ${Array.isArray(v) ? v.join(", ") : v}`,
       )
       .join("\n")}\n\n` +
     board.scenes
       .map(
         (s, i) =>
-          `## ${i + 1}. ${s.title}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 스토리보드 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
+          `${heading(2, `${i + 1}. ${s.title}`)}\n\n${s.phase ? `구성 단계: ${{ intro: "도입부", body: "정보전달부", outro: "마무리" }[s.phase]}\n\n` : ""}${s.pdfSource ? sourceNote(s.pdfSource) : ""}${s.image?.sourceType === "generated" ? `AI 생성 스토리보드 (원본 증거 아님)${s.image.generated ? ` · 모델: ${s.image.generated.model} · 생성 시각: ${s.image.generated.createdAt}` : ""}\n\n` : ""}${s.generation ? `생성 모델: ${s.generation.model} · 프롬프트: ${s.generation.promptVersion} · 생성 시각: ${s.generation.createdAt}\n\n` : ""}${Object.entries(fieldLabels)
             .filter(([k]) => k !== "title")
             .map(
               ([k, label]) =>
-                `### ${label}\n${typeof s[k as keyof Scene] === "boolean" ? (s.review ? "검토 필요" : "검토 완료") : Array.isArray(s[k as keyof Scene]) ? (s[k as keyof Scene] as string[]).map((k) => fieldLabels[k] || k).join(", ") : s[k as keyof Scene]}\n`,
+                `${heading(3, label)}\n${k === "memo" ? sceneMemo(s) : Array.isArray(s[k as keyof Scene]) ? (s[k as keyof Scene] as string[]).map((k) => fieldLabels[k] || k).join(", ") : s[k as keyof Scene]}\n`,
             )
-            .join("\n")}${s.visuals?.length ? `\n### 시각자료 추천\n${s.visuals.map(visual => `- ${visual.title} · 원본 ${visual.page}페이지\n  연결 원문: ${visual.quote}\n  연결 근거: ${visual.reason}\n  문서 ID: ${visual.documentId} / ${visual.kind === "table" ? "표" : "그림"} ID: ${visual.figureId}${visual.bounds ? ` / 영역: ${visual.bounds.join(", ")}` : ""}`).join("\n")}\n` : ""}${s.visualReferences?.length ? `\n### 시각자료 지식베이스 근거\n${s.visualReferences.map(reference => `- ${reference.title}${reference.page ? ` · 원본 ${reference.page}페이지` : ""} · ${reference.published}${reference.revision ? ` · ${reference.revision}` : ""}\n  ${reference.excerpt}\n  문서 ID: ${reference.documentId}`).join("\n")}\n` : ""}${s.references?.length ? `\n### 보강 자료 근거\n${s.references.map((reference) => `- ${reference.title} (${reference.published})${reference.url ? `: ${reference.url}` : ""}\n  ${reference.excerpt}`).join("\n")}\n` : ""}`,
+            .join("\n")}${evidenceReviewText(s) ? `\n${heading(3, "문장별 근거 분류와 검토")}\n${evidenceReviewText(s)}\n` : ""}${activeVisuals(s).length ? `\n${heading(3, "참고 시각자료 추천")}\n${activeVisuals(s).map(visual => `${bullet}${visual.title} · 원본 ${visual.page}페이지\n  연결 원문: ${visual.quote}\n  연결 근거: ${visual.reason}\n  문서 ID: ${visual.documentId} / ${visual.kind === "table" ? "표" : "그림"} ID: ${visual.figureId}${visual.bounds ? ` / 영역: ${visual.bounds.join(", ")}` : ""}`).join("\n")}\n` : ""}${activeVisualReferences(s).length ? `\n${heading(3, "시각자료 지식베이스 근거")}\n${sceneReferenceLocations(s, activeVisualReferences(s))}\n` : ""}${s.references?.length ? `\n${heading(3, "보강 자료 근거")}\n${sceneReferenceLocations(s)}\n` : ""}`,
       )
       .join("\n")
   );

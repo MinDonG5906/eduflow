@@ -12,6 +12,20 @@ import { listKnowledgeReview, readKnowledgePdf, renderKnowledgePage, reviewKnowl
 import { analyzeKnowledgePdf } from "./server/knowledge-ingest";
 import { createHash } from "node:crypto";
 
+test("a broken table detector preserves text for image-based processing without approving unknown tables", async t => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage().drawText("Fall protection requires an anchorage inspection before work.", { x: 30, y: 300, size: 12 });
+  t.mock.method(PDFParse.prototype, "getTable", async () => { throw new TypeError("Cannot read properties of undefined (reading 'from')"); });
+  const bytes = Buffer.from(await pdf.save());
+  const result = await analyzeKnowledgePdf(bytes, "1", new AbortController().signal);
+  assert.match(result.pages[0].text, /anchorage inspection/);
+  assert.equal(result.pages[0].needsReview, true);
+  assert.match(result.pages[0].reviewReason, /표 자동 추출/);
+  assert.equal(result.pages[0].structure?.searchable, false);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(analyzeKnowledgePdf(bytes, "1", controller.signal));
+});
+
 test("persistent knowledge index retrieves original passages with source version and PDF page", () => {
   const directory = mkdtempSync(join(tmpdir(), "eduflow-knowledge-"));
   try {

@@ -7,6 +7,7 @@ import type { PdfAttachment } from "./pdf-input";
 import { preparePdfContent, type PdfContent } from "./pdf-content";
 import { citedPdfPage, pdfPageLocations, selectPdfPages } from "../pdf-source";
 import { promptTask } from "./provider-prompt";
+import { verificationPrompt } from "./generation-grounding";
 
 export const OPENAI_MODEL = "gpt-5.4-mini-2026-03-17";
 
@@ -17,6 +18,12 @@ export function assertOpenAIConfig(config: AIConfig) {
 }
 
 function payload(context: GenerationContext, document?: PdfContent) {
+  if (context.verification) {
+    const verification = verificationPrompt(context.verification);
+    return { model: OPENAI_MODEL, instructions: verification.instructions, input: verification.taskText,
+      reasoning: { effort: "none" as const },
+      text: { format: { type: "json_schema" as const, name: "eduflow_evidence", strict: true, schema: verification.responseSchema } } };
+  }
   const { instruction, responseSchema, ...task } = context.task;
   const taskText = JSON.stringify({ task: promptTask(task),
     ...(document ? { document: { textPages: document.textPages, visualPages: document.visualPages,
@@ -102,7 +109,7 @@ export function createOpenAIAdapter(config: AIConfig, options: { fetch?: typeof 
     } }, document);
   }
   return {
-    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v12-two-captions",
+    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v20-evidence-applicability",
     async countInputTokens(_, context) {
       try {
         const result = await client.responses.inputTokens.count(await completePayload(context), { signal: context.signal });

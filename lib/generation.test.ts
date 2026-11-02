@@ -10,6 +10,7 @@ import { createGenerateHandler } from "./server/generate-handler";
 import { readDraft, serializeDraft } from "./studio-state";
 import { TERM_CORRECTION_NOTICE_PREFIX } from "./term-corrections";
 import { readAIConfig } from "./server/ai-config";
+import { promptTask, claudeJsonSchema, geminiJsonSchema } from "./server/provider-prompt";
 
 const input: GenerationInput = { manuscript: sample, settings: defaults };
 function output(request = input) {
@@ -25,6 +26,56 @@ function adapter(generate: GenerationAdapter["generate"] = async (request) => ou
 const hasCode = (code: GenerationError["code"]) => (error: unknown) => error instanceof GenerationError && error.code === code;
 const request = (body: string, signal?: AbortSignal) => new Request("http://localhost/api/generate", {
   method: "POST", headers: { "Content-Type": "application/json" }, body, signal,
+});
+
+test("RAG selection uses bounded short IDs and resolves them to persistent source IDs", async () => {
+  const documentId = crypto.randomUUID();
+  const reference = { id: `${documentId}:ragflow:${"b".repeat(64)}`, documentId,
+    title: "기계가공작업 안전", origin: "internal" as const, url: "", published: "", revision: "", page: 6,
+    excerpt: "기계 안전장치를 확인합니다.", visuals: [] };
+  const task = generationTask(input, [reference]);
+  const prompt = promptTask(task);
+  assert.equal(prompt.supplementalSources[0].id, "rag:1");
+  for (const schema of [task.responseSchema, claudeJsonSchema(task.responseSchema), geminiJsonSchema(task.responseSchema)] as any[]) {
+    assert.deepEqual(schema.properties.scenes.items.properties.referenceIds.items.enum, ["rag:1"]);
+  }
+  // Short IDs remain valid for prompt serialization, but source-only drafting never attaches them.
+  const board = await runGeneration(input, { ...adapter(), mode: "ai" }, { references: [reference] });
+  assert.ok(board.scenes.every(scene => !scene.references?.length));
+  assert.equal(readDraft(serializeDraft({ ...input, board })).board?.generation?.knowledgeSources?.[0].id, reference.id);
+});
+
+test("unknown RAG IDs are repaired without losing successful narration or silently removing evidence", async () => {
+  const reference = { id: "knowledge:repair", documentId: crypto.randomUUID(), title: "안전 교안",
+    origin: "internal" as const, url: "", published: "", revision: "", excerpt: "기계 안전장치를 확인합니다." };
+  let calls = 0;
+  const board = await runGeneration(input, { ...adapter(), mode: "ai", generate: async (_, context) => {
+    calls++;
+    if (calls === 2) assert.ok(context.repair?.issues.some(issue => issue.reason === "invalid_reference_id"));
+    return { ...output(), scenes: output().scenes.map((scene, index) => ({ ...scene,
+      narration: calls === 2 ? "보완 응답에서 바뀐 나레이션" : scene.narration,
+      referenceIds: index === 1 ? (calls === 1 ? ["invented-source"] : []) : [], visualReferenceIds: [],
+    })) };
+  } }, { references: [reference] });
+  assert.equal(calls, 2);
+  assert.equal(board.scenes[1].narration, output().scenes[1].narration);
+  assert.deepEqual(board.scenes[1].references, []);
+  assert.deepEqual(board.generation?.repairedScenes, [2]);
+  await assert.rejects(runGeneration(input, { ...adapter(), mode: "ai", generate: async () => ({
+    ...output(), scenes: output().scenes.map(scene => ({ ...scene, referenceIds: ["invented-source"] })),
+  }) }, { references: [reference] }), hasCode("INVALID_OUTPUT"));
+});
+
+test("109-character retrieved IDs survive unused retrieval history without becoming verified evidence", async () => {
+  const documentId = crypto.randomUUID();
+  const reference = { id: `${documentId}:ragflow:${"a".repeat(64)}`, documentId,
+    title: "기계가공작업 안전", origin: "official" as const, url: "https://example.org/manual",
+    published: "2026", revision: "", page: 6, excerpt: "기계 안전장치를 확인합니다." };
+  assert.equal(reference.id.length, 109);
+  const board = await runGeneration(input, { ...adapter(), mode: "ai" }, { references: [reference], knowledgeStatus: "retrieved" });
+  const restored = readDraft(serializeDraft({ ...input, board })).board!;
+  assert.equal(restored.generation?.knowledgeSources?.[0].id, reference.id);
+  assert.ok(restored.scenes.every(scene => !scene.references?.length));
 });
 
 test("generation contract supports scene-count and manuscript boundaries with server-owned IDs and review flags", async () => {
