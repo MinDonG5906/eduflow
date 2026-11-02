@@ -1,4 +1,5 @@
 import type { Scene, VisualPlacement } from "./storyboard";
+import { graphemes, wrapLines } from "./text-segment";
 
 export const compositionLayouts = { left: "자료 왼쪽 · 인물 오른쪽", right: "자료 오른쪽 · 인물 왼쪽", full: "자료 중심 · 화면 전체", bottom: "자료 아래쪽" } as const;
 export type CompositionLayout = keyof typeof compositionLayouts;
@@ -56,30 +57,27 @@ export function compositionStickers(scene: CompositionScene) {
 }
 const escapeXml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[char]!));
 export type CompositionAssets = Record<string, string>;
-const COMPOSITION_FONT = "EduFlow Korean, Apple SD Gothic Neo, Malgun Gothic, Noto Sans CJK KR, Arial, sans-serif";
+// Browsers draw these SVGs as images, which only see installed fonts: list the
+// system fonts for each viewer language's script. The server draws text with canvas.
+const COMPOSITION_FONT = "EduFlow Korean, Apple SD Gothic Neo, Malgun Gothic, Noto Sans CJK KR, PingFang SC, Microsoft YaHei, Noto Sans Sinhala, Sinhala Sangam MN, Iskoola Pota, Noto Sans Khmer, Khmer Sangam MN, Khmer UI, Leelawadee UI, Arial, sans-serif";
 export function compositionAssetRect(placement: VisualPlacement) {
   const w = placement.width * 16, h = placement.height * 9;
   const font = Math.min(27, w / 15, h / 6);
   return { x: placement.x * 16 + 6, y: placement.y * 9 + font * 1.7, width: Math.max(1, w - 12), height: Math.max(1, h - font * 1.7 - 6) };
 }
+// Approximate width in full-width columns; ASCII is about half as wide.
+const columnWidth = (text: string) => graphemes(text).reduce((sum, part) => sum + (/^[\x00-\x7f]$/.test(part) ? .55 : 1), 0);
 export function wrapCompositionText(text: string, columns: number) {
-  const lines: string[] = [];
-  for (const paragraph of text.replace(/\r/g, "").split("\n")) {
-    let line = "", width = 0;
-    for (const char of Array.from(paragraph)) {
-      const weight = /^[\x00-\x7f]$/.test(char) ? .55 : 1;
-      if (line && width + weight > columns) { lines.push(line.trim()); line = ""; width = 0; }
-      line += char; width += weight;
-    }
-    if (line.trim()) lines.push(line.trim());
-  }
-  return lines;
+  return wrapLines(text, columns, columnWidth);
 }
 /** The empty storyboard is a usable title card, shared by preview and exports. */
-export function compositionPlaceholderSvg(scene: Pick<Scene, "title">) {
+export function compositionTitleCard(scene: Pick<Scene, "title">) {
   const lines = wrapCompositionText(scene.title || "스토리보드", 24).slice(0, 4);
-  const top = 450 - (lines.length - 1) * 42;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#111113"/>${lines.map((line, i) => `<text x="800" y="${top + i * 84}" text-anchor="middle" font-family="EduFlow Korean, Apple SD Gothic Neo, Malgun Gothic, Noto Sans CJK KR, Arial, sans-serif" font-size="64" font-weight="bold" fill="#fafafa">${escapeXml(line)}</text>`).join("")}</svg>`;
+  return { lines, top: 450 - (lines.length - 1) * 42, lineHeight: 84, fontSize: 64 };
+}
+export function compositionPlaceholderSvg(scene: Pick<Scene, "title">) {
+  const { lines, top, lineHeight, fontSize } = compositionTitleCard(scene);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900"><rect width="1600" height="900" fill="#111113"/>${lines.map((line, i) => `<text x="800" y="${top + i * lineHeight}" text-anchor="middle" font-family="${COMPOSITION_FONT}" font-size="${fontSize}" font-weight="bold" fill="#fafafa">${escapeXml(line)}</text>`).join("")}</svg>`;
 }
 export function compositionSubtitle(scene: CompositionScene) {
   if (!scene.subtitle?.trim() || scene.subtitleSettings?.enabled === false) return null;
@@ -113,7 +111,7 @@ export function compositionOverlaySvg(scene: CompositionScene, assets: Compositi
     const x = sticker.x * 16, y = sticker.y * 9, w = sticker.width * 16, h = sticker.height * 9;
     const font = Math.min(27, w / 15, h / 6), header = font * 1.7;
     const titleLength = Math.max(3, Math.floor(w / font) - 2);
-    const title = Array.from(sticker.visual.title);
+    const title = graphemes(sticker.visual.title);
     const shortTitle = title.slice(0, titleLength).join("") + (title.length > titleLength ? "…" : "");
     const asset = assets[sticker.visualId];
     const safeAsset = asset && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(asset) ? asset : undefined;
