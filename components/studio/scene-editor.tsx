@@ -1,9 +1,10 @@
+import { sceneMemo } from "@/lib/scene-memo";
+import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
-  Check,
-  CheckCircle2,
   Clock3,
   GraduationCap,
   MonitorPlay,
@@ -16,13 +17,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { EvidenceSource } from "@/components/evidence-source";
-import { KnowledgeSource } from "@/components/knowledge-source";
+import { SceneEvidenceStatus, SceneEvidenceDecisions } from "@/components/scene-evidence-links";
+import { SceneKnowledgeCard } from "./scene-knowledge-card";
 import type { PdfSource } from "@/lib/pdf-source";
 import { type Scene } from "@/lib/storyboard";
 import { normalizeDuration } from "@/lib/studio-state";
 import type { Settings } from "@/lib/storyboard";
-import type { ImageSettings } from "@/lib/scene-image";
-import { SceneImagePanel } from "./scene-image-panel";
+import { sceneImageInput, sceneImageRequestSchema, type ImageSettings } from "@/lib/scene-image";
+import { decisionKey, useEvidenceDecisions } from "@/lib/evidence-review";
+import { SceneImagePanel, type SceneImageControl, type SceneImageGenerationState } from "./scene-image-panel";
 import { VisualRecommendations } from "./visual-recommendations";
 import { SceneSection } from "./scene-section";
 import { sourceLocationLabel } from "@/lib/source-location";
@@ -36,7 +39,7 @@ export function SceneEditor({
   manuscript,
   sourceFile,
   source,
-  onChange,
+  onChange, onAcceptEvidence, onUseDecision, onUndoDecision, onUseDecisions,
   onMove,
   onDelete,
   onRegenerate,
@@ -48,6 +51,10 @@ export function SceneEditor({
   manuscript: string;
   sourceFile: Blob | null;
   source?: PdfSource;
+  onAcceptEvidence?: (key: string) => void;
+  onUseDecision?: (key: string) => void;
+  onUndoDecision?: (key: string) => void;
+  onUseDecisions?: (keys: string[]) => void;
   onChange: <K extends keyof Scene>(key: K, value: Scene[K]) => void;
   onMove: (delta: number) => void;
   onDelete: () => void;
@@ -58,6 +65,23 @@ export function SceneEditor({
   onImageSettingsChange: (settings: ImageSettings) => void;
   onOpenConnection: () => void;
 }) {
+  const imageControl = useRef<SceneImageControl>(null);
+  const [imageGeneration, setImageGeneration] = useState<SceneImageGenerationState>({ busy: false, canGenerate: false, message: "", error: "" });
+  const [batchError, setBatchError] = useState("");
+  function regenerateWithDecisions(keys: string[]) {
+    if (!keys.length || !onUseDecisions || !imageControl.current?.canGenerate) return;
+    const updated = useEvidenceDecisions(scene, keys);
+    const input = sceneImageInput(updated, settings, imageSettings);
+    const omitted = updated.grounding?.decisions?.some(item => keys.includes(decisionKey(item)) && item.field === "narration" && !input.scene.narration.includes(item.sentence));
+    if (omitted || !sceneImageRequestSchema.safeParse(input).success) {
+      setBatchError("선택한 내용을 모두 담기에는 장면 내용이 너무 깁니다. 화면 설명·나레이션·시각자료 제안을 줄인 뒤 다시 시도해 주세요.");
+      return;
+    }
+    setBatchError("");
+    // Commit all selected text before reading the panel's updated generation input.
+    flushSync(() => onUseDecisions(keys));
+    void imageControl.current?.generate();
+  }
   const knowledgeReferences = [...new Map([...(scene.references ?? []), ...(scene.visualReferences ?? [])]
     .map(reference => [reference.id, reference])).values()];
   return (
@@ -68,10 +92,6 @@ export function SceneEditor({
             SCENE {String(index + 1).padStart(2, "0")}
           </span>
           {scene.phase && <span className="scene-phase-tag">{phaseLabels[scene.phase]}</span>}
-          <span className={`status-tag ${scene.review ? "" : "done"}`}>
-            {scene.review ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}{" "}
-            {scene.review ? "검토 필요" : "검토 완료"}
-          </span>
           {scene.edited.length > 0 && (
             <span className="edited-tag">
               <PencilLine size={11} /> 수정됨
@@ -122,7 +142,7 @@ export function SceneEditor({
           </div>
         </div>
       </details>
-      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} />
+      <SceneImagePanel scene={scene} settings={settings} imageSettings={imageSettings} onSettingsChange={onImageSettingsChange} onChange={image => onChange("image", image)} onPlacementsChange={placements => onChange("visualPlacements", placements)} onSubtitleSettingsChange={subtitleSettings => onChange("subtitleSettings", subtitleSettings)} onTextChange={onChange} onOpenConnection={onOpenConnection} generationRef={imageControl} onGenerationStateChange={setImageGeneration} />
       <SceneSection title="원문 근거" icon={Quote}>
         <div className="scene-source-list">
           <article className="scene-source-card">
@@ -137,23 +157,15 @@ export function SceneEditor({
               {scene.edited.includes("evidence") && <small className="scene-edited-note">직접 수정한 근거입니다.</small>}
             </div>
           </article>
-          {knowledgeReferences.map(reference => <article className="scene-source-card" key={reference.id}>
-            <header className="scene-source-card-heading">
-              <div><span className="scene-source-badge is-knowledge">지식베이스</span><h4>{reference.title}</h4>
-                <p className="scene-source-meta">{reference.page ? `원본 ${reference.page}페이지` : "등록 본문"} · {reference.origin === "official" ? "공식 자료" : reference.origin === "internal" ? "내부 자료" : "제공 자료"}{reference.published ? ` · ${reference.published}` : ""}{reference.revision ? ` · ${reference.revision}` : ""}</p>
-                <p className="scene-source-meta">{[scene.references?.some(item => item.id === reference.id) && "나레이션·자막 참고", scene.visualReferences?.some(item => item.id === reference.id) && "시각자료 참고"].filter(Boolean).join(" · ")}</p>
-              </div>
-              <KnowledgeSource references={[reference]} context={reference.title} />
-            </header>
-            <blockquote className="scene-source-quote">{reference.excerpt}</blockquote>
-          </article>)}
-          {!knowledgeReferences.length && <p className="scene-section-empty">이 장면에 연결된 지식베이스 근거가 없습니다.</p>}
+          {knowledgeReferences.map(reference => <SceneKnowledgeCard key={reference.id} scene={scene} reference={reference} onAccept={onAcceptEvidence} />)}
+          <SceneEvidenceDecisions scene={scene} onUse={onUseDecision} onUndo={onUndoDecision} onRegenerate={onUseDecisions ? regenerateWithDecisions : undefined} generation={{ ...imageGeneration, error: batchError || imageGeneration.error }} />
+          {(!knowledgeReferences.length || !!scene.grounding?.failures?.length) && <SceneEvidenceStatus scene={scene} />}
         </div>
       </SceneSection>
-      <VisualRecommendations visuals={scene.visuals ?? []} references={knowledgeReferences} />
+      <VisualRecommendations scene={scene} references={knowledgeReferences} onChange={placements => onChange("visualPlacements", placements)} busy={imageGeneration.busy} />
       <SceneSection title="검토 메모" icon={AlertCircle} className="scene-review-section"
-        description="확인이 필요한 내용이나 수정할 점을 정리하세요.">
-        <Textarea aria-label="검토 메모" value={scene.reviewReason} onChange={event => onChange("reviewReason", event.target.value)} rows={2} />
+        description="메모를 자유롭게 작성하세요.">
+        <Textarea aria-label="검토 메모" value={sceneMemo(scene)} onChange={event => onChange("memo", event.target.value)} rows={2} />
       </SceneSection>
       <div className="scene-editor-footer">
         <Button
@@ -162,13 +174,6 @@ export function SceneEditor({
           onClick={onRegenerate}
         >
           <RotateCcw size={15} /> 이 장면 재생성
-        </Button>
-        <Button
-          variant={scene.review ? "default" : "secondary"}
-          onClick={() => onChange("review", !scene.review)}
-        >
-          <Check size={15} />
-          {scene.review ? "검토 완료로 표시" : "검토 필요로 변경"}
         </Button>
       </div>
     </section>

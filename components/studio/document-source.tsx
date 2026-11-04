@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ArrowDown, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +12,6 @@ export function DocumentSource({
   document,
   isPdf,
   documentPending,
-  generator,
   disabled,
   pdf,
   onChange,
@@ -20,7 +20,9 @@ export function DocumentSource({
   onReupload,
   onFindPart,
   onUseWhole,
+  generationAction,
 }: {
+  generationAction?: ReactNode;
   document: SourceDocument;
   isPdf: boolean;
   documentPending: boolean;
@@ -59,14 +61,14 @@ export function DocumentSource({
             {!pdf.original && <small>선택본은 브라우저에서 복구됩니다. {unit}를 변경하려면 원본 {format}를 다시 불러와 주세요.</small>}
           </div>}
         {!pdf.pickerOpen && pdf.selected && <PdfPreview file={pdf.selected} total={document.selectedPages?.length ?? 0} originalPages={document.selectedPages} format={format} />}
-        <label className="form-field" htmlFor="document-request">
-          <span>선택한 {unit}로 어떤 교육을 만들까요? <small>선택</small></span>
-          <Textarea id="document-request" value={document.query} maxLength={500} disabled={disabled}
-            onChange={(e) => onChange({ ...document, query: e.target.value })}
-            placeholder="예: 산업안전수칙을 중심으로, 표와 그림의 의미를 풀어서 설명해 주세요."
-            aria-describedby="document-request-hint" />
+        <label className="document-request-label" htmlFor="document-request">
+          <span>선택한 {unit}로 어떤 교육을 만들까요?</span>
         </label>
-        <p id="document-request-hint">{generator?.mode === "demo" ? "표·그림을 읽는 생성에는 실제 AI 연결이 필요합니다. 무료 데모에서는 생성하지 않습니다." : `AI가 선택한 ${unit}의 글자·표·그림·배치를 읽고 판단합니다. 오른쪽 교육대상·난이도·길이 설정을 함께 적용합니다.`}</p>
+        <div className="document-request-composer">
+          <Textarea id="document-request" rows={2} value={document.query} maxLength={500} disabled={disabled}
+            onChange={(e) => onChange({ ...document, query: e.target.value })} />
+          {generationAction}
+        </div>
       </> : <>
         <label className="form-field" htmlFor="document-request">
           <span>문서에서 어떤 부분을 제작할까요?</span>
@@ -79,7 +81,7 @@ export function DocumentSource({
           <Button variant="outline" disabled={disabled || !document.query.trim()} onClick={onFindPart}>요청한 부분 찾기 <ArrowDown size={14} /></Button>
           {document.text.length <= MAX_MANUSCRIPT_CHARS && <button disabled={disabled} onClick={onUseWhole}>문서 전체 사용</button>}
         </div>
-        <p id="document-request-hint">{documentPending ? "요청을 변경했습니다. ‘요청한 부분 찾기’로 원고에 반영해 주세요." : document.appliedQuery ? "찾은 내용이 아래 원고에 반영되었습니다. 확인·수정한 뒤 생성해 주세요." : document.text.length > MAX_MANUSCRIPT_CHARS ? "긴 문서입니다. 제목이나 핵심 단어로 제작 범위를 좁혀 주세요." : "문서 전체를 사용하거나, 제목·핵심 단어로 필요한 부분을 찾을 수 있습니다."}</p>
+        <p id="document-request-hint">{documentPending ? "요청을 변경했습니다. ‘요청한 부분 찾기’로 원고에 반영해 주세요." : document.appliedQuery ? "찾은 내용이 아래 원고에 반영되었습니다. 확인한 뒤 생성해 주세요." : document.text.length > MAX_MANUSCRIPT_CHARS ? "긴 문서입니다. 제목이나 핵심 단어로 제작 범위를 좁혀 주세요." : "문서 전체를 사용하거나, 제목·핵심 단어로 필요한 부분을 찾을 수 있습니다."}</p>
       </>}
     </div>
   );

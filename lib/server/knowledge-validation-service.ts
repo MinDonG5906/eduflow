@@ -1,9 +1,9 @@
 import "server-only";
-import { processedStructure, isProcessedPage, validationCandidateSchema, type ValidationRun } from "../knowledge-validation";
+import { processedStructure, isProcessedPage, exhaustedValidationPage, validationCandidateSchema, type ValidationRun } from "../knowledge-validation";
 import { structureChunks } from "../knowledge-structure";
 import { selectPdfPages } from "../pdf-source";
 import { knowledgePageImage, knowledgeVisionConfig } from "./knowledge-vision";
-import { correctSource } from "./knowledge-source-check";
+import { correctSource, SourceStructureError } from "./knowledge-source-check";
 import { parseWithParseFixer } from "./knowledge-services";
 import { contentHash, ValidationStore } from "./knowledge-validation-store";
 import { KnowledgeBase } from "./knowledge-base";
@@ -20,6 +20,23 @@ export type ValidationDependencies = {
 const defaults: ValidationDependencies = { image: knowledgePageImage, config: knowledgeVisionConfig,
   parse: parseWithParseFixer, correct: correctSource };
 class PageCallLimit extends Error {}
+
+/** Retain failed attempts and the original PDF, but exclude this page from publication. */
+export function skipExhaustedValidationPage(id: string, pageNumber: number, directory: string) {
+  const store = new ValidationStore(directory); let token: string | undefined;
+  try {
+    token = store.claim(id);
+    const run = store.get(id)!;
+    if (run.status === "published" || run.localDocumentId || run.quarantine) throw new Error("이미 저장 중이거나 격리된 자료입니다.");
+    const page = run.pages.find(item => item.page === pageNumber);
+    const job = store.job(id);
+    if (job?.state === "paused" || !page || !exhaustedValidationPage(page, job?.retrySince)) return run;
+    page.status = "skipped";
+    page.skippedFailure = { at: new Date().toISOString(), reason: page.attempts.at(-1)!.reasons[0] || "3회 시도 후에도 판독하지 못했습니다." };
+    store.save(run, token);
+    return run;
+  } finally { if (token) store.release(id, token); store.close(); }
+}
 
 export function sourceFingerprint(base: KnowledgeBase, id: string) {
   const doc = base.list().find(doc => doc.id === id);
@@ -62,8 +79,11 @@ export async function checkValidationPage(id: string, pageNumber: number, direct
         const filePage = run.filePages?.[pageNumber] ?? pageNumber;
         const image = await dependencies.image(store.pdf(id), filePage, signal);
         attempt.imageHash = contentHash(image);
+        const repairAttempt = page.attempts.slice(0, -1).findLast(item => item.sourceDiagnostic && item.imageHash === attempt.imageHash);
         attempt.phase = "parse";
-        const parsed = dependencies === defaults && knowledgeMode() === "local"
+        const parsed = repairAttempt
+          ? { commit: repairAttempt.parserCommit, initial: repairAttempt.initial, markdown: repairAttempt.parsed ?? "" }
+          : dependencies === defaults && knowledgeMode() === "local"
           ? await (async () => {
             const result = await analyzeKnowledgePdf(store.pdf(id), String(filePage), signal);
             const initial = result.pages[0].text;
@@ -72,16 +92,21 @@ export async function checkValidationPage(id: string, pageNumber: number, direct
           : await dependencies.parse(image, signal);
         attempt.parserCommit = parsed.commit; attempt.initial = parsed.initial; attempt.parsed = parsed.markdown;
         attempt.phase = "correct";
-        attempt.candidate = validationCandidateSchema.parse(await call(() => dependencies.correct(parsed.markdown, image, config, directory, signal)));
+        attempt.candidate = validationCandidateSchema.parse(await call(() => dependencies.correct(parsed.markdown, image, config, directory, signal, undefined, repairAttempt?.sourceDiagnostic)));
       }
       store.save(run, token);
       signal.throwIfAborted();
     } catch (error) {
+      // Private staging only: preserve the structured response for a targeted next attempt.
+      if (error instanceof SourceStructureError) attempt.sourceDiagnostic = error.diagnostic;
       // Never leak keys, model responses or internal service URLs through errors.
       if (calling && error instanceof GenerationError && ["RATE_LIMITED", "BUDGET_EXCEEDED", "TOKEN_LIMIT_EXCEEDED", "AI_NOT_CONFIGURED", "AI_DISABLED", "BUDGET_UNAVAILABLE"].includes(error.code)) attempt.calls!--;
       attempt.errorCode = signal.aborted ? "CANCELLED" : error instanceof PageCallLimit ? "PAGE_CALL_LIMIT" : error instanceof GenerationError ? error.code : "CHECK_FAILED";
       attempt.reasons = [error instanceof PageCallLimit ? "이 페이지의 자동 호출 한도(실패 재시도 포함 최대 3회)에 도달했습니다. 추가 유료 호출을 멈췄습니다." : signal.aborted ? "판독이 중단됐습니다. 이어서 처리할 수 있습니다." : error instanceof GenerationError
-        ? `판독을 완료하지 못했습니다. ${error.message}` : "판독을 완료하지 못했습니다. 서버 연결·모델 연결·비용 한도를 확인해 주세요."];
+        ? `판독을 완료하지 못했습니다. ${error.message}` : attempt.phase === "parse"
+          ? "PDF의 글자·표를 읽는 중 오류가 발생했습니다. 해당 페이지의 문서 구조를 확인해 주세요."
+          : attempt.phase === "render" ? "원본 PDF 페이지를 이미지로 만들지 못했습니다. 해당 페이지를 확인해 주세요."
+          : "AI 판독 결과를 처리하지 못했습니다. 해당 페이지를 다시 시도해 주세요."];
     }
     page.status = attempt.errorCode ? "held" : attempt.candidate && (attempt.candidate.text.trim() || attempt.candidate.tables.length || attempt.candidate.figures.length) ? "processed" : "skipped";
     store.save(run, token);
@@ -100,7 +125,7 @@ export async function publishValidation(id: string, directory: string, signal: A
     for (const page of run.pages.filter(isProcessedPage)) processedStructure(page, 1);
     if (run.status === "published") return run;
     if (run.pages.some(page => page.status === "pending")) throw new Error("페이지 판독이 끝난 뒤 저장합니다.");
-    if (run.pages.some(page => !isProcessedPage(page) && page.attempts.at(-1)?.errorCode)) throw new Error("연결·한도 대기 중인 판독이 끝난 뒤 반영합니다.");
+    if (run.pages.some(page => !isProcessedPage(page) && !(page.status === "skipped" && page.skippedFailure) && page.attempts.at(-1)?.errorCode)) throw new Error("연결·한도 대기 중인 판독이 끝난 뒤 반영합니다.");
     const passed = run.pages.filter(isProcessedPage);
     if (!passed.length) throw new Error("저장할 판독 내용이 없습니다.");
     const structures = passed.map((page, i) => processedStructure(page, i + 1));
@@ -151,5 +176,5 @@ export async function publishValidation(id: string, directory: string, signal: A
 
 export function validationSummary(run: ValidationRun) {
   return { ...run, remoteChunks: undefined, pages: run.pages.map(page => ({ ...page, attempts: page.attempts.map(attempt => ({ ...attempt,
-    initial: undefined, parsed: undefined, candidate: undefined, verdict: undefined })) })) };
+    initial: undefined, parsed: undefined, candidate: undefined, sourceDiagnostic: undefined, verdict: undefined })) })) };
 }

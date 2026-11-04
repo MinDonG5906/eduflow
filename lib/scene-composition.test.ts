@@ -3,9 +3,9 @@ import test from "node:test";
 import { PDFParse } from "pdf-parse";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from "pdf-lib";
-import { defaults, generateDemo, sample, sceneSchema, visualPlacementSchema } from "./storyboard";
+import { defaults, generateDemo, sample, sceneSchema, visualPlacementSchema, plainText } from "./storyboard";
 import type { VisualRecommendation } from "./knowledge-structure";
-import { clampVisualPlacement, compositionBackgroundRect, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements } from "./scene-composition";
+import { activeVisualReferences, activeVisuals, setVisualUsage, relayoutVisualPlacements, clampVisualPlacement, compositionBackgroundRect, compositionLayouts, compositionOverlaySvg, compositionPlaceholderSvg, compositionSubtitle, compositionStickers, defaultVisualPlacements, resizeVisualPlacement, sceneVisualPlacements } from "./scene-composition";
 import { sceneImageInput } from "./scene-image";
 import { sceneImagePrompt } from "./server/scene-image";
 import { readDraft, serializeDraft } from "./studio-state";
@@ -32,6 +32,38 @@ function board() {
   result.scenes[0] = { ...result.scenes[0], visual: "자료를 오른쪽에 놓고 작업자는 왼쪽에서 설명한다.", visuals: [visual(1), visual(2)] };
   return result;
 }
+
+test("unused visual recommendations stay excluded through layout, save, image inputs and TXT, and can be restored", () => {
+  const original = board();
+  const scene = original.scenes[0];
+  scene.visuals![0] = { ...scene.visuals![0], title: "UNUSED_VISUAL_TITLE", page: 6 };
+  scene.visualReferences = scene.visuals!.map((item, index) => ({ id: `source-${index}`, documentId: item.documentId,
+    title: index === 0 ? "UNUSED_VISUAL_SOURCE" : "ACTIVE_VISUAL_SOURCE", page: item.page, excerpt: item.quote,
+    origin: "official", published: "", revision: "", url: "", visuals: [item] }));
+  const disabled = { ...scene, visualPlacements: setVisualUsage(scene, "visual-1", false) };
+  assert.deepEqual(activeVisuals(disabled).map(item => item.id), ["visual-2"]);
+  assert.deepEqual(compositionStickers(disabled).map(item => item.visualId), ["visual-2"]);
+  assert.deepEqual(activeVisualReferences(disabled).map(item => item.id), ["source-1"]);
+  for (const layout of Object.keys(compositionLayouts) as (keyof typeof compositionLayouts)[]) {
+    assert.deepEqual(relayoutVisualPlacements(disabled, layout).map(item => item.visualId), ["visual-2"]);
+  }
+  const input = sceneImageInput(disabled, defaults, { style: "sketch", direction: "" });
+  assert.equal(input.scene.composition.length, 1);
+  assert.deepEqual(input.scene.visualReferences.map(item => item.id), ["source-1"]);
+  original.scenes[0] = disabled;
+  const restored = readDraft(serializeDraft({ manuscript: sample, settings: defaults, board: original })).board!;
+  assert.deepEqual(restored.scenes[0].visualPlacements, disabled.visualPlacements);
+  assert.doesNotMatch(plainText(restored), /UNUSED_VISUAL_TITLE|UNUSED_VISUAL_SOURCE/);
+  assert.match(plainText(restored), /ACTIVE_VISUAL_SOURCE/);
+  const enabled = { ...disabled, visualPlacements: setVisualUsage(disabled, "visual-1", true) };
+  assert.equal(compositionStickers(enabled).length, 2);
+  assert.equal(setVisualUsage(enabled, "visual-1", true).length, 2, "restoring twice cannot duplicate placement");
+  assert.equal(enabled.visualPlacements.find(item => item.visualId === "visual-2"), disabled.visualPlacements[0], "other positions are preserved");
+  const empty = { ...disabled, visualPlacements: setVisualUsage(disabled, "visual-2", false) };
+  assert.deepEqual(relayoutVisualPlacements(empty), []);
+  assert.deepEqual(activeVisualReferences(empty), []);
+  assert.equal(scene.visuals!.length, 2, "source recommendations remain available for reuse");
+});
 
 test("recommended composition uses real source identities and keeps all twenty assets in bounds in every preset", () => {
   const scene = board().scenes[0];

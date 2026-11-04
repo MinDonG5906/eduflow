@@ -83,6 +83,7 @@ export const visualRecommendationSchema = z.object({
   table: knowledgeTableSchema.optional(),
   bounds: boundsSchema.optional(), quote: z.string().max(900), reason: z.string().max(500),
   model: z.string().max(100), confidence: z.number().min(0).max(1),
+  association: z.enum(["caption"]).optional(),
 }).refine(visual => visual.kind === "table" ? Boolean(visual.table && visual.table.id === visual.figureId) : Boolean(visual.bounds), "missing visual content");
 export type VisualRecommendation = z.infer<typeof visualRecommendationSchema>;
 
@@ -168,6 +169,26 @@ export function recommendationsForBlocks(documentId: string, structure: Knowledg
       title: figure.title, page: structure.page, filePage: structure.filePage, bounds: figure.bounds,
       quote: link.quote, reason: link.reason, model: link.model, confidence: link.confidence }] : [];
   }).slice(0, 10);
+}
+
+/** Existing extracted figures with a verbatim caption can enter scene relevance
+ * checking. This is NOT a verified KnowledgeLink and never modifies the index. */
+export function captionFigureCandidates(documentId: string, structure: KnowledgeStructure): VisualRecommendation[] {
+  if (!structure.searchable || !structure.analyzed) return [];
+  const normalize = (text: string) => text.normalize("NFC").replace(/\s/gu, "");
+  return structure.figures.flatMap(figure => {
+    // Preserve all previous decisions, including uncertain and rejected links.
+    if (structure.links.some(link => link.figureId === figure.id)) return [];
+    const caption = normalize(figure.title);
+    if (caption.length < 4 || /^(?:그림|사진|도표|figure|image)\d*$/i.test(caption)) return [];
+    const block = structure.blocks.find(block => !block.tableId && normalize(block.text).includes(caption));
+    if (!block || block.text.includes("[원본 기호 확인]") || !boundsSchema.safeParse(figure.bounds).success) return [];
+    if (!normalize(block.text.slice(0, 900)).includes(caption)) return [];
+    return [{ id: `${documentId}:${structure.page}:caption:${figure.id}`, figureId: figure.id,
+      documentId, blockId: block.id, title: figure.title, page: structure.page, filePage: structure.filePage,
+      bounds: figure.bounds, quote: block.text.slice(0, 900), association: "caption" as const,
+      reason: "원문에 있는 그림 설명으로 찾은 후보입니다. 장면 관련성 대조 후 추천합니다.", model: "source-caption", confidence: 0 }];
+  });
 }
 
 /** Accepted tables are visual sources too. Proposed tables and unresolved symbols stay out. */

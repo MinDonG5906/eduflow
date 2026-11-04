@@ -52,7 +52,7 @@ test("Gemini uses pinned prices under the team caps, and an unknown model or mis
   for (const model of Object.keys(GEMINI_MODELS)) {
     const config = geminiConfig({ ...teamEnv, EDUFLOW_GEMINI_MODEL: model, EDUFLOW_AI_DAY_BUDGET_USD: "50", EDUFLOW_AI_MONTH_BUDGET_USD: "100" });
     assert.equal(config.model, model);
-    assert.equal(config.dayBudget, 5_000_000);
+    assert.equal(config.dayBudget, 40_000_000);
     assert.ok(config.reservationCost <= config.requestBudget, model);
   }
   const capped = geminiConfig({ ...teamEnv, EDUFLOW_AI_MAX_INPUT_TOKENS: "110000", EDUFLOW_AI_MAX_OUTPUT_TOKENS: "12000" });
@@ -165,7 +165,7 @@ test("Gemini runs through shared budgets with optional RAG and keeps source deta
       const body = JSON.parse(String(init?.body));
       const prompt = JSON.parse(body.contents[0].parts[0].text);
       assert.equal(prompt.task.manuscript, sample);
-      assert.deepEqual(prompt.task.supplementalSources, references);
+      assert.deepEqual(prompt.task.supplementalSources, references.map((ref, index) => ({ ...ref, id: `rag:${index + 1}` })), "retrieved evidence is available before drafting");
       assert.ok(prompt.task.groundingGuidance);
       return reply(JSON.stringify(output()));
     } });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { sceneSchema, sceneReferenceSchema, settingsSchema, type Scene, type Board, type Settings } from "./storyboard";
-import { compositionStickers } from "./scene-composition";
+import { activeVisualReferences, compositionStickers } from "./scene-composition";
 
 export const imageStyles = { sketch: "흑백 스케치", illustration: "컬러 일러스트", realistic: "사실적인 장면" } as const;
 export type ImageSettings = NonNullable<Board["imageSettings"]>;
@@ -24,7 +24,9 @@ export function sceneImageInput(scene: Scene, settings: Settings, imageSettings:
   const refs = (items: Scene["references"]) => (items ?? []).map(({ id, title, excerpt, page, documentId }) => ({ id, title, excerpt, page, documentId }));
   return { scene: { id: scene.id, title: scene.title, purpose: scene.purpose, visual: scene.visual, assets: scene.assets,
     narration: scene.narration.slice(0, 4000), evidence: scene.evidence.slice(0, 3000), sourceId: scene.sourceId, pdfSource: scene.pdfSource,
-    references: refs(scene.references), visualReferences: refs(scene.visualReferences),
+    references: refs(scene.grounding ? scene.references?.filter(ref => scene.grounding!.status !== "stale" &&
+      scene.grounding!.links.some(link => link.referenceId === ref.id &&
+        (link.applicability === "direct" || link.applicability === "transfer" && link.review === "accepted"))) : scene.references), visualReferences: refs(activeVisualReferences(scene)),
     composition: compositionStickers(scene).map(({ label, kind, x, y, width, height }) => ({ label, kind: kind as "표" | "그림", x, y, width, height })) }, audience: settings.audience, imageSettings, direction };
 }
 export const sceneImageResultSchema = z.object({

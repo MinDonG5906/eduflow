@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { PDFDocument } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { pdfResources } from "./pdf-resources";
 import { analyzePdfTable } from "./pdf-layout";
 import { knowledgeTableSchema, makeKnowledgeStructure } from "../knowledge-structure";
 import { knowledgeFigureCandidates } from "./knowledge-figures";
@@ -132,8 +133,8 @@ export async function analyzeKnowledgePdf(
   if (!total || (!range.trim() && total > 200))
     throw new DocumentImportError("200페이지가 넘는 PDF는 필요한 페이지 범위를 지정해 주세요.", 413);
   const selected = knowledgePageSelection(range, total);
-  const parser = new PDFParse({ data: new Uint8Array(pdf), isEvalSupported: false });
-  const loading = getDocument({ data: new Uint8Array(pdf), isEvalSupported: false, verbosity: 0 });
+  const parser = new PDFParse({ ...pdfResources, data: new Uint8Array(pdf), isEvalSupported: false });
+  const loading = getDocument({ ...pdfResources, data: new Uint8Array(pdf), isEvalSupported: false, verbosity: 0 });
   let ocr: Awaited<ReturnType<typeof createKoreanOcr>> | undefined;
   let ocrUnavailable = false;
   const pages: KnowledgeImportPage[] = [];
@@ -141,7 +142,14 @@ export async function analyzeKnowledgePdf(
   try {
     const layoutDocument = await loading.promise;
     const extracted = await parser.getText({ partial: selected, pageJoiner: "" });
-    const tables = await parser.getTable({ partial: selected });
+    // Decorative lines / incomplete borders can crash pdf-parse's table detector.
+    // Keep readable text and image-based extraction available in that case.
+    let tableDetectionFailed = false;
+    const tables = await parser.getTable({ partial: selected }).catch(() => {
+      signal.throwIfAborted();
+      tableDetectionFailed = true;
+      return { pages: [] };
+    });
     const tablePages = new Map(tables.pages.filter((page) => page.tables.length).map((page) => [page.num, page.tables]));
     for (const page of extracted.pages) {
       signal.throwIfAborted();
@@ -177,7 +185,9 @@ export async function analyzeKnowledgePdf(
         continue;
       }
       if (readable.length >= 40 && !suspicious(readable)) {
-        pages.push({ page: page.num, text: readable, method: "text", confidence: null, reviewReason: "", needsReview: false });
+        pages.push({ page: page.num, text: readable, method: "text", confidence: null,
+          reviewReason: tableDetectionFailed ? "표 자동 추출에 실패했습니다. 읽힌 본문과 원본 이미지로 판독을 이어갑니다." : "",
+          needsReview: tableDetectionFailed });
         continue;
       }
       let recognized: OcrResult | undefined;

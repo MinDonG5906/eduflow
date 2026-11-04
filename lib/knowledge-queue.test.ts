@@ -21,9 +21,9 @@ const parser: ValidationDependencies = { config: () => ({} as AIConfig), image: 
   parse: async image => ({ commit: "c3d48d2a7d17a13c526ff0fa42731f389a3bbf83", initial: "initial", markdown: "initial", imageHash: contentHash(image) }),
   correct: async () => structuredClone(candidate) };
 const metadata = { title: "자동 처리 테스트", origin: "internal" as const, published: "", revision: "" };
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, pages = 1) {
   const directory = mkdtempSync(join(tmpdir(), "eduflow-queue-")); t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const pdf = await PDFDocument.create(); pdf.addPage(); const bytes = Buffer.from(await pdf.save());
+  const pdf = await PDFDocument.create(); for (let i = 0; i < pages; i++) pdf.addPage(); const bytes = Buffer.from(await pdf.save());
   const store = new ValidationStore(directory); t.after(() => store.close());
   const index = new LocalSearchIndex(directory, async () => [1, 0]);
   const deps: QueueDependencies = { availability: () => ({ ready: true, nextAt: 0, reason: "" }),
@@ -135,6 +135,97 @@ test("paid failures cannot exceed the three-call page ceiling", async t => {
   for (let i = 0; i < 5; i++) await checkValidationPage(run.id, 1, directory, AbortSignal.timeout(5000), deps);
   assert.equal(calls, 3); assert.equal(store.get(run.id)!.pages[0].attempts.at(-1)!.errorCode, "PAGE_CALL_LIMIT");
   assert.equal(store.get(run.id)!.pages[0].attempts.reduce((sum, a) => sum + (a.calls ?? 0), 0), 3);
+});
+
+test("manual restart resets the transient retry window without clearing past paid calls", async t => {
+  const { directory, bytes, store, deps } = await fixture(t);
+  const run = store.create(metadata, bytes, [1]);
+  const token = store.claim(run.id);
+  run.pages[0].status = "held";
+  run.pages[0].attempts = Array.from({ length: 3 }, () => ({ at: "2020-01-01T00:00:00.000Z", reasons: ["old parse failure"], errorCode: "CHECK_FAILED", calls: 0 }));
+  store.save(run, token); store.release(run.id, token); store.enqueue(run.id);
+  let tries = 0;
+  deps.check = (id, page, dir, signal) => checkValidationPage(id, page, dir, signal, { ...parser, parse: async (...args) => {
+    if (++tries === 1) throw new Error("temporary parse problem");
+    return parser.parse(...args);
+  } });
+  await processValidationQueue(directory, deps);
+  assert.equal(store.job(run.id)!.state, "waiting");
+  await processValidationQueue(directory, deps, store.job(run.id)!.nextAt);
+  assert.equal(store.job(run.id)!.state, "complete");
+  assert.equal(store.get(run.id)!.pages[0].attempts.length, 5);
+});
+
+test("three failed responses skip the page with its history and complete an all-failed run without publishing", async t => {
+  const { directory, bytes, store, deps } = await fixture(t);
+  const run = store.create(metadata, bytes, [1]); store.enqueue(run.id);
+  deps.check = (id, page, dir, signal) => checkValidationPage(id, page, dir, signal, { ...parser, correct: async () => { throw new GenerationError("INVALID_OUTPUT"); } });
+  for (let i = 0; i < 3; i++) await processValidationQueue(directory, deps, Math.max(Date.now(), store.job(run.id)!.nextAt));
+  assert.equal(store.job(run.id)!.state, "complete");
+  assert.match(store.job(run.id)!.reason, /판독 실패로 건너뜀 1쪽/);
+  assert.equal(store.get(run.id)!.pages[0].status, "skipped");
+  assert.equal(store.get(run.id)!.pages[0].skippedFailure?.reason, store.get(run.id)!.pages[0].attempts.at(-1)!.reasons[0]);
+  assert.equal(store.get(run.id)!.localDocumentId, undefined);
+  assert.equal(store.get(run.id)!.pages[0].attempts.reduce((sum, a) => sum + (a.calls ?? 0), 0), 3);
+});
+
+test("failed pages never enter search and the following page publishes with its original page number", async t => {
+  const { directory, bytes, store, deps, index } = await fixture(t, 2);
+  const run = store.create(metadata, bytes, [1, 2]); store.enqueue(run.id);
+  const calls: number[] = [];
+  deps.check = (id, page, dir, signal) => checkValidationPage(id, page, dir, signal, { ...parser, correct: async () => {
+    calls.push(page); if (page === 1) throw new GenerationError("INVALID_OUTPUT"); return structuredClone(candidate);
+  } });
+  for (let i = 0; i < 4; i++) await processValidationQueue(directory, deps, Math.max(Date.now(), store.job(run.id)!.nextAt));
+  assert.deepEqual(calls, [1, 1, 1, 2]);
+  const result = store.get(run.id)!;
+  assert.equal(result.status, "published"); assert.equal(store.job(run.id)!.state, "complete");
+  assert.deepEqual(result.pages.map(page => page.status), ["skipped", "processed"]);
+  assert.equal(validationCounts(result).passed, 1); assert.equal(validationCounts(result).exceptions, 1);
+  const base = new KnowledgeBase(directory);
+  try {
+    assert.deepEqual(base.structures(result.localDocumentId!).map(page => [page.page, page.filePage]), [[2, 1]]);
+    assert.equal((await PDFDocument.load(base.pdf(result.localDocumentId!)!)).getPageCount(), 1);
+  } finally { base.close(); }
+  assert.deepEqual(store.pdf(run.id), bytes);
+  const results = await searchHybridKnowledge("고소작업 추락", "", directory, AbortSignal.timeout(5000), index);
+  assert.ok(results.length);
+  assert.ok(results.every(result => result.page === 2));
+});
+
+test("resuming a legacy exhausted page skips it before checking paid capacity", async t => {
+  const { directory, bytes, store, deps } = await fixture(t, 2);
+  const run = store.create(metadata, bytes, [1, 2]), token = store.claim(run.id);
+  run.pages[0].status = "held";
+  run.pages[0].attempts = Array.from({ length: 3 }, () => ({ at: "2020-01-01T00:00:00.000Z", reasons: ["표 구조 오류"], errorCode: "INVALID_OUTPUT", calls: 1, policy: "single-pass" as const }));
+  store.save(run, token); store.release(run.id, token); store.enqueue(run.id);
+  deps.availability = () => { assert.fail("exhausted pages must not check paid capacity"); };
+  deps.check = async () => { assert.fail("exhausted pages must not make another call"); };
+  await processValidationQueue(directory, deps);
+  assert.equal(store.get(run.id)!.pages[0].status, "skipped");
+  assert.equal(store.get(run.id)!.pages[0].attempts.length, 3);
+  assert.equal(store.job(run.id)!.state, "queued");
+});
+
+test("budget failures are never treated as unreadable pages", async t => {
+  const { directory, bytes, store, deps } = await fixture(t);
+  const run = store.create(metadata, bytes, [1]); store.enqueue(run.id);
+  deps.check = (id, page, dir, signal) => checkValidationPage(id, page, dir, signal, { ...parser, correct: async () => { throw new GenerationError("BUDGET_EXCEEDED"); } });
+  for (let i = 0; i < 4; i++) await processValidationQueue(directory, deps, Math.max(Date.now(), store.job(run.id)!.nextAt));
+  assert.equal(store.get(run.id)!.pages[0].status, "held");
+  assert.equal(store.get(run.id)!.pages[0].skippedFailure, undefined);
+  assert.equal(store.job(run.id)!.state, "waiting");
+});
+
+test("truncated page output and token-limit failures also stop after three attempts", async t => {
+  for (const code of ["OUTPUT_TRUNCATED", "TOKEN_LIMIT_EXCEEDED"] as const) await t.test(code, async t => {
+    const { directory, bytes, store, deps } = await fixture(t);
+    const run = store.create(metadata, bytes, [1]); store.enqueue(run.id); let tries = 0;
+    deps.check = (id, page, dir, signal) => checkValidationPage(id, page, dir, signal, { ...parser, correct: async () => { tries++; throw new GenerationError(code); } });
+    for (let i = 0; i < 3; i++) await processValidationQueue(directory, deps, Math.max(Date.now(), store.job(run.id)!.nextAt));
+    assert.equal(tries, 3); assert.equal(store.get(run.id)!.pages[0].status, "skipped");
+    assert.equal(store.job(run.id)!.state, "complete");
+  });
 });
 
 

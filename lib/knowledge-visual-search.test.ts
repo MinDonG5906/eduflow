@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
+import { visualVerdicts } from "./fixtures/grounding-judge";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,10 +95,12 @@ test("selected figure and table reach the scene, draft and export while full tab
   assert.deepEqual(visualReferences.find(ref => ref.visuals![0].kind === "table")!.visuals![0].table, table);
   const demo = generateDemo(sample, defaults);
   const board = await runGeneration({ manuscript: sample, settings: defaults }, {
-    mode: "ai", model: "mock", promptVersion: "test", generate: async () => ({
+    mode: "ai", model: "mock", promptVersion: "test", generate: async (_, context) => context.verification ? visualVerdicts(context.verification) : ({
       title: demo.title, summary: demo.summary, objectives: demo.objectives,
       scenes: demo.scenes.map(({ id, review, reviewReason, edited, generation, ...scene }, index) => ({
-        ...scene, sceneNo: index + 1, referenceIds: [], visualReferenceIds: index === 1 ? visualReferences.map(ref => ref.id) : [],
+        ...scene, sceneNo: index + 1, referenceIds: [], visualReferenceIds: [],
+        ...(index === 1 ? { narration: visualReferences.map(ref => ref.excerpt).join("\n"),
+          visual: visualReferences.map(ref => ref.excerpt).join("\n") } : {}),
       })),
     }),
   }, { references });

@@ -8,7 +8,8 @@ import { defaults, newScene } from "./storyboard";
 import { searchNeedles } from "./knowledge";
 import { visualSearchTerms } from "./knowledge-visual-search";
 import { selectPdfPages } from "./pdf-source";
-import { generationKnowledgeQuery, retrieveGenerationKnowledge } from "./server/generation-knowledge";
+import { generationKnowledgeQuery, retrieveGenerationKnowledge, searchGenerationKnowledge } from "./server/generation-knowledge";
+import { searchHybridKnowledge } from "./server/knowledge-hybrid-search";
 import { KnowledgeBase } from "./server/knowledge-base";
 import { createGenerateHandler } from "./server/generate-handler";
 
@@ -79,6 +80,7 @@ test("generation handler supplies the validated attachment to retrieval before p
   let searched = false, generated = false;
   const controller = new AbortController();
   const post = createGenerateHandler({ mode: "ai", model: "mock", promptVersion: "test", generate: async () => { generated = true; return {}; } }, {
+    sceneKnowledge: async () => { assert.fail("cancelled pre-retrieval must never reach scene retrieval"); },
     knowledge: async (input, searchContext) => {
       searched = true;
       assert.deepEqual(input.pdfSource?.pages, [22]);
@@ -103,7 +105,11 @@ test("slow RAG falls back within its deadline while user cancellation never fall
   const result = await retrieveGenerationKnowledge(input, context(), async (_, ctx) => {
     searchSignal = ctx.signal; return new Promise(() => {});
   }, 10);
-  assert.deepEqual(result, { references: [], status: "unavailable" });
+  assert.deepEqual(result.references, []);
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.failure?.stage, "source_search");
+  assert.equal(result.failure?.reason, "timeout");
+  assert.equal(result.failure?.timeoutMs, 10);
   assert.equal(searchSignal?.aborted, true);
   const controller = new AbortController();
   const pending = retrieveGenerationKnowledge(input, { signal: controller.signal }, async () => {
@@ -120,4 +126,27 @@ test("scene-specific visual terms survive a long manuscript's search budget", as
   assert.ok(visualSearchTerms(result.query).includes("환기팬"));
   assert.ok(result.query.indexOf(scene.title) < result.query.indexOf(longManuscript));
   assert.ok(result.query.includes(longManuscript), "the source remains available to text retrieval");
+});
+
+test("unit queries use local search and cannot attach accident prevention to immediate response", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "eduflow-unit-query-"));
+  const base = new KnowledgeBase(directory);
+  const response = "사고 직후 작업을 중지합니다. 전원을 차단합니다. 응급조치를 실시합니다.";
+  try {
+    base.add({ title: "중량물 사고 안전 자료", text: "중량물 작업 전 작업계획서를 작성합니다. 사고 예방을 위해 작업 순서를 점검합니다.",
+      origin: "internal", published: "", revision: "" });
+    const queries: string[] = [];
+    const search: typeof searchHybridKnowledge = async (query, topic, _, abort) => {
+      queries.push(query); return searchHybridKnowledge(query, topic, directory, abort);
+    };
+    const input = { manuscript: `중량물 교육\n${response}`, settings: defaults };
+    assert.deepEqual(await searchGenerationKnowledge(input, context(), search), []);
+    const good = base.add({ title: "현장 비상 대응", text: response, origin: "internal", published: "", revision: "" });
+    const references = await searchGenerationKnowledge(input, context(), search);
+    assert.ok(references.length > 0);
+    assert.ok(references.every(ref => ref.documentId === good.id));
+    assert.ok(references.every(ref => ref.unitIds?.length && ref.context?.documentTitle));
+    assert.ok(queries.some(query => query.includes("전원을 차단")));
+    assert.ok(!queries.some(query => query.includes(response)), "the entire response is not one broad query");
+  } finally { base.close(); rmSync(directory, { recursive: true, force: true }); }
 });

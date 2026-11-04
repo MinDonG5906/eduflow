@@ -4,8 +4,8 @@ import { GenerationError } from "../generation-contract";
 
 // Shared by every local checkout. Lower personal limits remain valid.
 export const TEAM_AI_BUDGET_LIMITS = Object.freeze({
-  dayUSD: "5.00",
-  monthUSD: "10.00",
+  dayUSD: "40.00",
+  monthUSD: "40.00",
 });
 
 // All amounts are integer millionths of a US dollar; never use floating-point money.
@@ -67,7 +67,7 @@ export function readAIConfig(env: Record<string, string | undefined> = process.e
   const numerator = BigInt(config.maxInputTokens) * BigInt(config.inputRate) +
     BigInt(config.maxOutputTokens) * BigInt(config.outputRate);
   const attemptCost = Number((numerator + BigInt(999999)) / BigInt(1000000));
-  const reservationCost = attemptCost * 2; // Includes the one allowed format repair.
+  const reservationCost = attemptCost * 2; // Draft + either one format repair or one evidence judge.
   if (config.dayBudget > config.monthBudget || config.requestBudget > config.dayBudget)
     throw new GenerationError("AI_NOT_CONFIGURED");
   return Object.freeze({ ...config, attemptCost, reservationCost });

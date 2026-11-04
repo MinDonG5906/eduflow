@@ -31,6 +31,28 @@ export function sceneVisualPlacements(scene: CompositionScene): VisualPlacement[
   const ids = new Set(compositionVisuals(scene).map(visual => visual.id));
   return (scene.visualPlacements ?? defaultVisualPlacements(scene)).filter(item => ids.has(item.visualId));
 }
+export function setVisualUsage(scene: CompositionScene, visualId: string, enabled: boolean): VisualPlacement[] {
+  const placements = sceneVisualPlacements(scene);
+  if (!enabled) return placements.filter(item => item.visualId !== visualId);
+  if (placements.some(item => item.visualId === visualId)) return placements;
+  const placement = defaultVisualPlacements(scene).find(item => item.visualId === visualId);
+  return placement ? [...placements, placement] : placements;
+}
+/** Layout presets move the active visuals without re-enabling excluded ones. */
+export function relayoutVisualPlacements(scene: CompositionScene, layout?: CompositionLayout): VisualPlacement[] {
+  const active = new Set(sceneVisualPlacements(scene).map(item => item.visualId));
+  return defaultVisualPlacements(scene, layout).filter(item => active.has(item.visualId));
+}
+export function activeVisuals(scene: CompositionScene) {
+  const active = new Set(sceneVisualPlacements(scene).map(item => item.visualId));
+  return compositionVisuals(scene).filter(item => active.has(item.id));
+}
+export function activeVisualReferences(scene: CompositionScene & Pick<Scene, "visualReferences">) {
+  if (scene.visualPlacements === undefined) return scene.visualReferences ?? [];
+  const visuals = activeVisuals(scene);
+  return (scene.visualReferences ?? []).filter(reference => visuals.some(visual => reference.documentId === visual.documentId &&
+    (reference.visuals?.some(item => item.id === visual.id) || reference.page === visual.page)));
+}
 export function clampVisualPlacement(placement: VisualPlacement): VisualPlacement {
   const finite = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
   const width = Math.min(100, Math.max(10, finite(placement.width, 40)));

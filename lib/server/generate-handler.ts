@@ -6,11 +6,13 @@ import { protectSubscriptionGeneration } from "./subscription-guard";
 import { assertLocalAIRequest } from "./ai-config";
 import { readPdfGenerationRequest, type PdfAttachment } from "./pdf-input";
 import { retrieveGenerationKnowledge, type KnowledgeRetriever } from "./generation-knowledge";
+import type { SceneKnowledgeRetriever } from "./scene-knowledge";
 
 export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() => GenerationAdapter), options: {
   timeoutMs?: number;
   budgetDirectory?: string;
   knowledge?: KnowledgeRetriever;
+  sceneKnowledge?: SceneKnowledgeRetriever;
 } = {}) {
   return async (request: Request) => {
     try {
@@ -40,7 +42,8 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
         : protectPaidGeneration(request, adapter, { ...(adapter.billing ? { config: adapter.billing.config } : {}), directory: options.budgetDirectory });
       let board;
       try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { timeoutMs: options.timeoutMs,
-        signal: request.signal, pdf, ...(knowledge ? { references: knowledge.references, knowledgeStatus: knowledge.status } : {}) }); }
+        signal: request.signal, pdf, retrieveSceneKnowledge: options.sceneKnowledge,
+        ...(knowledge ? { references: knowledge.references, knowledgeStatus: knowledge.status, knowledgeFailure: knowledge.failure } : {}) }); }
       finally { protectedRun?.finish(); }
       return NextResponse.json(board, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {

@@ -53,7 +53,7 @@ export function createAnthropicAdapter(config: AIConfig, options: { fetch?: type
     return request(config, prepared.context, prepared.document);
   }
   return {
-    mode: "ai", model: config.model, promptVersion: "eduflow-claude-v5-two-captions",
+    mode: "ai", model: config.model, promptVersion: "eduflow-claude-v13-evidence-applicability",
     billing: { kind: "metered", config },
     async countInputTokens(_, context) {
       try {

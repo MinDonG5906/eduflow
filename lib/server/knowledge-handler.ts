@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { knowledgeMetadataSchema, knowledgeSourceSchema } from "../knowledge";
 import { GenerationError } from "../generation-contract";
+import { pdfResources } from "./pdf-resources";
 import { assertLocalAIRequest } from "./ai-config";
 import { DocumentImportError } from "./document-import-error";
 import { extractDocument } from "./document-import";
@@ -182,7 +183,7 @@ export async function renderKnowledgePage(request: Request, directory?: string) 
     const pdf = withBase((base) => base.pdf(id), directory);
     if (!pdf) return Response.json({ error: "원본 페이지를 찾지 못했습니다." }, { status: 404, headers });
     const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(pdf), isEvalSupported: false });
+    const parser = new PDFParse({ ...pdfResources, data: new Uint8Array(pdf), isEvalSupported: false });
     try {
       const screenshot = await parser.getScreenshot({ partial: [page], desiredWidth: 1300, imageDataUrl: false });
       if (!screenshot.pages.length) return Response.json({ error: "원본 페이지를 찾지 못했습니다." }, { status: 404, headers });

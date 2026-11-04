@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { candidateProblems, validatedStructure, processedStructure, type ValidationCandidate, type ValidationVerdict } from "./knowledge-validation";
 import { ValidationStore, contentHash } from "./server/knowledge-validation-store";
-import { checkValidationPage, publishValidation, type ValidationDependencies } from "./server/knowledge-validation-service";
+import { checkValidationPage, publishValidation, validationSummary, type ValidationDependencies } from "./server/knowledge-validation-service";
 import { RAGFlowClient, PARSEFIXER_COMMIT, parseWithParseFixer, serviceConfig } from "./server/knowledge-services";
 import { KnowledgeBase } from "./server/knowledge-base";
 import { searchHybridKnowledge } from "./server/knowledge-hybrid-search";
@@ -17,6 +17,7 @@ import { correctSource } from "./server/knowledge-source-check";
 import { OPENAI_MODEL } from "./server/openai-adapter";
 import { DatabaseSync } from "node:sqlite";
 import { GenerationError } from "./generation-contract";
+import { expandSourceCandidate, type SourceCandidate } from "./server/knowledge-source-format";
 
 const candidate: ValidationCandidate = { text: "고소작업 추락 위험을 줄이기 위한 안전난간 설치와 작업 전 점검을 실시한다.", tables: [], figures: [], uncertainties: [] };
 const verdict: ValidationVerdict = { textMatches: true, numbersAndUnitsMatch: true, tableCellsMatch: true,
@@ -258,6 +259,30 @@ test("a document disabled during remote retrieval cannot leak through precompute
   };
   assert.deepEqual(await searchHybridKnowledge("고소작업 추락", "", directory, signal(), remote.client), []);
 });
+
+test("source response failures distinguish truncation, refusals, empty output and invalid data without hidden retries", async t => {
+  const { directory } = await fixture(t);
+  const config = knowledgeVisionConfig(directory, { EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: "fake-private-test-key",
+    EDUFLOW_AI_MODEL: OPENAI_MODEL, EDUFLOW_AI_INPUT_USD_PER_MILLION: "0.75", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "4.50", EDUFLOW_AI_REQUEST_BUDGET_USD: "0.10",
+    EDUFLOW_AI_REQUESTS_PER_HOUR: "0" });
+  const cases = [
+    { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [], code: "OUTPUT_TRUNCATED" },
+    { status: "incomplete", incomplete_details: { reason: "content_filter" }, output: [], code: "AI_REFUSED" },
+    { status: "failed", output: [], code: "PROVIDER_UNAVAILABLE" },
+    { status: "completed", output: [], code: "INVALID_OUTPUT" },
+    { status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "{}", annotations: [] }] }], code: "INVALID_OUTPUT" },
+  ];
+  for (const { code, ...response } of cases) {
+    let calls = 0;
+    const transport: typeof fetch = async input => {
+      if (String(input).endsWith("input_tokens")) return Response.json({ input_tokens: 100 });
+      calls++; return Response.json({ object: "response", id: "response-test", ...response });
+    };
+    await assert.rejects(correctSource("원본", Buffer.from("image"), config, directory, signal(), transport),
+      (error: unknown) => error instanceof GenerationError && error.code === code && !error.message.includes("초안"));
+    assert.equal(calls, 1);
+  }
+});
 test("test corpus stays excluded from real generation even after publish and a manual activation", async t => {
   const { directory, run } = await fixture(t);
   const store = new ValidationStore(directory), token = store.claim(run.id);
@@ -283,4 +308,68 @@ test("removed review APIs cannot approve or recheck stored data", async () => {
 test("single-pass publication requires a recorded extraction, not just a processed label", () => {
   assert.throws(() => processedStructure({ page: 1, status: "processed", attempts: [] }, 1));
   assert.throws(() => processedStructure({ page: 1, status: "processed", attempts: [{ at: "now", reasons: [], candidate }] }, 1));
+});
+
+const brokenTables: SourceCandidate = { ...candidate, tables: [
+  { id: "good", grid: [["항목", "값"], ["높이", "2m"]], merges: [] },
+  { id: "bad", grid: [["위험 상황", "작업", "영역"], ["끼임", "접촉", "가공", "회전부"]],
+    merges: [{ row: 1, col: 1, rowSpan: 1, colSpan: 2 }] },
+] };
+const fixedTable = { ...brokenTables.tables[1], grid: [["위험 상황", "", "작업", "영역"], ["끼임", "접촉", "가공", "회전부"]] };
+function tableRepairConfig(directory: string) {
+  return knowledgeVisionConfig(directory, { EDUFLOW_AI_ENABLED: "true", EDUFLOW_AI_API_KEY: "fake-private-test-key",
+    EDUFLOW_AI_MODEL: OPENAI_MODEL, EDUFLOW_AI_INPUT_USD_PER_MILLION: "0.75", EDUFLOW_AI_OUTPUT_USD_PER_MILLION: "4.50",
+    EDUFLOW_AI_REQUEST_BUDGET_USD: "0.10", EDUFLOW_AI_REQUESTS_PER_HOUR: "0" });
+}
+function tableTransport(responses: unknown[], requests: Record<string, any>[]): typeof fetch {
+  return async (input, init) => {
+    if (String(input).endsWith("input_tokens")) return Response.json({ input_tokens: 1000 });
+    requests.push(JSON.parse(String(init?.body)));
+    const data = responses[Math.min(requests.length - 1, responses.length - 1)];
+    return Response.json({ object: "response", id: `table-${requests.length}`, status: "completed", output: [{
+      type: "message", role: "assistant", content: [{ type: "output_text", text: JSON.stringify(data), annotations: [] }],
+    }] });
+  };
+}
+test("a stored table failure resumes with only the broken table and preserves body and good tables", async t => {
+  const { directory, run } = await fixture(t);
+  const requests: Record<string, any>[] = []; let parses = 0;
+  const transport = tableTransport([brokenTables, { tables: [{ tableIndex: 1, table: fixedTable }], uncertainties: [] }], requests);
+  const deps: ValidationDependencies = { ...dependencies, config: () => tableRepairConfig(directory),
+    parse: async (...args) => { parses++; return dependencies.parse(...args); },
+    correct: (text, image, config, dir, abort, _transport, retry) => correctSource(text, image, config, dir, abort, transport, retry) };
+  await checkValidationPage(run.id, 1, directory, signal(), deps);
+  const failed = read(directory, run.id);
+  assert.equal(failed.pages[0].status, "held");
+  assert.deepEqual(failed.pages[0].attempts[0].sourceDiagnostic?.source, brokenTables);
+  assert.equal(failed.pages[0].attempts[0].sourceDiagnostic?.issues[0].code, "ROW_WIDTH");
+  assert.equal(validationSummary(failed).pages[0].attempts[0].sourceDiagnostic, undefined);
+  const result = await checkValidationPage(run.id, 1, directory, signal(), deps);
+  assert.equal(result.pages[0].status, "processed");
+  assert.equal(parses, 1);
+  assert.equal(requests.length, 2);
+  const repairInput = JSON.parse(requests[1].input[0].content[0].text);
+  assert.deepEqual(repairInput.tables, [{ tableIndex: 1, table: brokenTables.tables[1] }]);
+  assert.ok(repairInput.issues.some((issue: { code: string }) => issue.code === "ROW_WIDTH"));
+  const saved = result.pages[0].attempts.at(-1)!.candidate!;
+  assert.equal(saved.text, brokenTables.text);
+  assert.deepEqual(saved.figures, brokenTables.figures);
+  assert.deepEqual(saved.tables[0], expandSourceCandidate({ ...brokenTables, tables: [brokenTables.tables[0]] }).tables[0]);
+  assert.equal(saved.tables[1].cols, 4);
+  assert.equal(result.pages[0].attempts.reduce((n, a) => n + (a.calls ?? 0), 0), 2);
+});
+test("missing repair tables cannot drop content or bypass the three-call page cap", async t => {
+  const { directory, run } = await fixture(t);
+  const requests: Record<string, any>[] = [];
+  const transport = tableTransport([brokenTables, { tables: [{ tableIndex: 0, table: fixedTable }], uncertainties: [] }], requests);
+  const deps: ValidationDependencies = { ...dependencies, config: () => tableRepairConfig(directory),
+    correct: (text, image, config, dir, abort, _transport, retry) => correctSource(text, image, config, dir, abort, transport, retry) };
+  for (let i = 0; i < 4; i++) await checkValidationPage(run.id, 1, directory, signal(), deps);
+  const page = read(directory, run.id).pages[0];
+  assert.equal(requests.length, 3);
+  assert.equal(page.status, "held");
+  assert.equal(page.attempts.at(-1)!.errorCode, "PAGE_CALL_LIMIT");
+  assert.equal(page.attempts[1].sourceDiagnostic?.issues[0].code, "REPAIR_TABLE_SET");
+  assert.deepEqual(page.attempts[1].sourceDiagnostic?.source, brokenTables);
+  assert.ok(page.attempts.every(attempt => !attempt.candidate));
 });

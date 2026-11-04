@@ -5,6 +5,7 @@ import type { AIConfig } from "./ai-config";
 import type { GenerationAdapter, GenerationContext } from "./generation-service";
 import type { PdfContent } from "./pdf-content";
 import { createDocumentPreparer, providerTask } from "./provider-prompt";
+import { verificationPrompt } from "./generation-grounding";
 
 export const OPENAI_MODEL = "gpt-5.4-mini-2026-03-17";
 
@@ -15,6 +16,12 @@ export function assertOpenAIConfig(config: AIConfig) {
 }
 
 function payload(context: GenerationContext, document?: PdfContent) {
+  if (context.verification) {
+    const verification = verificationPrompt(context.verification);
+    return { model: OPENAI_MODEL, instructions: verification.instructions, input: verification.taskText,
+      reasoning: { effort: "none" as const },
+      text: { format: { type: "json_schema" as const, name: "eduflow_evidence", strict: true, schema: verification.responseSchema } } };
+  }
   const { instructions, responseSchema, taskText } = providerTask(context, document);
   return {
     model: OPENAI_MODEL,
@@ -59,7 +66,7 @@ export function createOpenAIAdapter(config: AIConfig, options: { fetch?: typeof 
     return payload(prepared.context, prepared.document);
   }
   return {
-    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v12-two-captions",
+    mode: "ai", model: OPENAI_MODEL, promptVersion: "eduflow-openai-v20-evidence-applicability",
     async countInputTokens(_, context) {
       try {
         const result = await client.responses.inputTokens.count(await completePayload(context), { signal: context.signal });

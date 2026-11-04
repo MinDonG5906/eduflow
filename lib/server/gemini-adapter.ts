@@ -80,7 +80,7 @@ export function createGeminiAdapter(config: AIConfig, options: { fetch?: typeof 
     } });
   }
   return {
-    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v4-two-captions",
+    mode: "ai", model: config.model, promptVersion: "eduflow-gemini-v12-evidence-applicability",
     billing: { kind: "metered", config },
     async countInputTokens(_, context) {
       try {

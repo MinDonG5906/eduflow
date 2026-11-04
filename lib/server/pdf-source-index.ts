@@ -5,10 +5,12 @@ import { readPdfGenerationRequest } from "./pdf-input";
 import { GenerationError } from "../generation-contract";
 import type { SourceBox, SourcePage } from "../source-location";
 
+import { pdfResources } from "./pdf-resources";
+
 /** Local text index of the selected original PDF. This never invokes a provider. */
 export async function indexPdfSource(data: Uint8Array, originalPages: number[], signal: AbortSignal) {
   signal.throwIfAborted();
-  const loading = getDocument({ data: new Uint8Array(data), isEvalSupported: false, verbosity: 0 });
+  const loading = getDocument({ ...pdfResources, data: new Uint8Array(data), isEvalSupported: false, verbosity: 0 });
   const abort = () => { void loading.destroy().catch(() => {}); };
   signal.addEventListener("abort", abort, { once: true });
   const pages: SourcePage[] = [];

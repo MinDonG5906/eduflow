@@ -105,10 +105,10 @@ export function EvidenceSource({ scene, manuscript, file, source }: {
   }
 
   return <>
-    <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label="원문 근거 대조하기"><BookOpen size={14} />대조하기</Button>
+    <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label="원문 확인하기"><BookOpen size={14} />확인하기</Button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="source-dialog">
-        <DialogHeader><DialogTitle>원문 근거 대조</DialogTitle>
+        <DialogHeader><DialogTitle>원문 확인</DialogTitle>
           <DialogDescription>{scene.pdfSource ? `${scene.pdfSource.name} · 페이지 번호는 표지를 포함한 파일 순서입니다.` : "현재 입력된 원고에서 근거 문장을 찾습니다."}</DialogDescription>
         </DialogHeader>
         <blockquote className="source-evidence-quote">{scene.evidence || "입력된 원문 근거가 없습니다."}</blockquote>

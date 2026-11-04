@@ -8,6 +8,7 @@ import { preparePdfInput } from "./prepare-pdf";
 import { analyzePdfTable, type PageLayout } from "./pdf-layout";
 import { renderLayoutImages, type PageImage } from "./pdf-region-render";
 import { MAX_AI_PDF_BYTES } from "../pdf-source";
+import { pdfResources } from "./pdf-resources";
 
 export type PdfContent = {
   textPages: { page: number; text: string }[];
@@ -60,7 +61,7 @@ export async function preparePdfContent(
   pdf: PdfAttachment, pages: number[], signal: AbortSignal,
 ): Promise<PdfContent> {
   signal.throwIfAborted();
-  const loading = getDocument({ data: new Uint8Array(pdf.data), isEvalSupported: false, verbosity: 0, stopAtErrors: true });
+  const loading = getDocument({ ...pdfResources, data: new Uint8Array(pdf.data), isEvalSupported: false, verbosity: 0, stopAtErrors: true });
   const result: PdfContent = { textPages: [], visualPages: [], layoutPages: [], images: [] };
   const visualPositions: number[] = [];
   let imageBytes = 0;

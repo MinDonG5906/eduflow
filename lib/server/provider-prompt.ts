@@ -5,6 +5,8 @@ import type { GenerationContext } from "./generation-service";
 import type { PdfAttachment } from "./pdf-input";
 import { preparePdfContent, type PdfContent } from "./pdf-content";
 import type { VisualRecommendation } from "../knowledge-structure";
+import { knowledgeSelectionId } from "../knowledge";
+import { verificationPrompt } from "./generation-grounding";
 
 // The model selects a table using its retrieved row; full cells are retained only
 // in the application response for the preview, not repeated in every AI prompt.
@@ -18,13 +20,18 @@ export function promptKnowledgeSources<T extends { visuals?: VisualRecommendatio
 
 export function promptTask<T extends Pick<GenerationContext["task"], "supplementalSources" | "selectedScene">>(task: T) {
   const scene = task.selectedScene;
-  return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources),
+  const selections = new Map(task.supplementalSources.map((source, index) => [source.id, knowledgeSelectionId(index)]));
+  const selectedReferences = (sources: NonNullable<typeof scene>["references"]) =>
+    promptKnowledgeSources((sources ?? []).filter(source => selections.has(source.id))
+      .map(source => ({ ...source, id: selections.get(source.id)! })));
+  return { ...task, supplementalSources: promptKnowledgeSources(task.supplementalSources
+    .map((source, index) => ({ ...source, id: knowledgeSelectionId(index) }))),
     ...(scene ? { selectedScene: { ...scene,
       ...(scene.image ? { image: { ...scene.image, generated: scene.image.generated ? {
         model: scene.image.generated.model, createdAt: scene.image.generated.createdAt, basedOn: scene.image.generated.basedOn,
       } : undefined } } : {}),
-      ...(scene.references ? { references: promptKnowledgeSources(scene.references) } : {}),
-      ...(scene.visualReferences ? { visualReferences: promptKnowledgeSources(scene.visualReferences) } : {}),
+      ...(scene.references ? { references: selectedReferences(scene.references) } : {}),
+      ...(scene.visualReferences ? { visualReferences: selectedReferences(scene.visualReferences) } : {}),
       ...(scene.visuals ? { visuals: scene.visuals.map(promptVisual) } : {}),
     } } : {}) };
 }
@@ -55,6 +62,7 @@ function documentForTask(document: PdfContent) {
 }
 
 export function providerTask(context: GenerationContext, document?: PdfContent) {
+  if (context.verification) return verificationPrompt(context.verification);
   const { instruction, responseSchema, ...task } = context.task;
   return {
     instructions: instruction + PROVIDER_INSTRUCTION_SUFFIX,

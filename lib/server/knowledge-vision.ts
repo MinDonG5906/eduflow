@@ -2,6 +2,7 @@ import "server-only";
 import OpenAI from "openai";
 import { z } from "zod";
 import { PDFParse } from "pdf-parse";
+import { pdfResources } from "./pdf-resources";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { GenerationError, SERVER_TIMEOUT_MS } from "../generation-contract";
 import { applyKnowledgeVision, knowledgeTableSchema, knowledgeVisionWireSchema, type KnowledgeStructure, type KnowledgeFigure } from "../knowledge-structure";
@@ -24,7 +25,7 @@ export function knowledgeVisionConfig(directory: string, env: Record<string, str
 
 export async function knowledgePageImage(pdf: Buffer, filePage: number, signal: AbortSignal): Promise<Buffer> {
   signal.throwIfAborted();
-  const parser = new PDFParse({ data: new Uint8Array(pdf), isEvalSupported: false });
+  const parser = new PDFParse({ ...pdfResources, data: new Uint8Array(pdf), isEvalSupported: false });
   try {
     const result = await parser.getScreenshot({ partial: [filePage], desiredWidth: 1600, imageDataUrl: false });
     signal.throwIfAborted();

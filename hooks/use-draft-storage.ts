@@ -5,6 +5,8 @@ import type { SourceDocument } from "@/lib/documents";
 import { deletePdf } from "@/lib/pdf-storage";
 import type { Board, Settings } from "@/lib/storyboard";
 import { DRAFT_STORAGE_KEY, restoreBrowserDraft, serializeDraft, type Draft } from "@/lib/studio-state";
+import { IS_DEMO_PACKAGE } from "@/lib/demo-mode";
+import { prepareDemoExample } from "@/lib/demo-startup";
 
 // Keep the original key so existing Frame drafts open in EduFlow without migration.
 const STORAGE = DRAFT_STORAGE_KEY;
@@ -22,22 +24,30 @@ export function useDraftStorage(
   const savedPdfIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(STORAGE);
-      const { draft: parsed, removedExample } = restoreBrowserDraft(stored, localStorage);
-      if (parsed) {
-        savedPdfIdRef.current = parsed.document?.fileId;
-        onRestore(parsed, removedExample);
-        setSaved("이전 작업을 복구했어요");
+    let cancelled = false;
+    async function restore() {
+      let stored: string | null = null;
+      try {
+        if (IS_DEMO_PACKAGE) await prepareDemoExample();
+        if (cancelled) return;
+        stored = localStorage.getItem(STORAGE);
+        const { draft: parsed, removedExample } = restoreBrowserDraft(stored, localStorage);
+        if (parsed) {
+          savedPdfIdRef.current = parsed.document?.fileId;
+          onRestore(parsed, removedExample);
+          setSaved("이전 작업을 복구했어요");
+        }
+      } catch (error) {
+        if (cancelled) return;
+        protectedDraftRef.current = stored;
+        setStorageBlocked(true);
+        setSaved("기존 저장 데이터 보호 중");
+        onError(stored === null && IS_DEMO_PACKAGE ? (error instanceof Error ? error.message : "데모 예제를 불러오지 못했습니다. 새로고침해 다시 시도해 주세요.") : "저장된 작업을 복구하지 못해 자동 저장을 중지했습니다. 저장 원본을 내려받은 뒤 새 스토리보드로 시작해 주세요.");
       }
-    } catch {
-      protectedDraftRef.current = stored;
-      setStorageBlocked(true);
-      setSaved("기존 저장 데이터 보호 중");
-      onError("저장된 작업을 복구하지 못해 자동 저장을 중지했습니다. 저장 원본을 내려받은 뒤 새 스토리보드로 시작해 주세요.");
+      setReady(true);
     }
-    setReady(true);
+    void restore();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     if (!ready || storageBlocked) return;

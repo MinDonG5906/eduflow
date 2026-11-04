@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chunkKnowledge, knowledgeMetadataSchema, knowledgeSourceSchema, searchNeedles, type KnowledgeDocument, type KnowledgeImportPage, type KnowledgeLocation, type KnowledgeMetadata, type KnowledgeReviewPage, type KnowledgeSource, type RetrievedReference } from "../knowledge";
 
-import { makeKnowledgeStructure, preserveKnowledgeReview, recommendationsForBlocks, tableRecommendationsForBlocks, structureChunks, type KnowledgeStructure } from "../knowledge-structure";
+import { makeKnowledgeStructure, preserveKnowledgeReview, recommendationsForBlocks, tableRecommendationsForBlocks, captionFigureCandidates, structureChunks, type KnowledgeStructure } from "../knowledge-structure";
 import { visualRelevance, visualSearchTerms } from "../knowledge-visual-search";
 
 type DocumentRow = {
@@ -296,7 +296,8 @@ export class KnowledgeBase {
     for (const row of rows) {
       const structure = JSON.parse(row.data) as KnowledgeStructure;
       const ids = structure.blocks.map(block => block.id);
-      const visuals = [...ids.flatMap(id => recommendationsForBlocks(row.id, structure, [id])), ...tableRecommendationsForBlocks(row.id, structure, ids)];
+      const visuals = [...ids.flatMap(id => recommendationsForBlocks(row.id, structure, [id])),
+        ...captionFigureCandidates(row.id, structure), ...tableRecommendationsForBlocks(row.id, structure, ids)];
       for (const visual of visuals) {
         const score = visualRelevance(visual, structure, terms);
         if (!score) continue;

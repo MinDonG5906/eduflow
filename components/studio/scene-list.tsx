@@ -1,4 +1,4 @@
-import { CheckCheck, Clock3, FileText, Plus, Settings2, ShieldCheck } from "lucide-react";
+import { Clock3, FileText, Plus, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Scene } from "@/lib/storyboard";
 import { useSceneImageUrl } from "@/hooks/use-scene-image-url";
@@ -16,17 +16,11 @@ export function SceneList({
   scenes,
   active,
   onSelect,
-  reviewOnly,
-  onToggleReviewOnly,
-  reviewCount,
   onAdd,
 }: {
   scenes: Scene[];
   active: number;
   onSelect: (index: number) => void;
-  reviewOnly: boolean;
-  onToggleReviewOnly: () => void;
-  reviewCount: number;
   onAdd: () => void;
 }) {
   return (
@@ -35,20 +29,10 @@ export function SceneList({
         <h2>
           장면 목록 <span>{scenes.length}</span>
         </h2>
-        <button
-          aria-label="검토 필요한 장면만 보기"
-          title="검토 필요한 장면만 보기"
-          className={reviewOnly ? "filter-active" : ""}
-          aria-pressed={reviewOnly}
-          onClick={onToggleReviewOnly}
-        >
-          <Settings2 size={16} />
-        </button>
       </div>
-      {reviewOnly && <div className="filter-label">검토 필요한 장면만 표시</div>}
       {scenes.map(
         (s, i) =>
-          (!reviewOnly || s.review) && (
+          (
             <button
               key={s.id}
               className={`scene-item ${i === active ? "active" : ""}`}
@@ -60,18 +44,11 @@ export function SceneList({
                 {s.phase && <em className="scene-phase">{phaseLabels[s.phase]}</em>}
                 <span>
                   <Clock3 size={11} />
-                  {s.duration}초{" "}
-                  <span className={s.review ? "review-dot" : "done-dot"} />
-                  {s.review ? "검토 필요" : "검토 완료"}
+                  {s.duration}초
                 </span>
               </div>
             </button>
           ),
-      )}
-      {reviewOnly && !reviewCount && (
-        <p className="all-reviewed">
-          <CheckCheck size={24} /> 모든 장면을 검토했어요.
-        </p>
       )}
       <Button variant="outline" className="add-scene" onClick={onAdd}>
         <Plus size={15} /> 선택 장면 다음에 추가
@@ -79,9 +56,9 @@ export function SceneList({
       <div className="scene-list-note">
         <ShieldCheck size={15} />
         <p>
-          원문 근거를 확인하고
+          원문 근거와 적용 조건을
           <br />
-          검토를 완료해 주세요.
+          확인해 주세요.
         </p>
       </div>
     </section>

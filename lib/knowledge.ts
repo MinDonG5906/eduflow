@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { KnowledgeStructure, VisualRecommendation } from "./knowledge-structure";
 
+// Remote references combine a document UUID, provider name and chunk hash.
+export const MAX_KNOWLEDGE_REFERENCE_ID_CHARS = 256;
+// Request-scoped model choices; never persist these instead of the source ID.
+export const knowledgeSelectionId = (index: number) => `rag:${index + 1}`;
+
 export const knowledgeSearchStatusSchema = z.enum(["retrieved", "no_match", "unavailable", "not_used"]);
 export type KnowledgeSearchStatus = z.infer<typeof knowledgeSearchStatusSchema>;
 
@@ -8,7 +13,7 @@ export function knowledgeUsageLabel(knowledge: { status?: KnowledgeSearchStatus;
   if (knowledge.status === "unavailable") return "원문 기반 생성 · 지식베이스 검색에 실패해 보강 자료를 사용하지 않았습니다.";
   if (knowledge.status === "not_used") return "원문 기반 생성 · 지식베이스를 사용하지 않았습니다.";
   if (!knowledge.retrievedCount) return "원문 기반 생성 · 관련 지식베이스 근거가 없어 원문만 사용했습니다.";
-  return `지식베이스 ${knowledge.documentCount}개 자료의 ${knowledge.retrievedCount}개 구절을 AI에 전달했습니다.`;
+  return `지식베이스 ${knowledge.documentCount}개 자료에서 ${knowledge.retrievedCount}개 후보 구절을 검색했습니다. 문장 대조를 통과한 근거만 장면에 연결합니다.`;
 }
 
 export const knowledgeMetadataSchema = z.object({
@@ -64,6 +69,8 @@ export type RetrievedReference = {
   page?: number;
   blockIds?: string[];
   visuals?: VisualRecommendation[];
+  context?: { documentTitle: string; sectionTitle: string; tableHeaders: string[]; surroundingText?: string };
+  unitIds?: string[];
 };
 
 export type KnowledgeChunk = { ordinal: number; page?: number; text: string };

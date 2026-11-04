@@ -1,14 +1,20 @@
 import {
-  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, SERVER_TIMEOUT_MS,
+  CONTRACT_VERSION, GenerationError, MAX_OUTPUT_CHARS, STORYBOARD_TIMEOUT_MS,
   generatedEnvelopeSchema, generatedSceneSchema, generationTask, parseGenerationResponse,
   type GeneratedScene, type GenerationInput,
 } from "../generation-contract";
-import { fieldLabels, manuscriptSource, type Board } from "../storyboard";
+import { fieldLabels, manuscriptSource, type Board, type Scene } from "../storyboard";
 import { correctIndustrialTerms, termCorrectionNotice, type FieldTermCorrection } from "../term-corrections";
 import type { AIConfig, PaidGenerationLimits } from "./ai-config";
 import type { PdfAttachment } from "./pdf-input";
 import { sourceFormat, sourceUnit, type PdfSource } from "../pdf-source";
-import type { KnowledgeSearchStatus, RetrievedReference } from "../knowledge";
+import { knowledgeSelectionId, type KnowledgeSearchStatus, type RetrievedReference } from "../knowledge";
+import { verifySceneEvidence, VERIFICATION_TIMEOUT_MS, type EvidenceVerificationRequest } from "./generation-grounding";
+import type { SceneKnowledge, SceneKnowledgeRetriever } from "./scene-knowledge";
+
+import { stageSupplements, commitSupplements } from "./generation-supplements";
+import { groundingFailure } from "./grounding-failure";
+import type { GroundingFailure } from "../grounding-failure";
 
 type Header = { title: string; summary: string; objectives: string[] };
 type Issue = { path: string; reason: string };
@@ -17,7 +23,8 @@ export type GenerationContext = {
   limits?: PaidGenerationLimits;
   pdf?: PdfAttachment;
   task: ReturnType<typeof generationTask>;
-  repair?: { issues: Issue[]; acceptedScenes: GeneratedScene[]; header: Header | null };
+  verification?: EvidenceVerificationRequest;
+  repair?: { issues: Issue[]; acceptedScenes: GeneratedScene[]; header: Header | null; referenceScenes?: GeneratedScene[] };
 };
 export type GenerationAdapter = {
   mode: Board["mode"];
@@ -137,27 +144,39 @@ function citationWarning(scene: GeneratedScene, sentences: string[], pdfSource?:
 export async function runGeneration(
   input: GenerationInput,
   adapter: GenerationAdapter,
-  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[]; knowledgeStatus?: KnowledgeSearchStatus } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number; pdf?: PdfAttachment; references?: RetrievedReference[]; knowledgeStatus?: KnowledgeSearchStatus;
+    retrieveSceneKnowledge?: SceneKnowledgeRetriever; knowledgeFailure?: GroundingFailure } = {},
 ): Promise<Board> {
   const controller = new AbortController();
   const cancel = () => controller.abort(new GenerationError("CANCELLED"));
   if (options.signal?.aborted) cancel();
   else options.signal?.addEventListener("abort", cancel, { once: true });
-  const timer = setTimeout(() => controller.abort(new GenerationError("TIMEOUT")), options.timeoutMs ?? SERVER_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(new GenerationError("TIMEOUT")), options.timeoutMs ?? STORYBOARD_TIMEOUT_MS);
   try {
     controller.signal.throwIfAborted();
     if (Boolean(input.pdfSource) !== Boolean(options.pdf)) throw new GenerationError("PDF_NOT_ATTACHED");
     if (input.pdfSource && adapter.mode !== "ai") throw new GenerationError("PDF_AI_REQUIRED");
-    const task = generationTask(input, options.references ?? []);
+    let candidates = (options.references ?? []).slice(0, 12);
+    const generationReferences = candidates;
+    // Base fields remain source-only; RAG additions are staged separately and committed after verification.
+    const sourceInput = adapter.mode === "ai" && input.scene ? { ...input, scene: { ...input.scene,
+      references: [], visualReferences: [], visuals: [], grounding: undefined } } : input;
+    const task = generationTask(sourceInput, generationReferences);
+    const availableReferences = new Map<string, RetrievedReference>();
+    task.supplementalSources.forEach((reference, index) => {
+      availableReferences.set(knowledgeSelectionId(index), reference);
+      availableReferences.set(reference.id, reference); // Existing adapters / stored IDs remain compatible.
+    });
     const expected = task.requestedSceneCount;
     const accepted = new Map<number, GeneratedScene>();
+    const referenceScenes = new Map<number, GeneratedScene>();
     let header: Header | null = null;
     let repair: GenerationContext["repair"];
     const repairedScenes: number[] = [];
     for (let attempt = 1; attempt <= 2; attempt++) {
       let raw: unknown;
       try {
-        raw = await abortable(controller.signal, () => adapter.generate(input, { signal: controller.signal, task, repair, ...(options.pdf ? { pdf: options.pdf } : {}) }));
+        raw = await abortable(controller.signal, () => adapter.generate(sourceInput, { signal: controller.signal, task, repair, ...(options.pdf ? { pdf: options.pdf } : {}) }));
       } catch (error) {
         if (controller.signal.aborted) throw controller.signal.reason;
         if (error instanceof GenerationError) throw error;
@@ -169,7 +188,15 @@ export async function runGeneration(
       header ??= inspected.header;
       for (const [sceneNo, scene] of inspected.scenes) {
         if (!accepted.has(sceneNo)) {
-          accepted.set(sceneNo, scene);
+          const invalidReferences = (scene.referenceIds ?? []).some(id => !availableReferences.has(id));
+          const invalidVisuals = (scene.visualReferenceIds ?? []).some(id => !availableReferences.get(id)?.visuals?.length);
+          if (adapter.mode === "ai" && (invalidReferences || invalidVisuals)) {
+            if (!referenceScenes.has(sceneNo)) referenceScenes.set(sceneNo, scene);
+            inspected.issues.push({ path: `scenes.${sceneNo - 1}.${invalidReferences ? "referenceIds" : "visualReferenceIds"}`, reason: "invalid_reference_id" });
+            continue;
+          }
+          const original = referenceScenes.get(sceneNo);
+          accepted.set(sceneNo, original ? { ...original, referenceIds: scene.referenceIds, visualReferenceIds: scene.visualReferenceIds } : scene);
           if (attempt === 2) repairedScenes.push(sceneNo);
         }
       }
@@ -190,15 +217,14 @@ export async function runGeneration(
         const record = {
           contractVersion: CONTRACT_VERSION, model: adapter.model, promptVersion: adapter.promptVersion,
           createdAt: new Date().toISOString(), attempts: attempt, mode: adapter.mode,
-          ...(adapter.mode === "ai" && options.references !== undefined ? { knowledge: {
+          ...(adapter.mode === "ai" && (options.references !== undefined || options.retrieveSceneKnowledge) ? { knowledge: {
             ...(options.knowledgeStatus ? { status: options.knowledgeStatus } : {}),
-            retrievedCount: task.supplementalSources.length,
-            documentCount: new Set(task.supplementalSources.map(reference => reference.documentId)).size,
+            retrievedCount: candidates.length,
+            documentCount: new Set(candidates.map(reference => reference.documentId)).size,
           } } : {}),
         };
         const sentences = manuscriptSource(input.manuscript).sentences;
-        const availableReferences = new Map(task.supplementalSources.map((reference) => [reference.id, reference]));
-        const scenes = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
+        let scenes: Scene[] = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map((scene) => {
           const normalizedScene = adapter.mode === "ai"
             ? input.pdfSource ? { ...scene, evidence: cleanEvidence(scene.evidence),
               // Never turn an out-of-selection/printed folio into a guessed file page.
@@ -214,17 +240,14 @@ export async function runGeneration(
           allCorrections.push(...corrections);
           const correctionNote = termCorrectionNotice(corrections);
           // Evidence and source IDs are never spelling-corrected: preserve citations.
-          const { sceneNo, referenceIds, visualReferenceIds, phase, ...content } = correctedScene;
+          const { sceneNo, referenceIds, visualReferenceIds, supplements, phase, ...content } = correctedScene;
           const expectedPhase = input.scene?.phase ?? (sceneNo === 1 ? "intro" : sceneNo === expected ? "outro" : "body");
           if (phase && phase !== expectedPhase)
             warnings.push(`${sceneNo}번 장면: 도입·본문·마무리 위치를 확인해 주세요.`);
-          const unknownIds = [...(referenceIds ?? []), ...(visualReferenceIds ?? [])].filter((id) => !availableReferences.has(id));
-          if (unknownIds.length)
-            warnings.push(`${sceneNo}번 장면: 확인되지 않은 보강·시각자료 출처가 있어 제외했습니다.`);
-          const references = [...new Set(referenceIds ?? [])]
-            .map((id) => availableReferences.get(id)).filter((item) => item !== undefined);
-          const visualReferences = [...new Set(visualReferenceIds ?? [])]
-            .map(id => availableReferences.get(id)).filter((item): item is RetrievedReference => item !== undefined && Boolean(item.visuals?.length));
+          const resolveReferences = (ids: string[]) => [...new Map(ids.map(id => availableReferences.get(id))
+            .filter((item): item is RetrievedReference => item !== undefined).map(item => [item.id, item])).values()];
+          const references = resolveReferences(referenceIds ?? []);
+          const visualReferences = resolveReferences(visualReferenceIds ?? []).filter(item => item.visuals?.length);
           const visuals = [...new Map([...references, ...visualReferences].flatMap(reference => reference.visuals ?? [])
             .map(visual => [`${visual.documentId}:${visual.page}:${visual.figureId}`, visual])).values()].slice(0, 20);
           return {
@@ -246,12 +269,50 @@ export async function runGeneration(
           warnings.push("전체 예상 시간이 목표 길이의 ±15%를 벗어났습니다. 장면별 시간을 확인해 주세요.");
         const correctionNote = termCorrectionNotice(allCorrections);
         if (correctionNote) warnings.push(correctionNote);
+        if (adapter.mode === "ai") {
+          const originals = scenes;
+          const proposals = [...accepted.values()].sort((a, b) => a.sceneNo - b.sceneNo).map(s => s.supplements ?? []);
+          const { staged, additions } = stageSupplements(scenes, proposals, id => availableReferences.get(id));
+          // Search only the source-based draft. Proposed RAG facts must not expand the search scope.
+          let sceneKnowledge: SceneKnowledge[] | undefined;
+          if (options.retrieveSceneKnowledge) {
+            const searchStarted = Date.now();
+            try {
+              sceneKnowledge = await abortable(controller.signal, () => options.retrieveSceneKnowledge!(scenes, controller.signal));
+            } catch (error) {
+              controller.signal.throwIfAborted();
+              sceneKnowledge = scenes.map(() => ({ references: [], status: "unavailable",
+                failure: groundingFailure("scene_search", error, searchStarted) }));
+            }
+            // A missing scene result means unavailable, never permission to borrow another scene's evidence.
+            sceneKnowledge = scenes.map((_, index) => sceneKnowledge?.[index] ?? { references: [], status: "unavailable",
+              failure: groundingFailure("scene_search", undefined, searchStarted) });
+            sceneKnowledge = sceneKnowledge.map((result, index) => ({ ...result,
+              references: [...new Map([...result.references, ...generationReferences].map(ref => [ref.id, ref])).values()],
+              visualReferences: [...new Map([...(result.visualReferences ?? result.references.filter(ref => ref.visuals?.length)), ...generationReferences.filter(ref => ref.visuals?.length)].map(ref => [ref.id, ref])).values()],
+            }));
+            candidates = [...new Map(sceneKnowledge.flatMap(result => [...result.references, ...(result.visualReferences ?? [])]).map(ref => [ref.id, ref])).values()];
+            record.knowledge = { status: candidates.length ? "retrieved" : sceneKnowledge.some(result => result.status === "unavailable")
+              ? "unavailable" : "no_match", retrievedCount: candidates.length,
+              documentCount: new Set(candidates.map(ref => ref.documentId)).size };
+          }
+          // The judge shares the SAME protected adapter and two-call reservation.
+          // A format repair consumes call two; in that case enrichment is skipped.
+          scenes = await verifySceneEvidence(staged, candidates, attempt < 2 ? async verification => {
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(VERIFICATION_TIMEOUT_MS)]);
+            return abortable(signal, () => adapter.generate(sourceInput, { signal, task, verification }));
+          } : undefined, controller.signal, sceneKnowledge, additions.map(items => items.map(item => item.referenceId)));
+          scenes = commitSupplements(originals, scenes, additions);
+          if (options.knowledgeFailure) scenes = scenes.map(scene => ({ ...scene, grounding: scene.grounding && {
+            ...scene.grounding, failures: [options.knowledgeFailure!, ...(scene.grounding.failures ?? [])],
+          } }));
+        }
         const board = {
           ...correctedHeader, scenes, settings: input.settings, mode: adapter.mode,
           ...(input.pdfSource ? { pdfSource: input.pdfSource } : {}),
           generation: {
             ...record, repairedScenes, warnings,
-            ...(record.knowledge ? { knowledgeSources: task.supplementalSources } : {}),
+            ...(record.knowledge ? { knowledgeSources: candidates } : {}),
           },
         };
         return parseGenerationResponse(board, input);
@@ -260,6 +321,7 @@ export async function runGeneration(
         issues: inspected.issues.length ? inspected.issues : [{ path: "scenes", reason: "missing_required_scenes" }],
         acceptedScenes: [...accepted.values()],
         header,
+        referenceScenes: [...referenceScenes.values()].filter(scene => !accepted.has(scene.sceneNo)),
       });
     }
     throw new GenerationError("INVALID_OUTPUT");

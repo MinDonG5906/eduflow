@@ -16,7 +16,7 @@ export function visualSearchTerms(query: string): string[] {
 }
 
 /** Context is restricted to the verified linked block or the accepted table, never the whole page. */
-export function visualRelevance(visual: VisualRecommendation, structure: KnowledgeStructure, terms: string[]) {
+export function visualRelevance(visual: VisualRecommendation, structure: Pick<KnowledgeStructure, "blocks">, terms: string[]) {
   const direct = normalize(`${visual.title} ${visual.quote}`);
   const explanation = normalize(visual.kind === "table" ? "" : visual.reason);
   const context = normalize(visual.kind === "table"

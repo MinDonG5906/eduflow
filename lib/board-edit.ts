@@ -1,3 +1,4 @@
+import { sceneMemo } from "./scene-memo";
 import { newScene, type Board, type Scene } from "./storyboard";
 
 export const MAX_SCENES = 30;
@@ -8,6 +9,8 @@ export function editScene<K extends keyof Scene>(board: Board, index: number, ke
     ...board,
     scenes: board.scenes.map((s, i) =>
       i === index ? { ...s, [key]: value,
+        ...(s.grounding && s[key] !== value && ["narration", "subtitle", "visual", "assets", "evidence", "sourceId", "title", "purpose"].includes(key)
+          ? { grounding: { ...s.grounding, status: "stale" as const } } : {}),
         ...(key === "image" && (value as Scene["image"])?.sourceType === "generated" ? { review: true } : {}),
         edited: Array.from(new Set([...s.edited, key])) } : s,
     ),
@@ -35,7 +38,7 @@ export function removeScene(board: Board, index: number): Board | null {
 
 // A regenerated scene keeps the identity of the scene it replaces.
 export function replaceScene(board: Board, id: string, replacement: Scene): Board {
-  return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id,
+  return { ...board, scenes: board.scenes.map((s) => (s.id === id ? { ...replacement, id: s.id, memo: sceneMemo(s),
     ...(s.image && !replacement.image ? { image: s.image } : {}),
     ...(s.visualPlacements ? { visualPlacements: s.visualPlacements } : {}),
     ...(s.subtitleSettings ? { subtitleSettings: s.subtitleSettings } : {}) } : s)) };

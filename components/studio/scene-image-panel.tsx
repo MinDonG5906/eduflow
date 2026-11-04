@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Download, Image as ImageIcon, LoaderCircle, RotateCcw, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,11 +14,16 @@ import { SceneSection } from "./scene-section";
 import { SceneComposition } from "./scene-composition";
 import { exportSceneComposition } from "@/lib/scene-composition-export";
 
-export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onTextChange, onOpenConnection }: {
+export type SceneImageGenerationState = { busy: boolean; canGenerate: boolean; message: string; error: string };
+export type SceneImageControl = { canGenerate: boolean; generate: () => Promise<void> };
+
+export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChange, onChange, onPlacementsChange, onSubtitleSettingsChange, onTextChange, onOpenConnection, generationRef, onGenerationStateChange }: {
   scene: Scene; settings: Settings; imageSettings: ImageSettings; onSettingsChange: (settings: ImageSettings) => void;
   onChange: (image: Scene["image"]) => void; onPlacementsChange: (placements: Scene["visualPlacements"]) => void; onOpenConnection: () => void;
   onTextChange: (field: "subtitle" | "narration" | "assets", value: string) => void;
   onSubtitleSettingsChange: (settings: NonNullable<Scene["subtitleSettings"]>) => void;
+  generationRef?: Ref<SceneImageControl>;
+  onGenerationStateChange?: (state: SceneImageGenerationState) => void;
 }) {
   const [status, setStatus] = useState<SceneImageStatus | null>(null);
   const [direction, setDirection] = useState("");
@@ -112,6 +117,10 @@ export function SceneImagePanel({ scene, settings, imageSettings, onSettingsChan
     finally { if (upload.current) upload.current.value = ""; }
   }
   const canGenerate = Boolean(status?.available && scene.visual.trim() && scene.evidence.trim() && !busy);
+  useImperativeHandle(generationRef, () => ({ canGenerate, generate }));
+  useEffect(() => {
+    onGenerationStateChange?.({ busy, canGenerate, message, error });
+  }, [busy, canGenerate, message, error, onGenerationStateChange]);
   const generationSettings = <div className="scene-image-settings">
     <label>그림체<select aria-label="공통 그림체" value={imageSettings.style} disabled={busy} onChange={event => onSettingsChange({ ...imageSettings, style: event.target.value as ImageSettings["style"] })}>
       {Object.entries(imageStyles).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

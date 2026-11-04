@@ -10,7 +10,7 @@ import type { Scene } from "@/lib/storyboard";
 
 type Reference = NonNullable<Scene["references"]>[number];
 
-export function KnowledgeSource({ references, label = "대조하기", context = "자료" }: { references: Reference[]; label?: string; context?: string }) {
+export function KnowledgeSource({ references, label = "확인하기", context = "자료" }: { references: Reference[]; label?: string; context?: string }) {
   const sources = references.filter((reference): reference is Reference & { documentId: string } => Boolean(reference.documentId));
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(sources[0]?.id);
@@ -55,9 +55,9 @@ export function KnowledgeSource({ references, label = "대조하기", context = 
   if (!sources.length) return null;
   const hasMatch = matches.some(passage => passage.match);
   return <>
-    <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label={label === "대조하기" ? `${context} 대조하기` : label}><BookOpen size={14} />{label}</Button>
+    <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label={label === "확인하기" ? `${context} 확인하기` : label}><BookOpen size={14} />{label}</Button>
     <Dialog open={open} onOpenChange={setOpen}><DialogContent className="source-dialog knowledge-source-dialog">
-      <DialogHeader><DialogTitle>자료 근거 대조</DialogTitle><DialogDescription>장면에 연결된 인용문을 등록 자료의 원본과 비교하세요.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>지식베이스 자료 확인</DialogTitle><DialogDescription>장면에 연결된 인용문을 지식베이스에 등록된 자료의 원본과 비교하세요.</DialogDescription></DialogHeader>
       {sources.length > 1 && <label className="source-page-select">확인할 근거 자료<select value={selected.id} onChange={event => setSelectedId(event.target.value)}>{sources.map(reference => <option key={reference.id} value={reference.id}>{reference.title}{reference.page ? ` · 원본 ${reference.page}페이지` : " · 등록 본문"}</option>)}</select></label>}
       <div className="knowledge-source-heading"><strong>{selected.title}</strong><small>{selected.page ? `원본 ${selected.page}페이지` : "등록 본문"} · {selected.published || "발행일 미기재"}{selected.revision ? ` · ${selected.revision}` : ""}</small></div>
       <blockquote className="source-evidence-quote">{selected.excerpt}</blockquote>
