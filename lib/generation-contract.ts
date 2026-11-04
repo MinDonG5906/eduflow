@@ -88,6 +88,8 @@ export const errorDefinitions = {
   INVALID_REQUEST: { status: 400, retryable: false, error: "원고는 공백 제외 100자 이상, 전체 20,000자 이하로 입력하고 생성 조건을 확인해 주세요." },
   REQUEST_TOO_LARGE: { status: 413, retryable: false, error: "요청이 너무 큽니다. 원고와 장면 내용의 길이를 확인해 주세요." },
   AI_AUTH_FAILED: { status: 503, retryable: false, error: "AI 키의 권한 또는 결제 잔액을 확인해 주세요. 기존 작업은 유지됩니다." },
+  AI_SIGN_IN_REQUIRED: { status: 401, retryable: false, error: "AI 계정 로그인이 만료되었거나 사용 권한이 없습니다. 모델 연결에서 다시 로그인해 주세요. 기존 작업은 유지됩니다." },
+  SUBSCRIPTION_LIMITED: { status: 429, retryable: false, error: "구독 플랜의 사용량 한도에 도달했습니다. 구독 설정의 사용량을 확인한 뒤 다시 시도해 주세요. 기존 작업은 유지됩니다." },
   AI_REFUSED: { status: 422, retryable: false, error: "AI가 이 원고의 생성을 거절했습니다. 원고와 요청 내용을 확인해 주세요. 기존 작업은 유지됩니다." },
   OUTPUT_TRUNCATED: { status: 502, retryable: false, error: "AI 결과가 출력 분량 한도를 넘었습니다. 장면 수나 목표 시간을 줄여 주세요. 기존 작업은 유지됩니다." },
   INVALID_OUTPUT: { status: 502, retryable: true, error: "초안의 필수 항목을 완성하지 못했습니다. 기존 작업은 유지됩니다. 다시 시도해 주세요." },

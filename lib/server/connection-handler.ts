@@ -3,8 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { GenerationError } from "../generation-contract";
 import { assertLocalAIRequest } from "./ai-config";
+import { completeChatGPTSignIn, listChatGPTModels, signOutChatGPT, startChatGPTSignIn, type ChatGPTDeps } from "./chatgpt-auth";
 import {
-  CLAUDE_MODELS, PROVIDERS, privateDirectory, publicConnection, readConnectionState,
+  CLAUDE_MODELS, PROVIDERS, experimentalClaudeSubscription, privateDirectory, publicConnection, readConnectionState,
   updateConnectionState,
   imageGenerationVendor,
 } from "./connection-store";
@@ -26,6 +27,11 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("saveKey"), vendor: z.enum(["openai", "anthropic"]), key, consent: z.literal(true) }),
   z.object({ action: z.literal("removeKey"), vendor: z.enum(["openai", "anthropic"]) }),
   z.object({ action: z.literal("setClaudeModel"), model: z.enum(Object.keys(CLAUDE_MODELS) as [keyof typeof CLAUDE_MODELS]) }),
+  z.object({ action: z.literal("setChatGPTModel"), model: z.string().trim().min(1).max(100).regex(/^[\w.:-]+$/) }),
+  z.object({ action: z.literal("acknowledgeClaudeSubscription"), acknowledged: z.boolean() }),
+  z.object({ action: z.literal("chatgptStart") }),
+  z.object({ action: z.literal("chatgptModels") }),
+  z.object({ action: z.literal("chatgptSignOut") }),
 ]);
 
 function failure(error: unknown) {
@@ -34,9 +40,10 @@ function failure(error: unknown) {
 }
 const ok = (body: unknown) => NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
 
-export function createConnectionHandlers(options: { directory?: string; env?: Record<string, string | undefined> } = {}) {
+export function createConnectionHandlers(options: { directory?: string; env?: Record<string, string | undefined>; chatgpt?: ChatGPTDeps } = {}) {
   const directory = () => options.directory ?? privateDirectory();
   const env = () => options.env ?? process.env;
+  const chatgpt = () => ({ ...options.chatgpt, directory: directory() });
   const status = () => publicConnection(readConnectionState(directory(), env()), env());
   return {
     async GET(request: Request) {
@@ -60,6 +67,8 @@ export function createConnectionHandlers(options: { directory?: string; env?: Re
             update((state) => ({ ...state, imageEnabled: body.enabled }));
             break;
           case "select":
+            if (body.provider === "claude-subscription" && !experimentalClaudeSubscription(env()))
+              throw new GenerationError("AI_NOT_CONFIGURED");
             update((state) => ({ ...state, provider: body.provider }));
             break;
           case "saveKey":
@@ -74,9 +83,32 @@ export function createConnectionHandlers(options: { directory?: string; env?: Re
             });
             break;
           case "setClaudeModel": update((state) => ({ ...state, anthropicModel: body.model })); break;
+          case "setChatGPTModel": update((state) => ({ ...state, chatgptModel: body.model })); break;
+          case "acknowledgeClaudeSubscription":
+            update((state) => ({
+              ...state, claudeSubscriptionAcknowledged: body.acknowledged,
+              provider: !body.acknowledged && state.provider === "claude-subscription" ? "demo" : state.provider,
+            }));
+            break;
+          case "chatgptStart": return ok({ url: startChatGPTSignIn(request, chatgpt()) });
+          case "chatgptModels": return ok({ models: await listChatGPTModels(chatgpt()) });
+          case "chatgptSignOut": return ok({ ...status(), revoked: (await signOutChatGPT(chatgpt())).revoked });
         }
         return ok(status());
       } catch (error) { return failure(error); }
+    },
+    async callback(request: Request) {
+      // The browser arrives here from auth.openai.com, so there is no same-origin header;
+      // the single-use state and PKCE verifier bind the callback to this server's attempt.
+      // Return to the exact Host the browser used: NextRequest reports 127.0.0.1 as
+      // localhost, which is a different origin with its own saved drafts.
+      const origin = `http://${request.headers.get("host") ?? new URL(request.url).host}`;
+      const back = (result: string) => NextResponse.redirect(new URL(`/?chatgpt=${result}`, origin), { headers: { "Cache-Control": "no-store" } });
+      try {
+        assertLoopback(request);
+        const result = await completeChatGPTSignIn(new URL(request.url), chatgpt());
+        return back(result.ok ? (result.planUsage ? "connected" : "no-plan") : result.reason);
+      } catch { return back("invalid"); }
     },
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KeyRound, PlugZap } from "lucide-react";
+import { AlertTriangle, KeyRound, PlugZap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,16 @@ const providerText: Record<Provider, { title: string; detail: string }> = {
   "openai-api": { title: "OpenAI API 키", detail: "내 키로 결제 · 이 PC 하루 $5·월 $10 한도" },
   "anthropic-api": { title: "Claude API 키", detail: "Claude Console 키로 결제 · 같은 비용 한도" },
   "gemini-api": { title: "Gemini (팀 키)", detail: "운영자가 서버에 넣은 팀 키 사용 · 키 입력 없이 바로 생성" },
+  chatgpt: { title: "ChatGPT 로그인", detail: "Plus·Pro 플랜 사용량으로 생성" },
+  "claude-subscription": { title: "Claude 구독 (개인 실험)", detail: "이 PC의 Claude Code 로그인 사용 · 기본 꺼짐" },
+};
+
+const chatgptResults: Record<string, string> = {
+  connected: "ChatGPT에 연결했어요. 생성할 모델을 확인해 주세요.",
+  "no-plan": "로그인은 됐지만 ChatGPT 플랜 사용이 허용되지 않았어요. 다시 로그인해 플랜 사용을 허용하거나 다른 방식을 선택해 주세요.",
+  denied: "ChatGPT 로그인을 취소했어요. 기존 연결은 그대로입니다.",
+  expired: "로그인 시간이 지났어요. 다시 시도해 주세요.",
+  invalid: "ChatGPT 로그인 결과를 확인하지 못했어요. 다시 시도해 주세요.",
 };
 
 function KeyForm({ vendor, saved, onSave, onRemove, busy }: {
@@ -50,13 +60,16 @@ function KeyForm({ vendor, saved, onSave, onRemove, busy }: {
   );
 }
 
-export function ConnectionDialog({ open, onOpenChange }: {
+export function ConnectionDialog({ open, onOpenChange, onNotice }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onNotice: (text: string) => void;
 }) {
   const [status, setStatus] = useState<PublicConnection | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<{ slug: string; name: string }[] | null>(null);
+  const loopback = typeof window === "undefined" || window.location.hostname === "127.0.0.1";
   const [imageConsent, setImageConsent] = useState(false);
 
   async function send(body: Action | null) {
@@ -82,12 +95,32 @@ export function ConnectionDialog({ open, onOpenChange }: {
     }
     return Boolean(next);
   }
+  async function loadModels() {
+    const result = await send({ action: "chatgptModels" });
+    if (result) setModels(result.models);
+  }
+
   useEffect(() => {
     if (!open) return;
     send(null).then((next) => next && setStatus(next));
   }, [open]);
+  useEffect(() => {
+    if (open && status?.provider === "chatgpt" && status.chatgpt.planUsage && models === null) void loadModels();
+  }, [open, status?.provider, status?.chatgpt.planUsage]);
+  // Back from the ChatGPT sign-in page: report the result once and tidy the address.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const result = url.searchParams.get("chatgpt");
+    if (!result) return;
+    url.searchParams.delete("chatgpt");
+    window.history.replaceState(null, "", url);
+    onNotice(chatgptResults[result] ?? chatgptResults.invalid);
+    window.dispatchEvent(new Event(CONNECTION_CHANGED));
+    onOpenChange(true);
+  }, []);
 
-  const providers = Object.keys(providerText) as Provider[];
+  const providers = (Object.keys(providerText) as Provider[])
+    .filter((provider) => provider !== "claude-subscription" || status?.claudeSubscription.enabled);
   const selected = status?.provider;
 
   return (
@@ -146,6 +179,54 @@ export function ConnectionDialog({ open, onOpenChange }: {
                 : "이 PC의 서버에 Gemini 팀 키가 없습니다. 운영자가 .env.local에 EDUFLOW_GEMINI_API_KEY를 넣고 서버를 다시 시작해야 합니다."}
             </p>
           ))}
+
+          {selected === "chatgpt" && <div className="connection-fields">
+            {status.chatgpt.signedIn ? <>
+              <div className="connection-saved">
+                <PlugZap size={14} /> {status.chatgpt.email ?? "ChatGPT 계정"} 연결됨
+                <Button variant="ghost" size="sm" disabled={busy} onClick={async () => {
+                  const result = await send({ action: "chatgptSignOut" });
+                  if (!result) return;
+                  setStatus(result); setModels(null);
+                  window.dispatchEvent(new Event(CONNECTION_CHANGED));
+                  onNotice(result.revoked ? "ChatGPT 연결을 해제했어요." : "이 PC의 로그인 정보는 지웠지만 원격 해제를 확인하지 못했어요. ChatGPT 설정에서 앱 연결을 해제할 수 있습니다.");
+                }}>로그아웃</Button>
+              </div>
+              {!status.chatgpt.planUsage && <p className="connection-warning"><AlertTriangle size={14} /> 플랜 사용 권한이 허용되지 않았습니다. 다시 로그인해 허용해 주세요.</p>}
+              {status.chatgpt.planUsage && <label className="form-field" htmlFor="chatgpt-model">
+                <span>생성 모델 <small>로그인한 계정에서 쓸 수 있는 모델</small></span>
+                <select id="chatgpt-model" className="connection-select" disabled={busy || !models?.length}
+                  value={status.chatgpt.model ?? models?.[0]?.slug ?? ""}
+                  onChange={(e) => change({ action: "setChatGPTModel", model: e.target.value })}>
+                  {!models?.length && <option value="">{models ? "사용 가능한 모델 없음" : "모델 목록을 불러오는 중"}</option>}
+                  {models?.map((model) => <option key={model.slug} value={model.slug}>{model.name}</option>)}
+                </select>
+              </label>}
+            </> : <>
+              <Button className="chatgpt-button" disabled={busy || !loopback} onClick={async () => {
+                const result = await send({ action: "chatgptStart" });
+                if (result?.url) window.location.assign(result.url);
+              }}>Continue with ChatGPT</Button>
+              {!loopback && <p className="connection-warning"><AlertTriangle size={14} /> ChatGPT 로그인은 <code>http://127.0.0.1:3000</code> 주소로 연 화면에서만 할 수 있습니다.</p>}
+            </>}
+            <p className="connection-note">ChatGPT Plus·Pro 계정이 필요하며 사용량은 플랜 한도에서 차감됩니다. 로그인 정보는 이 PC에만 저장하며, ChatGPT 설정에서 언제든 연결을 해제할 수 있습니다.</p>
+          </div>}
+
+          {selected === "claude-subscription" && <div className="connection-fields">
+            <div className="connection-warning">
+              <AlertTriangle size={14} />
+              <p>Anthropic은 승인 없이 제품에서 claude.ai 로그인이나 구독 한도를 제공하는 것을 허용하지 않습니다. 이 옵션은 <strong>본인 PC에서 본인 계정으로만</strong> 쓰는 개인 실험용이며, 팀원에게 제공하는 기능이 아닙니다. 계정 제한 등의 위험은 각자 부담합니다.</p>
+            </div>
+            <ol className="connection-steps">
+              <li>터미널에서 <code>claude</code>를 실행해 본인 Claude 계정으로 로그인합니다.</li>
+              <li>아래 확인란을 선택하면 이 PC의 로그인으로 생성합니다. API 키 환경 변수는 전달하지 않습니다.</li>
+            </ol>
+            <label className="connection-check">
+              <input type="checkbox" checked={status.claudeSubscription.acknowledged} disabled={busy}
+                onChange={(e) => change({ action: "acknowledgeClaudeSubscription", acknowledged: e.target.checked })} />
+              <span>위 내용을 이해했으며 본인 계정으로만 사용합니다.</span>
+            </label>
+          </div>}
 
           <section className="connection-image-settings">
             <h3>스토리보드 이미지 생성</h3>

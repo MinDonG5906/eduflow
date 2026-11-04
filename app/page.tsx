@@ -523,7 +523,7 @@ export default function Studio() {
           </footer>
         </main>
       </div>
-      <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} />
+      <ConnectionDialog open={connectionOpen} onOpenChange={setConnectionOpen} onNotice={notify} />
       <Toast message={notice} onClose={() => setNotice("")} />
       <ProgressDialog open={busy} onCancel={() => requestRef.current?.abort()} />
       <StudioDialog

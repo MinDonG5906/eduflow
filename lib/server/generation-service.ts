@@ -30,8 +30,9 @@ export type GenerationAdapter = {
   mode: Board["mode"];
   model: string;
   promptVersion: string;
-  // Saved API keys reserve the dollar budget with this config. Omitted: env config.
-  billing?: { kind: "metered"; config: AIConfig };
+  // Metered keys reserve the dollar budget with this config; subscription logins are
+  // billed to the signed-in plan and get call limits only. Omitted: env config.
+  billing?: { kind: "metered"; config: AIConfig } | { kind: "subscription" };
   // Count the complete provider payload before starting a paid generation.
   countInputTokens?: (input: GenerationInput, context: GenerationContext) => number | Promise<number>;
   generate: (input: GenerationInput, context: GenerationContext) => Promise<unknown>;

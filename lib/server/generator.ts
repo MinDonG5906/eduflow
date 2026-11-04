@@ -2,8 +2,11 @@ import "server-only";
 import { GenerationError } from "../generation-contract";
 import { readAIConfig, type AIConfig } from "./ai-config";
 import { createAnthropicAdapter } from "./anthropic-adapter";
+import { PLAN_SCOPE } from "./chatgpt-auth";
+import { createChatGPTAdapter } from "./chatgpt-adapter";
+import { createClaudeAgentAdapter } from "./claude-agent-adapter";
 import {
-  CLAUDE_MODELS, GEMINI_MODELS, geminiModel, readConnectionState, type ConnectionState, type Provider,
+  CLAUDE_MODELS, experimentalClaudeSubscription, GEMINI_MODELS, geminiModel, readConnectionState, type ConnectionState, type Provider,
 } from "./connection-store";
 import { demoAdapter } from "./demo-adapter";
 import { createGeminiAdapter } from "./gemini-adapter";
@@ -71,6 +74,12 @@ export function adapterFor(state: ConnectionState, env: Env = process.env): Gene
     }
     case "anthropic-api": return createAnthropicAdapter(anthropicConfig(state, env));
     case "gemini-api": return createGeminiAdapter(geminiConfig(env));
+    case "chatgpt":
+      if (!state.chatgpt?.scopes.includes(PLAN_SCOPE)) throw new GenerationError("AI_SIGN_IN_REQUIRED");
+      return createChatGPTAdapter({ ...(state.chatgptModel ? { model: state.chatgptModel } : {}) });
+    case "claude-subscription":
+      if (!experimentalClaudeSubscription(env) || !state.claudeSubscriptionAcknowledged) throw new GenerationError("AI_NOT_CONFIGURED");
+      return createClaudeAgentAdapter({ ...(env.EDUFLOW_CLAUDE_SUBSCRIPTION_MODEL ? { model: env.EDUFLOW_CLAUDE_SUBSCRIPTION_MODEL } : {}) });
   }
 }
 
@@ -83,9 +92,11 @@ const labels: Record<Provider, string> = {
   "openai-api": "OpenAI API",
   "anthropic-api": "Claude API",
   "gemini-api": "Gemini",
+  chatgpt: "ChatGPT 플랜",
+  "claude-subscription": "Claude 구독 (개인 실험)",
 };
 const vendors: Record<Provider, "OpenAI" | "Anthropic" | "Google" | null> = {
-  demo: null, "openai-api": "OpenAI", "anthropic-api": "Anthropic", "gemini-api": "Google",
+  demo: null, "openai-api": "OpenAI", "anthropic-api": "Anthropic", "gemini-api": "Google", chatgpt: "OpenAI", "claude-subscription": "Anthropic",
 };
 
 export function generatorStatus() {

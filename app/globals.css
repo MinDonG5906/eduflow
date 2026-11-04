@@ -689,6 +689,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
 .connection-warning svg { flex: none; margin-top: 3px; }
 .connection-steps { padding-left: 18px; font-size: 12px; line-height: 1.8; color: var(--body); list-style: decimal; }
 .connection-error { color: var(--error); font-size: 12px; }
+.chatgpt-button { width: 100%; }
 @media (max-width: 767px) {
   .connection-select { font-size: 16px; height: 40px; }
 }

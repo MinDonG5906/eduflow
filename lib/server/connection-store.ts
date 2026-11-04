@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { GenerationError } from "../generation-contract";
 
-export const PROVIDERS = ["demo", "openai-api", "anthropic-api", "gemini-api"] as const;
+export const PROVIDERS = ["demo", "openai-api", "anthropic-api", "gemini-api", "chatgpt", "claude-subscription"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 // Pinned standard prices (USD per million tokens), checked 2026-10-27. The budget
@@ -38,12 +38,37 @@ export function geminiModel(env: Record<string, string | undefined> = process.en
 }
 
 const apiKey = z.string().trim().min(10).max(1000).refine((value) => !/\s/.test(value));
+export const chatgptCredentialSchema = z.object({
+  issuer: z.literal("https://auth.openai.com"),
+  subject: z.string().min(1).max(300),
+  email: z.string().max(320).optional(),
+  clientId: z.string().min(1).max(300),
+  idToken: z.string().min(1).max(20000),
+  accessToken: z.string().min(1).max(20000),
+  refreshToken: z.string().min(1).max(20000),
+  expiresAt: z.number().int().positive(),
+  scopes: z.array(z.string().max(100)).max(30),
+  savedAt: z.string().datetime(),
+});
+export type ChatGPTCredential = z.infer<typeof chatgptCredentialSchema>;
+
 const stateSchema = z.object({
   version: z.literal(1),
   provider: z.enum(PROVIDERS),
   openaiKey: apiKey.optional(),
   anthropicKey: apiKey.optional(),
   anthropicModel: z.enum(claudeModelIds).default("claude-opus-5-5"),
+  // The host ID and issued client survive sign-out so a later sign-in reuses the registration.
+  chatgptHostId: z.string().regex(/^urn:uuid:[0-9a-f-]{36}$/).optional(),
+  chatgptClientId: z.string().min(1).max(300).optional(),
+  chatgptSubject: z.string().min(1).max(300).optional(),
+  chatgptPending: z.object({
+    state: z.string().min(32).max(200), nonce: z.string().min(32).max(200), verifier: z.string().min(43).max(128),
+    redirectUri: z.string().url().max(200), clientId: z.string().min(1).max(300).optional(), createdAt: z.number().int(),
+  }).optional(),
+  chatgpt: chatgptCredentialSchema.optional(),
+  chatgptModel: z.string().trim().min(1).max(100).optional(),
+  claudeSubscriptionAcknowledged: z.boolean().default(false),
   imageEnabled: z.boolean().default(false),
 });
 export type ConnectionState = z.infer<typeof stateSchema>;
@@ -52,6 +77,10 @@ const FILE = "connection.json";
 
 export function privateDirectory() {
   return join(process.cwd(), ".eduflow-private");
+}
+
+export function experimentalClaudeSubscription(env: Record<string, string | undefined> = process.env) {
+  return env.EDUFLOW_EXPERIMENTAL_CLAUDE_SUBSCRIPTION === "true";
 }
 
 function ensureDirectory(directory: string) {
@@ -123,6 +152,7 @@ export function imageGenerationVendor(state: ConnectionState, env: Record<string
 
 /** Everything the browser may see. Keys and tokens never leave the server. */
 export function publicConnection(state: ConnectionState, env: Record<string, string | undefined> = process.env) {
+  const chatgptPlan = Boolean(state.chatgpt?.scopes.includes("chatgpt.tokens.use.direct"));
   return {
     provider: state.provider,
     sceneImages: { enabled: state.imageEnabled, teamKey: Boolean(env.EDUFLOW_GEMINI_API_KEY?.trim()), vendor: imageGenerationVendor(state, env) },
@@ -134,6 +164,16 @@ export function publicConnection(state: ConnectionState, env: Record<string, str
       saved: masked(state.anthropicKey),
       model: state.anthropicModel,
       models: claudeModelIds.map((id) => ({ id, ...CLAUDE_MODELS[id] })),
+    },
+    chatgpt: {
+      signedIn: Boolean(state.chatgpt),
+      email: state.chatgpt?.email ?? null,
+      planUsage: chatgptPlan,
+      model: state.chatgptModel ?? null,
+    },
+    claudeSubscription: {
+      enabled: experimentalClaudeSubscription(env),
+      acknowledged: state.claudeSubscriptionAcknowledged,
     },
     gemini: {
       // Only whether the team key exists; the key itself stays in .env.local.

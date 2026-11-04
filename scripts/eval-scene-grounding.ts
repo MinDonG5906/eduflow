@@ -7,6 +7,7 @@ import { GenerationError, generationTask } from "../lib/generation-contract";
 import { searchSceneKnowledge } from "../lib/server/scene-knowledge";
 import { verifySceneEvidence } from "../lib/server/generation-grounding";
 import { protectPaidGeneration } from "../lib/server/ai-protection";
+import { protectSubscriptionGeneration } from "../lib/server/subscription-guard";
 import { selectedGenerator } from "../lib/server/generator";
 import type { RetrievedReference } from "../lib/knowledge";
 
@@ -41,9 +42,10 @@ async function main() {
     const results = await verifySceneEvidence(cases.map(item => item.scene), all, live ? async verification => {
       const adapter = selectedGenerator();
       if (adapter.mode !== "ai") throw new Error("NO_PAID_PROVIDER_SELECTED");
-      protectedRun = protectPaidGeneration(new Request("http://localhost/api/generate", { method: "POST",
-        headers: { Origin: "http://localhost", "Content-Type": "application/json" } }), adapter,
-      adapter.billing ? { config: adapter.billing.config } : {});
+      const request = new Request("http://localhost/api/generate", { method: "POST",
+        headers: { Origin: "http://localhost", "Content-Type": "application/json" } });
+      protectedRun = adapter.billing?.kind === "subscription" ? protectSubscriptionGeneration(request, adapter)
+        : protectPaidGeneration(request, adapter, adapter.billing ? { config: adapter.billing.config } : {});
       calls++;
       try {
         return await protectedRun.adapter.generate(input, { task: generationTask(input), verification, signal: AbortSignal.timeout(20000) });

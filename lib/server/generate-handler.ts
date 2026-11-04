@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GenerationError, generationRequestSchema } from "../generation-contract";
 import { runGeneration, type GenerationAdapter } from "./generation-service";
 import { protectPaidGeneration } from "./ai-protection";
+import { protectSubscriptionGeneration } from "./subscription-guard";
 import { assertLocalAIRequest } from "./ai-config";
 import { readPdfGenerationRequest, type PdfAttachment } from "./pdf-input";
 import { retrieveGenerationKnowledge, type KnowledgeRetriever } from "./generation-knowledge";
@@ -36,9 +37,9 @@ export function createGenerateHandler(adapterOrFactory: GenerationAdapter | (() 
       if (adapter.mode === "ai") assertLocalAIRequest(request);
       const knowledge = adapter.mode === "ai" ? await retrieveGenerationKnowledge(input, { pdf, signal: request.signal }, options.knowledge) : undefined;
       // Every paid adapter is protected automatically; selecting one cannot bypass admission.
-      const protectedRun = adapter.mode === "ai"
-        ? protectPaidGeneration(request, adapter, { ...(adapter.billing ? { config: adapter.billing.config } : {}), directory: options.budgetDirectory })
-        : null;
+      const protectedRun = adapter.mode !== "ai" ? null
+        : adapter.billing?.kind === "subscription" ? protectSubscriptionGeneration(request, adapter)
+        : protectPaidGeneration(request, adapter, { ...(adapter.billing ? { config: adapter.billing.config } : {}), directory: options.budgetDirectory });
       let board;
       try { board = await runGeneration(input, protectedRun?.adapter ?? adapter, { timeoutMs: options.timeoutMs,
         signal: request.signal, pdf, retrieveSceneKnowledge: options.sceneKnowledge,

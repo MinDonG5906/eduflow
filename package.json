@@ -13,6 +13,7 @@
     "demo:package": "node --conditions=react-server --import tsx scripts/package-demo.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.296",
     "@anthropic-ai/sdk": "1.3.0",
     "@base-ui/react": "1.7.0",
     "@google/genai": "2.31.0",
@@ -21,6 +22,7 @@
     "@pdf-lib/fontkit": "^1.1.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "jose": "6.2.13",
     "lucide-react": "1.31.0",
     "mammoth": "1.13.0",
     "next": "16.3.5",

@@ -6,6 +6,7 @@ import { GenerationError, generationTask } from "../lib/generation-contract";
 import { verifySceneEvidence } from "../lib/server/generation-grounding";
 import { selectedGenerator } from "../lib/server/generator";
 import { protectPaidGeneration } from "../lib/server/ai-protection";
+import { protectSubscriptionGeneration } from "../lib/server/subscription-guard";
 
 async function main() {
   const live = process.argv.includes("--live");
@@ -29,9 +30,10 @@ async function main() {
         try {
           const adapter = selectedGenerator();
           if (adapter.mode !== "ai") { failureCode = "NO_PAID_PROVIDER_SELECTED"; throw new Error(); }
-          protectedRun = protectPaidGeneration(new Request("http://localhost/api/generate", { method: "POST",
-            headers: { Origin: "http://localhost", "Content-Type": "application/json" } }), adapter,
-            adapter.billing ? { config: adapter.billing.config } : {});
+          const request = new Request("http://localhost/api/generate", { method: "POST",
+            headers: { Origin: "http://localhost", "Content-Type": "application/json" } });
+          protectedRun = adapter.billing?.kind === "subscription" ? protectSubscriptionGeneration(request, adapter)
+            : protectPaidGeneration(request, adapter, adapter.billing ? { config: adapter.billing.config } : {});
           calls++;
           return await protectedRun.adapter.generate(input, { signal: AbortSignal.timeout(20000), task: generationTask(input), verification });
         } catch (error) {
